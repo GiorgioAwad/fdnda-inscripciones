@@ -56,7 +56,12 @@ const securityHeaders = [
 ]
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // El modo standalone empaqueta las dependencias por su cuenta y no emite los
+  // archivos de traza .nft.json que Vercel lee en onBuildComplete; con él, el
+  // despliegue falla con ENOENT sobre .next/next-server.js.nft.json. Vercel trae
+  // su propio empaquetado, así que allí sobra. Fuera de Vercel se conserva
+  // porque el Dockerfile copia .next/standalone.
+  output: process.env.VERCEL ? undefined : "standalone",
   poweredByHeader: false,
   allowedDevOrigins: developmentOrigins,
   experimental: {
