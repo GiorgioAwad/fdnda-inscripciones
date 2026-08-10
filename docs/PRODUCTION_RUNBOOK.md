@@ -23,6 +23,9 @@ de esta lista:
   datos personales registrado y código cargado en el entorno.
 - [ ] MFA o una segunda barrera de acceso para administradores.
 - [ ] Scheduler cada minuto, logs centralizados, alarmas y responsable de guardia.
+  En Vercel esto exige plan **Pro** y volver a añadir el bloque `crons` a
+  `vercel.json`, que se retiró para poder desplegar staging en Hobby. Ver
+  `docs/VERCEL_DEPLOYMENT.md`.
 - [ ] Credenciales de clubes entregadas de forma segura y archivo JSON local
   eliminado o cifrado después de la entrega.
 

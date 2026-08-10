@@ -109,8 +109,21 @@ Crear una rama o snapshot de Neon antes de cada migración de producción.
 
 ## Programador de mantenimiento
 
-[`vercel.json`](../vercel.json) declara el cron cada minuto contra
-`/api/internal/maintenance/expire-orders`.
+**`vercel.json` no declara el cron.** Los cron jobs solo se pueden definir en ese
+archivo, que es común a los dos proyectos, y en el plan Hobby una frecuencia
+mayor que la diaria **hace fallar el despliegue**. Dejarlo fuera permite que
+staging despliegue en Hobby.
+
+Antes de abrir producción hay que añadirlo, con el equipo ya en **Pro**:
+
+```json
+  "crons": [
+    {
+      "path": "/api/internal/maintenance/expire-orders",
+      "schedule": "* * * * *"
+    }
+  ]
+```
 
 Vercel invoca ese path por **GET**; el endpoint exporta `GET = POST` para
 soportarlo. Si `CRON_SECRET` está definida, Vercel envía
@@ -119,10 +132,22 @@ en tiempo constante. Por eso `CRON_SECRET` y `MAINTENANCE_SECRET` deben
 coincidir: cualquier discrepancia produce 401 silenciosos y las órdenes dejan de
 expirar.
 
-Verificar tras el primer despliegue que el cron aparece en **Project → Cron
-Jobs** y que sus ejecuciones devuelven 200. Alertar si no hay ejecución en tres
-minutos, si responde algo distinto de 2xx o si `ordersRequiringPaymentReview`
-es mayor que cero.
+Verificar tras el despliegue que el cron aparece en **Project → Cron Jobs** y que
+sus ejecuciones devuelven 200. Alertar si no hay ejecución en tres minutos, si
+responde algo distinto de 2xx o si `ordersRequiringPaymentReview` es mayor que
+cero.
+
+### Mientras no haya cron
+
+`expireStaleOrders()` también se ejecuta de forma perezosa desde carrito, pago,
+listado de pagos, panel de administración, creación de sesión de Izipay y las
+acciones de planillas. En staging eso basta: las órdenes caducan en cuanto
+alguien recorre esos flujos.
+
+Lo que la vía perezosa **no** cubre, y por eso producción necesita el cron: la
+liberación puntual de cupos cuando nadie navega, la poda de
+`pruneSecurityRateLimits` y la señal periódica de
+`payment_reconciliation_required`.
 
 ## Dominio e Izipay
 
