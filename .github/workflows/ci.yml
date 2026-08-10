@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      PRISMA_MIGRATE_SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_shadow
+      AUTH_SECRET: ci-only-auth-secret-that-is-not-used-in-production
+      AUTH_TRUST_HOST: "true"
+      PAYMENTS_MODE: mock
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      MAINTENANCE_SECRET: ci-only-maintenance-secret
+      IP_HASH_SECRET: ci-only-ip-hash-secret-that-is-not-production
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npx prisma validate
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run test:migration
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run build
+      - run: docker build --pull -t fdnda-inscripciones:ci .

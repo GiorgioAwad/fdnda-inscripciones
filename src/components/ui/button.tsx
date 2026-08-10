@@ -1,0 +1,80 @@
+import * as React from "react"
+import { cn } from "@/lib/utils"
+
+type Variant = "default" | "secondary" | "outline" | "ghost" | "destructive"
+type Size = "default" | "sm" | "lg" | "icon"
+
+const variantClasses: Record<Variant, string> = {
+  default:
+    "border border-fdnda-navy bg-fdnda-navy text-white hover:bg-fdnda-navy/90 " +
+    "active:bg-fdnda-navy/80",
+  secondary:
+    "border border-fdnda-sky bg-fdnda-sky/45 text-fdnda-navy hover:bg-fdnda-sky/70 " +
+    "active:bg-fdnda-sky",
+  outline:
+    "border border-fdnda-navy/35 bg-white text-fdnda-navy hover:border-fdnda-turquoise " +
+    "hover:bg-fdnda-sky/20 active:bg-fdnda-sky/35",
+  ghost:
+    "border border-transparent text-fdnda-navy hover:bg-fdnda-sky/25 active:bg-fdnda-sky/40",
+  destructive:
+    "border border-fdnda-red bg-fdnda-red text-white hover:bg-fdnda-red/90 " +
+    "active:bg-fdnda-red/80",
+}
+
+const sizeClasses: Record<Size, string> = {
+  default: "min-h-11 px-4 py-2.5 text-sm",
+  sm: "min-h-11 px-3 py-2 text-sm",
+  lg: "min-h-12 px-5 py-3 text-base",
+  icon: "h-11 w-11 p-0",
+}
+
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: Variant
+  size?: Size
+  loading?: boolean
+  loadingText?: React.ReactNode
+}
+
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  (
+    {
+      children,
+      className,
+      disabled,
+      loading = false,
+      loadingText,
+      variant = "default",
+      size = "default",
+      type = "button",
+      ...props
+    },
+    ref
+  ) => (
+    <button
+      ref={ref}
+      type={type}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      data-loading={loading || undefined}
+      className={cn(
+        "inline-flex select-none items-center justify-center gap-2 rounded-control font-semibold",
+        "transition-colors duration-150 motion-reduce:transition-none",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-turquoise focus-visible:ring-offset-2",
+        "disabled:cursor-not-allowed disabled:opacity-55",
+        variantClasses[variant],
+        sizeClasses[size],
+        className
+      )}
+      {...props}
+    >
+      {loading ? (
+        <span
+          aria-hidden="true"
+          className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-pulse"
+        />
+      ) : null}
+      {loading && loadingText !== undefined ? loadingText : children}
+    </button>
+  )
+)
+Button.displayName = "Button"

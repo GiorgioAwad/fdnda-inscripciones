@@ -1,0 +1,560 @@
+import { Prisma } from "@prisma/client"
+import { describe, expect, it, vi } from "vitest"
+
+vi.mock("./prisma", () => ({ prisma: {} }))
+
+import {
+  isValidCategoryUpgradeConfiguration,
+  validateRegistrationPlanInTransaction,
+  type PlanTransactionClient,
+  type RegistrationPlanForValidation,
+} from "./plan-validation"
+
+type Athlete = RegistrationPlanForValidation["athletes"][number]["athlete"]
+type Modality =
+  RegistrationPlanForValidation["registrations"][number]["modality"]
+type Registration = RegistrationPlanForValidation["registrations"][number]
+type Category = NonNullable<
+  RegistrationPlanForValidation["event"]
+>["season"] extends infer Season
+  ? Season extends { categories: Array<infer Item> }
+    ? Item
+    : never
+  : never
+
+const now = new Date("2026-08-01T12:00:00.000Z")
+
+function athlete(
+  id: string,
+  overrides: Partial<Athlete> = {}
+): Athlete {
+  return {
+    id,
+    firstNames: `Nombre ${id}`,
+    lastNames: "Apellido",
+    docType: "DNI",
+    docNumber: `DOC-${id}`,
+    birthDate: new Date("2012-03-10T00:00:00.000Z"),
+    sex: "F",
+    clubId: "club-1",
+    isActive: true,
+    disciplines: ["ARTISTIC_SWIMMING"],
+    privacyNoticeVersion: null,
+    privacyAcceptedAt: null,
+    privacyAcceptedByUserId: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  }
+}
+
+function modality(id: string, overrides: Partial<Modality> = {}): Modality {
+  return {
+    id,
+    eventId: "event-1",
+    discipline: "ARTISTIC_SWIMMING",
+    name: `Prueba ${id}`,
+    category: "Juvenil",
+    sexRule: "ANY",
+    birthYearFrom: null,
+    birthYearTo: null,
+    allowsCategoryUpgrade: false,
+    categoryUpgradeBirthYear: null,
+    minAthletes: 1,
+    maxAthletes: 1,
+    price: new Prisma.Decimal(100),
+    capacity: null,
+    sortOrder: 0,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  }
+}
+
+function registration(
+  id: string,
+  target: Modality,
+  members: Array<{ athlete: Athlete; isReserve?: boolean }>
+): Registration {
+  return {
+    id,
+    planId: "plan-1",
+    modalityId: target.id,
+    modality: target,
+    clubId: "club-1",
+    status: "IN_CART",
+    activeOrderId: null,
+    createdAt: now,
+    updatedAt: now,
+    athletes: members.map((member, index) => ({
+      id: `${id}-athlete-${index}`,
+      registrationId: id,
+      athleteId: member.athlete.id,
+      modalityId: target.id,
+      isReserve: member.isReserve ?? false,
+      athlete: member.athlete,
+    })),
+  }
+}
+
+function category(overrides: Partial<Category> = {}): Category {
+  return {
+    id: "category-lower",
+    seasonId: "season-1",
+    discipline: "ARTISTIC_SWIMMING",
+    name: "Infantil B",
+    birthYearFrom: 2013,
+    birthYearTo: 2014,
+    sortOrder: 0,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  }
+}
+
+function plan(input: {
+  roster: Athlete[]
+  registrations: Registration[]
+  categories?: Category[]
+}): RegistrationPlanForValidation {
+  const disciplines = [
+    ...new Set(input.registrations.map((row) => row.modality.discipline)),
+  ]
+
+  return {
+    id: "plan-1",
+    clubId: "club-1",
+    eventId: "event-1",
+    createdById: "user-1",
+    status: "DRAFT",
+    revision: 7,
+    currentStep: 3,
+    createdAt: now,
+    updatedAt: now,
+    club: {
+      id: "club-1",
+      name: "Club Uno",
+      code: "C1",
+    },
+    event: {
+      id: "event-1",
+      seasonId: "season-1",
+      name: "Nacional 2026",
+      slug: "nacional-2026",
+      disciplines,
+      venue: "VIDENA",
+      city: "Lima",
+      startDate: new Date("2026-08-21T00:00:00.000Z"),
+      endDate: new Date("2026-08-23T00:00:00.000Z"),
+      registrationDeadline: new Date("2026-08-14T23:59:00.000Z"),
+      status: "OPEN",
+      description: null,
+      createdAt: now,
+      updatedAt: now,
+      season: {
+        id: "season-1",
+        year: 2026,
+        name: "Temporada 2026",
+        startDate: new Date("2026-01-01T00:00:00.000Z"),
+        endDate: new Date("2026-12-31T00:00:00.000Z"),
+        isCurrent: true,
+        createdAt: now,
+        updatedAt: now,
+        categories: input.categories ?? [],
+      },
+    },
+    athletes: input.roster.map((row) => ({
+      id: `roster-${row.id}`,
+      planId: "plan-1",
+      athleteId: row.id,
+      createdAt: now,
+      athlete: row,
+    })),
+    registrations: input.registrations,
+  } as RegistrationPlanForValidation
+}
+
+interface TxOverrides {
+  clubAffiliations?: Array<{ discipline: string }>
+  athleteAffiliations?: Array<{ athleteId: string; discipline: string }>
+  occupied?: Array<{ modalityId: string }>
+  confirmedDuplicates?: Array<{
+    modalityId: string
+    athleteId: string
+    athlete: { firstNames: string; lastNames: string }
+    registration: { id: string }
+  }>
+}
+
+function transactionMock(target: RegistrationPlanForValidation, overrides: TxOverrides = {}) {
+  const pairs = target.registrations.flatMap((entry) =>
+    entry.athletes.map((row) => ({
+      athleteId: row.athleteId,
+      discipline: entry.modality.discipline,
+    }))
+  )
+  const clubDisciplines = [
+    ...new Set(target.registrations.map((row) => row.modality.discipline)),
+  ].map((discipline) => ({ discipline }))
+
+  const clubAffiliationFindMany = vi
+    .fn()
+    .mockResolvedValue(overrides.clubAffiliations ?? clubDisciplines)
+  const athleteAffiliationFindMany = vi
+    .fn()
+    .mockResolvedValue(overrides.athleteAffiliations ?? pairs)
+  const occupiedCounts = new Map<string, number>()
+  for (const row of overrides.occupied ?? []) {
+    occupiedCounts.set(row.modalityId, (occupiedCounts.get(row.modalityId) ?? 0) + 1)
+  }
+  const registrationGroupBy = vi.fn().mockResolvedValue(
+    [...occupiedCounts].map(([modalityId, count]) => ({
+      modalityId,
+      _count: { modalityId: count },
+    }))
+  )
+  const duplicateFindMany = vi
+    .fn()
+    .mockResolvedValue(overrides.confirmedDuplicates ?? [])
+
+  const tx = {
+    clubAffiliation: { findMany: clubAffiliationFindMany },
+    athleteAffiliation: { findMany: athleteAffiliationFindMany },
+    registration: { groupBy: registrationGroupBy },
+    registrationAthlete: { findMany: duplicateFindMany },
+  } as unknown as PlanTransactionClient
+
+  return {
+    tx,
+    clubAffiliationFindMany,
+    athleteAffiliationFindMany,
+  }
+}
+
+async function validate(
+  target: RegistrationPlanForValidation,
+  overrides: TxOverrides = {}
+) {
+  const mocked = transactionMock(target, overrides)
+  const result = await validateRegistrationPlanInTransaction(
+    mocked.tx,
+    {
+      planId: target.id,
+      clubId: target.clubId,
+      expectedRevision: target.revision,
+      mode: "CHECKOUT",
+      now,
+    },
+    target
+  )
+  return { result, mocked }
+}
+
+describe("configuración explícita de ascenso", () => {
+  const lowerCategory = category()
+
+  it("acepta el año contiguo de la categoría inferior de artística", () => {
+    expect(
+      isValidCategoryUpgradeConfiguration(
+        {
+          discipline: "ARTISTIC_SWIMMING",
+          allowsCategoryUpgrade: true,
+          birthYearTo: 2012,
+          categoryUpgradeBirthYear: 2013,
+        },
+        [lowerCategory]
+      )
+    ).toBe(true)
+  })
+
+  it.each([
+    {
+      label: "otra disciplina",
+      modality: {
+        discipline: "DIVING",
+        allowsCategoryUpgrade: true,
+        birthYearTo: 2012,
+        categoryUpgradeBirthYear: 2013,
+      },
+      categories: [lowerCategory],
+    },
+    {
+      label: "año no contiguo",
+      modality: {
+        discipline: "ARTISTIC_SWIMMING",
+        allowsCategoryUpgrade: true,
+        birthYearTo: 2012,
+        categoryUpgradeBirthYear: 2014,
+      },
+      categories: [lowerCategory],
+    },
+    {
+      label: "categoría inferior ausente",
+      modality: {
+        discipline: "ARTISTIC_SWIMMING",
+        allowsCategoryUpgrade: true,
+        birthYearTo: 2012,
+        categoryUpgradeBirthYear: 2013,
+      },
+      categories: [],
+    },
+    {
+      label: "regla apagada con año residual",
+      modality: {
+        discipline: "ARTISTIC_SWIMMING",
+        allowsCategoryUpgrade: false,
+        birthYearTo: 2012,
+        categoryUpgradeBirthYear: 2013,
+      },
+      categories: [lowerCategory],
+    },
+  ])("rechaza $label", ({ modality: input, categories }) => {
+    expect(isValidCategoryUpgradeConfiguration(input, categories)).toBe(false)
+  })
+})
+
+describe("validación autoritativa de planillas", () => {
+  it("cuenta reservas como deportistas pero cobra una vez por formación", async () => {
+    const titular = athlete("titular")
+    const reserva = athlete("reserva")
+    const sinPrueba = athlete("sin-prueba")
+    const team = modality("equipo", {
+      minAthletes: 2,
+      maxAthletes: 3,
+      price: new Prisma.Decimal(350),
+    })
+    const target = plan({
+      roster: [titular, reserva, sinPrueba],
+      registrations: [
+        registration("entry-1", team, [
+          { athlete: titular },
+          { athlete: reserva, isReserve: true },
+        ]),
+      ],
+    })
+
+    const { result } = await validate(target)
+
+    expect(result.valid).toBe(true)
+    expect(result.summary).toEqual({
+      rosterAthleteCount: 3,
+      registeredAthleteCount: 2,
+      athletesWithoutEntries: 1,
+      entryCount: 1,
+      totalAmount: 350,
+      currency: "PEN",
+      // Sin configuración de disciplina el cobro sigue siendo por formación:
+      // todo el importe cae en entriesAmount y no hay cuotas por deportista.
+      entriesAmount: 350,
+      athleteFeesAmount: 0,
+      chargedAthleteFees: 0,
+      coveredAthleteFees: 0,
+      byDiscipline: [
+        {
+          discipline: "ARTISTIC_SWIMMING",
+          pricingMode: "PER_ENTRY",
+          entryCount: 1,
+          athleteCount: 2,
+          entriesAmount: 350,
+          feesAmount: 0,
+          subtotal: 350,
+        },
+      ],
+    })
+    expect(result.issues).toEqual([
+      expect.objectContaining({
+        code: "ATHLETE_WITHOUT_ENTRY",
+        severity: "WARNING",
+        athleteId: "sin-prueba",
+      }),
+    ])
+  })
+
+  it("suma el precio de cada formación, no el de cada integrante", async () => {
+    const one = athlete("one")
+    const two = athlete("two")
+    const three = athlete("three")
+    const individual = modality("individual", {
+      price: new Prisma.Decimal(60),
+    })
+    const duet = modality("duet", {
+      minAthletes: 2,
+      maxAthletes: 2,
+      price: new Prisma.Decimal(100),
+    })
+    const target = plan({
+      roster: [one, two, three],
+      registrations: [
+        registration("entry-individual", individual, [{ athlete: one }]),
+        registration("entry-duet", duet, [
+          { athlete: two },
+          { athlete: three },
+        ]),
+      ],
+    })
+
+    const { result } = await validate(target)
+
+    expect(result.valid).toBe(true)
+    expect(result.summary).toMatchObject({
+      registeredAthleteCount: 3,
+      entryCount: 2,
+      totalAmount: 160,
+    })
+  })
+
+  it("propaga edad, sexo, mixto e integrantes como errores de composición", async () => {
+    const tooYoung = athlete("age", {
+      birthDate: new Date("2014-01-01T00:00:00.000Z"),
+    })
+    const male = athlete("male", { sex: "M" })
+    const femaleOne = athlete("female-1")
+    const femaleTwo = athlete("female-2")
+    const lone = athlete("lone")
+    const target = plan({
+      roster: [tooYoung, male, femaleOne, femaleTwo, lone],
+      registrations: [
+        registration(
+          "entry-age",
+          modality("age", { birthYearFrom: 2010, birthYearTo: 2013 }),
+          [{ athlete: tooYoung }]
+        ),
+        registration(
+          "entry-sex",
+          modality("sex", { sexRule: "FEMALE" }),
+          [{ athlete: male }]
+        ),
+        registration(
+          "entry-mixed",
+          modality("mixed", {
+            sexRule: "MIXED",
+            minAthletes: 2,
+            maxAthletes: 2,
+          }),
+          [{ athlete: femaleOne }, { athlete: femaleTwo }]
+        ),
+        registration(
+          "entry-size",
+          modality("size", { minAthletes: 2, maxAthletes: 3 }),
+          [{ athlete: lone }]
+        ),
+      ],
+    })
+
+    const { result } = await validate(target)
+    const composition = result.issues.filter(
+      (row) => row.code === "COMPOSITION_INVALID"
+    )
+
+    expect(result.valid).toBe(false)
+    expect(composition).toHaveLength(4)
+    expect(composition.map((row) => row.message).join("\n")).toMatch(
+      /fuera del rango|solo para damas|varón y una dama|requiere 2 a 3/
+    )
+  })
+
+  it("detecta duplicados entre formaciones y contra una orden confirmada", async () => {
+    const repeated = athlete("repeated")
+    const solo = modality("solo")
+    const target = plan({
+      roster: [repeated],
+      registrations: [
+        registration("entry-1", solo, [{ athlete: repeated }]),
+        registration("entry-2", solo, [{ athlete: repeated }]),
+      ],
+    })
+
+    const { result } = await validate(target, {
+      confirmedDuplicates: [
+        {
+          modalityId: solo.id,
+          athleteId: repeated.id,
+          athlete: {
+            firstNames: repeated.firstNames,
+            lastNames: repeated.lastNames,
+          },
+          registration: { id: "paid-entry" },
+        },
+      ],
+    })
+
+    expect(result.valid).toBe(false)
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "DUPLICATE_ENTRY" }),
+        expect.objectContaining({ code: "DUPLICATE_CONFIRMED_ENTRY" }),
+      ])
+    )
+  })
+
+  it("acepta el ascenso configurado y lo informa como advertencia", async () => {
+    const promoted = athlete("promoted", {
+      birthDate: new Date("2013-05-04T00:00:00.000Z"),
+    })
+    const solo = modality("solo-upgrade", {
+      birthYearFrom: 2010,
+      birthYearTo: 2012,
+      allowsCategoryUpgrade: true,
+      categoryUpgradeBirthYear: 2013,
+    })
+    const target = plan({
+      roster: [promoted],
+      registrations: [
+        registration("entry-upgrade", solo, [{ athlete: promoted }]),
+      ],
+      categories: [category()],
+    })
+
+    const { result } = await validate(target)
+
+    expect(result.valid).toBe(true)
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        code: "CATEGORY_UPGRADE_USED",
+        severity: "WARNING",
+        athleteId: promoted.id,
+      })
+    )
+    expect(result.issues).not.toContainEqual(
+      expect.objectContaining({ code: "COMPOSITION_INVALID" })
+    )
+  })
+
+  it("exige afiliaciones que cubran todas las fechas del evento", async () => {
+    const swimmer = athlete("swimmer")
+    const solo = modality("solo-affiliation")
+    const target = plan({
+      roster: [swimmer],
+      registrations: [registration("entry-1", solo, [{ athlete: swimmer }])],
+    })
+
+    const { result, mocked } = await validate(target, {
+      clubAffiliations: [],
+      athleteAffiliations: [],
+    })
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "CLUB_AFFILIATION_REQUIRED" }),
+        expect.objectContaining({ code: "ATHLETE_AFFILIATION_REQUIRED" }),
+      ])
+    )
+    expect(mocked.clubAffiliationFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          validFrom: { lte: target.event!.startDate },
+          validTo: { gte: target.event!.endDate },
+        }),
+      })
+    )
+    expect(mocked.athleteAffiliationFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          validFrom: { lte: target.event!.startDate },
+          validTo: { gte: target.event!.endDate },
+        }),
+      })
+    )
+  })
+})

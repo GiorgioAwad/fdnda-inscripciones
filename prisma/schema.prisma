@@ -1,0 +1,711 @@
+// FDNDA — Federación Deportiva Nacional de Deportes Acuáticos.
+// Afiliación anual de clubes y deportistas (por disciplina) e inscripción a las
+// pruebas de cada evento, con pago en línea (Izipay).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  ADMIN
+  CLUB
+}
+
+enum Sex {
+  M
+  F
+}
+
+// Sex restriction for a modality. MIXED requires at least one athlete of each sex.
+enum SexRule {
+  MALE
+  FEMALE
+  MIXED
+  ANY
+}
+
+enum Discipline {
+  DIVING
+  ARTISTIC_SWIMMING
+  WATER_POLO
+}
+
+enum EventStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+enum RegistrationStatus {
+  IN_CART
+  PENDING_PAYMENT
+  PAID
+}
+
+enum RegistrationPlanStatus {
+  DRAFT
+  AWAITING_PAYMENT
+  PAID
+  ABANDONED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum DocType {
+  DNI
+  CE
+  PASAPORTE
+  OTROS
+}
+
+// Estado persistido de una afiliación. "Vencida" NO se guarda: se deriva
+// comparando validTo con la fecha actual (ver affiliationState en lib/affiliations).
+enum AffiliationStatus {
+  PENDING
+  ACTIVE
+}
+
+enum OrderKind {
+  AFFILIATION
+  REGISTRATION
+}
+
+enum PaymentAttemptStatus {
+  CREATED
+  SESSION_READY
+  APPROVED
+  REJECTED
+  ERROR
+}
+
+// Cómo cobra una disciplina dentro de un evento.
+// PER_ENTRY: el precio vive en cada prueba (EventModality.price) y se cobra una
+// vez por formación. Es el comportamiento histórico y el default.
+// PER_ATHLETE: cuota fija por deportista para TODA la disciplina en el evento,
+// sin importar cuántas pruebas haga (clavados).
+enum PricingMode {
+  PER_ENTRY
+  PER_ATHLETE
+}
+
+// Cómo se interpreta la ventana de años de nacimiento de las pruebas.
+// RANGE: birthYearFrom..birthYearTo, ambos opcionales (artística, clavados).
+// MAX_AGE_ONLY: categorías "Sub-N". Solo hay tope de edad, así que birthYearFrom
+// es obligatorio y birthYearTo DEBE ser null: un sub-13 puede jugar sub-18, pero
+// un sub-18 nunca baja a sub-13 (polo acuático).
+enum AgeRuleMode {
+  RANGE
+  MAX_AGE_ONLY
+}
+
+// ==================== AUTH ====================
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String?
+  name         String
+  passwordHash String
+  role         UserRole @default(CLUB)
+  clubId       String?
+  club         Club?    @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  // Alcance operativo del delegado. Vacío = coordinador del club con acceso a
+  // todas sus disciplinas; uno o más valores = panel aislado a esas disciplinas.
+  disciplineAccess Discipline[] @default([])
+  isActive     Boolean  @default(true)
+  // Se incrementa al cambiar credenciales o revocar accesos. Los JWT con una
+  // versión anterior dejan de ser válidos inmediatamente.
+  sessionVersion Int    @default(0)
+  mustChangePassword Boolean @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders            Order[]
+  registrationPlans RegistrationPlan[]
+
+  @@index([clubId])
+  @@map("users")
+}
+
+// ==================== CLUBS & ATHLETES ====================
+
+model Club {
+  id           String  @id @default(cuid())
+  name         String  @unique
+  code         String  @unique
+  region       String?
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users             User[]
+  athletes          Athlete[]
+  registrations     Registration[]
+  registrationPlans RegistrationPlan[]
+  orders            Order[]
+  affiliations      ClubAffiliation[]
+
+  athleteAffiliations AthleteAffiliation[]
+  eventAthleteFees    EventAthleteFee[]
+
+  @@map("clubs")
+}
+
+model Athlete {
+  id         String   @id @default(cuid())
+  firstNames String
+  lastNames  String
+  docType    DocType  @default(DNI)
+  docNumber  String   @unique
+  birthDate  DateTime @db.Date
+  sex        Sex
+  clubId     String
+  club       Club     @relation(fields: [clubId], references: [id])
+  isActive   Boolean  @default(true)
+
+  // Disciplinas que practica. Define qué afiliaciones anuales le corresponden
+  // (una cuota por disciplina) y por qué pruebas se le puede filtrar. No decide
+  // la elegibilidad de una prueba: eso lo sigue haciendo el año de nacimiento.
+  disciplines Discipline[]
+
+  privacyNoticeVersion    String?
+  privacyAcceptedAt       DateTime?
+  privacyAcceptedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  registrationAthletes     RegistrationAthlete[]
+  registrationPlanAthletes RegistrationPlanAthlete[]
+  affiliations             AthleteAffiliation[]
+  eventFees                EventAthleteFee[]
+
+  @@index([clubId])
+  @@map("athletes")
+}
+
+// ==================== AFILIACIONES ====================
+
+// Temporada anual de afiliación (por lo general el año calendario). Solo una
+// puede estar vigente (isCurrent) a la vez; lo garantizan las server actions.
+model Season {
+  id        String   @id @default(cuid())
+  year      Int      @unique
+  name      String
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  isCurrent Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fees                SeasonFee[]
+  categories          Category[]
+  clubAffiliations    ClubAffiliation[]
+  athleteAffiliations AthleteAffiliation[]
+  events              Event[]
+
+  @@index([isCurrent])
+  @@map("seasons")
+}
+
+// Tarifario anual por disciplina. Cada disciplina se afilia y se cobra aparte:
+// un deportista que hace clavados y polo paga dos cuotas. Sin fila para una
+// disciplina, esa disciplina no se afilia en esa temporada.
+model SeasonFee {
+  id         String     @id @default(cuid())
+  seasonId   String
+  season     Season     @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  discipline Discipline
+  clubFee    Decimal    @db.Decimal(10, 2)
+  athleteFee Decimal    @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([seasonId, discipline])
+  @@index([seasonId])
+  @@map("season_fees")
+}
+
+// Categoría por edad (Infantil A, Juvenil, …). Es una ETIQUETA informativa:
+// la elegibilidad real de cada prueba la define EventModality.birthYearFrom/To,
+// así que un deportista puede competir en pruebas de varias categorías.
+model Category {
+  id            String     @id @default(cuid())
+  seasonId      String
+  season        Season     @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  discipline    Discipline
+  name          String
+  birthYearFrom Int?
+  birthYearTo   Int?
+  sortOrder     Int        @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([seasonId, discipline, name])
+  @@index([seasonId])
+  @@map("categories")
+}
+
+// Cuota anual del club en UNA disciplina. PENDING sin activeOrderId = en el
+// carrito de afiliaciones. Un club puede estar al día en polo y no en clavados.
+model ClubAffiliation {
+  id            String            @id @default(cuid())
+  clubId        String
+  club          Club              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  seasonId      String
+  season        Season            @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  discipline    Discipline
+  status        AffiliationStatus @default(PENDING)
+  // Snapshot de la cuota al momento de generarla (sobrevive cambios de tarifa).
+  fee           Decimal           @db.Decimal(10, 2)
+  validFrom     DateTime          @db.Date
+  validTo       DateTime          @db.Date
+  paidAt        DateTime?
+  // Orden que la cubre (PENDING o PAID). Se limpia si la orden falla o expira.
+  activeOrderId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  @@unique([clubId, seasonId, discipline])
+  @@index([seasonId, discipline, status])
+  @@index([activeOrderId])
+  @@map("club_affiliations")
+}
+
+// Afiliación anual de un deportista en UNA disciplina. clubId guarda el club con
+// el que se afilió esa temporada: es el histórico de plantillas y lo que permite
+// listar a los deportistas que fueron del club y ya no están vigentes (reafiliación).
+model AthleteAffiliation {
+  id            String            @id @default(cuid())
+  athleteId     String
+  athlete       Athlete           @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  clubId        String
+  club          Club              @relation(fields: [clubId], references: [id])
+  seasonId      String
+  season        Season            @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  discipline    Discipline
+  status        AffiliationStatus @default(PENDING)
+  fee           Decimal           @db.Decimal(10, 2)
+  validFrom     DateTime          @db.Date
+  validTo       DateTime          @db.Date
+  paidAt        DateTime?
+  activeOrderId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  @@unique([athleteId, seasonId, discipline])
+  @@index([clubId, seasonId, discipline])
+  @@index([seasonId, discipline, status])
+  @@index([activeOrderId])
+  @@map("athlete_affiliations")
+}
+
+// ==================== EVENTS ====================
+
+model Event {
+  id                   String       @id @default(cuid())
+  seasonId             String?
+  season               Season?      @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  name                 String
+  slug                 String       @unique
+  disciplines          Discipline[]
+  venue                String?
+  city                 String?
+  startDate            DateTime     @db.Date
+  endDate              DateTime     @db.Date
+  registrationDeadline DateTime
+  status               EventStatus  @default(DRAFT)
+  description          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  modalities        EventModality[]
+  registrationPlans RegistrationPlan[]
+  orders            Order[]
+  disciplineConfigs EventDisciplineConfig[]
+  athleteFees       EventAthleteFee[]
+
+  @@index([seasonId])
+  @@map("events")
+}
+
+// Cómo se comporta CADA disciplina dentro de un evento: cómo cobra y cómo
+// interpreta las edades. Los eventos nuevos tienen exactamente una fila (un
+// evento = una disciplina); los eventos legados creados con el formulario
+// multidisciplina pueden tener varias.
+//
+// Ausencia de fila = PER_ENTRY + RANGE. Esa es la razón de que los eventos
+// anteriores a esta tabla se comporten igual que siempre sin backfill.
+model EventDisciplineConfig {
+  id         String     @id @default(cuid())
+  eventId    String
+  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  discipline Discipline
+
+  pricingMode PricingMode @default(PER_ENTRY)
+  // Cuota fija por deportista. Requerida (y > 0) cuando pricingMode es
+  // PER_ATHLETE; ignorada en PER_ENTRY.
+  athleteFee  Decimal?    @db.Decimal(10, 2)
+  ageRuleMode AgeRuleMode @default(RANGE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventId, discipline])
+  @@index([eventId])
+  @@map("event_discipline_configs")
+}
+
+// Cuota fija de un deportista en una disciplina de un evento (pricingMode
+// PER_ATHLETE). Es la gemela de Registration: mismo enum de estado, mismo
+// activeOrderId y el mismo ciclo en lib/orders.
+//
+// Las filas se materializan SOLO en el checkout, nunca mientras se edita la
+// planilla: así el autoguardado no cambia y no quedan cuotas IN_CART huérfanas
+// bloqueando el único de otra planilla. Durante la edición el importe se estima.
+model EventAthleteFee {
+  id         String     @id @default(cuid())
+  eventId    String
+  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  discipline Discipline
+  athleteId  String
+  athlete    Athlete    @relation(fields: [athleteId], references: [id])
+  clubId     String
+  club       Club       @relation(fields: [clubId], references: [id])
+  // Planilla que la generó. Se conserva como rastro: la cuota sobrevive a la
+  // planilla porque cubre TODO el evento, no solo esa inscripción.
+  planId     String?
+  plan       RegistrationPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  status        RegistrationStatus @default(IN_CART)
+  // Congelada al crearse: cambiar la configuración no altera lo ya cobrado.
+  fee           Decimal            @db.Decimal(10, 2)
+  activeOrderId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  // Garantía a nivel de base de "una sola cuota por deportista y disciplina en
+  // el evento". Es lo que hace que una planilla suplementaria no vuelva a
+  // cobrarle al mismo deportista.
+  @@unique([eventId, discipline, athleteId])
+  @@index([activeOrderId])
+  @@index([planId])
+  @@index([clubId, eventId, discipline])
+  @@map("event_athlete_fees")
+}
+
+// A "prueba/modalidad": what a club actually registers athletes into.
+// e.g. DIVING "Trampolín 3m — Categoría B — Damas" (1 athlete),
+// ARTISTIC_SWIMMING "Dueto Libre — Juvenil" (2 athletes).
+model EventModality {
+  id                       String     @id @default(cuid())
+  eventId                  String
+  event                    Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  discipline               Discipline
+  name                     String
+  category                 String?
+  sexRule                  SexRule    @default(ANY)
+  // Eligibility window by birth YEAR (inclusive). Null = no limit on that side.
+  birthYearFrom            Int?
+  birthYearTo              Int?
+  // "Sube de categoría": en natación artística los deportistas del ÚLTIMO año de
+  // su categoría pueden competir en la inmediata superior (Solo, Figuras,
+  // Estrellas). Como las categorías son ventanas contiguas de años de nacimiento,
+  // ese último año es siempre birthYearTo + 1 (ver upgradeBirthYearFor en
+  // lib/categories). Se activa prueba por prueba: no todas lo admiten.
+  allowsCategoryUpgrade    Boolean    @default(false)
+  // Snapshot explícito del año adicional admitido. Durante el rollout convive
+  // con allowsCategoryUpgrade; un CHECK SQL limita la regla a artística.
+  categoryUpgradeBirthYear Int?
+  minAthletes              Int        @default(1)
+  maxAthletes              Int        @default(1)
+  price                    Decimal    @db.Decimal(10, 2)
+  capacity                 Int?
+  sortOrder                Int        @default(0)
+  isActive                 Boolean    @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  registrations Registration[]
+
+  @@index([eventId])
+  @@map("event_modalities")
+}
+
+// ==================== REGISTRATIONS ====================
+
+// One entry of a club into a modality (1..N athletes). Acts as cart item while
+// IN_CART; becomes PENDING_PAYMENT when checked out and PAID once the order is paid.
+model Registration {
+  id            String             @id @default(cuid())
+  planId        String?
+  plan          RegistrationPlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
+  modalityId    String
+  modality      EventModality      @relation(fields: [modalityId], references: [id], onDelete: Cascade)
+  clubId        String
+  club          Club               @relation(fields: [clubId], references: [id])
+  status        RegistrationStatus @default(IN_CART)
+  // Order currently covering this registration (PENDING or PAID). Cleared when
+  // the order expires/fails so the registration returns to the cart.
+  activeOrderId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  athletes   RegistrationAthlete[]
+  orderItems OrderItem[]
+
+  @@index([clubId, status])
+  @@index([modalityId, status])
+  @@index([planId])
+  @@map("registrations")
+}
+
+model RegistrationAthlete {
+  id             String       @id @default(cuid())
+  registrationId String
+  registration   Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  athleteId      String
+  athlete        Athlete      @relation(fields: [athleteId], references: [id])
+  // Denormalized from registration.modality to enforce "an athlete enters a
+  // given modality only once" at the database level.
+  modalityId     String
+  isReserve      Boolean      @default(false)
+
+  @@unique([modalityId, athleteId])
+  @@index([athleteId])
+  @@map("registration_athletes")
+}
+
+// Borrador persistente de una planilla de inscripción. Un plan activo pertenece
+// a una sola competencia; los índices parciales de la migración permiten varios
+// planes PAID/ABANDONED para inscripciones suplementarias.
+model RegistrationPlan {
+  id          String                 @id @default(cuid())
+  clubId      String
+  club        Club                   @relation(fields: [clubId], references: [id])
+  eventId     String?
+  event       Event?                 @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  // Sección operativa dueña de la planilla. Null = planilla coordinadora/legada.
+  disciplineScope Discipline?
+  createdById String
+  createdBy   User                   @relation(fields: [createdById], references: [id])
+  status      RegistrationPlanStatus @default(DRAFT)
+  revision    Int                    @default(0)
+  currentStep Int                    @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  athletes      RegistrationPlanAthlete[]
+  registrations Registration[]
+  orders        Order[]
+  athleteFees   EventAthleteFee[]
+
+  @@index([clubId, status])
+  @@index([clubId, disciplineScope, status])
+  @@index([eventId, status])
+  @@index([createdById])
+  @@map("registration_plans")
+}
+
+// Nómina seleccionada para la planilla, aun cuando un deportista todavía no
+// tenga pruebas/formaciones asignadas.
+model RegistrationPlanAthlete {
+  id        String           @id @default(cuid())
+  planId    String
+  plan      RegistrationPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete          @relation(fields: [athleteId], references: [id])
+  createdAt DateTime         @default(now())
+
+  @@unique([planId, athleteId])
+  @@index([athleteId])
+  @@map("registration_plan_athletes")
+}
+
+// ==================== ORDERS ====================
+
+model Order {
+  id     String @id @default(cuid())
+  code   String @unique
+  clubId String
+  club   Club   @relation(fields: [clubId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  registrationPlanId String?
+  registrationPlan   RegistrationPlan? @relation(fields: [registrationPlanId], references: [id], onDelete: SetNull)
+  eventId            String?
+  event              Event?            @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  // Los carritos de afiliación e inscripción son independientes: cada orden
+  // agrupa items de un solo tipo.
+  kind        OrderKind   @default(REGISTRATION)
+  totalAmount Decimal     @db.Decimal(10, 2)
+  currency    String      @default("PEN")
+  status      OrderStatus @default(PENDING)
+  // Órdenes históricas que mezclan competencias se conservan sin dividir ni
+  // recalcular y quedan identificadas de forma durable para reportes/auditoría.
+  isLegacy    Boolean     @default(false)
+
+  provider              String?
+  providerOrderNumber   String?
+  providerTransactionId String?
+  providerRef           String?
+  providerResponse      Json?
+  paidAt                DateTime?
+  expiresAt             DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items OrderItem[]
+  paymentAttempts PaymentAttempt[]
+  paymentEvents   PaymentEvent[]
+
+  @@index([clubId])
+  @@index([status])
+  @@index([isLegacy])
+  @@index([registrationPlanId])
+  @@index([eventId])
+  @@index([providerOrderNumber])
+  @@map("orders")
+}
+
+// Un intento por cada sesión creada en la pasarela. Es inmutable respecto de
+// identidad/monto y permite reconciliar reintentos que llegan fuera de orden.
+model PaymentAttempt {
+  id                    String               @id @default(cuid())
+  orderId               String
+  order                 Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider              String
+  providerOrderNumber   String
+  providerTransactionId String
+  amount                Decimal              @db.Decimal(10, 2)
+  currency              String
+  status                PaymentAttemptStatus @default(CREATED)
+  providerResponse      Json?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  events PaymentEvent[]
+
+  @@unique([provider, providerTransactionId])
+  @@index([provider, providerOrderNumber])
+  @@index([orderId, status])
+  @@map("payment_attempts")
+}
+
+// Registro append-only de callbacks/IPN. eventKey evita procesar el mismo
+// mensaje dos veces y conserva evidencia para conciliación y soporte.
+model PaymentEvent {
+  id                    String          @id @default(cuid())
+  orderId               String
+  order                 Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  attemptId             String?
+  attempt               PaymentAttempt? @relation(fields: [attemptId], references: [id], onDelete: SetNull)
+  provider              String
+  eventKey              String
+  eventType             String
+  providerTransactionId String?
+  validSignature        Boolean
+  amount                Decimal?        @db.Decimal(10, 2)
+  currency              String?
+  payload               Json?
+  receivedAt            DateTime        @default(now())
+
+  @@unique([provider, eventKey])
+  @@index([orderId, receivedAt])
+  @@index([providerTransactionId])
+  @@map("payment_events")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorRole  String?
+  action     String
+  targetType String?
+  targetId   String?
+  success    Boolean  @default(true)
+  ipHash     String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+// Límites compartidos entre instancias sin depender de memoria local.
+model SecurityRateLimit {
+  key             String    @id
+  count           Int       @default(0)
+  windowStartedAt DateTime
+  blockedUntil    DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  @@index([updatedAt])
+  @@map("security_rate_limits")
+}
+
+// Exactamente uno de registrationId / clubAffiliationId / athleteAffiliationId /
+// eventAthleteFeeId está presente, según el kind de la orden.
+model OrderItem {
+  id             String        @id @default(cuid())
+  orderId        String
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  registrationId String?
+  registration   Registration? @relation(fields: [registrationId], references: [id])
+
+  clubAffiliationId String?
+  clubAffiliation   ClubAffiliation? @relation(fields: [clubAffiliationId], references: [id])
+
+  athleteAffiliationId String?
+  athleteAffiliation   AthleteAffiliation? @relation(fields: [athleteAffiliationId], references: [id])
+
+  eventAthleteFeeId String?
+  eventAthleteFee   EventAthleteFee? @relation(fields: [eventAthleteFeeId], references: [id])
+
+  // Snapshot at checkout time (survives later edits to event/modality/athletes).
+  description          String
+  unitPrice            Decimal @db.Decimal(10, 2)
+  registrationSnapshot Json?
+
+  @@index([registrationId])
+  @@index([clubAffiliationId])
+  @@index([athleteAffiliationId])
+  @@index([eventAthleteFeeId])
+  @@map("order_items")
+}
