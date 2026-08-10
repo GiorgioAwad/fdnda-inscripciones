@@ -24,8 +24,17 @@ está en uso.
   es `us-east-1` y coincide con el proyecto Neon. Aplicación y base deben
   compartir región; cada consulta cruzada suma latencia al checkout.
 
-`output: "standalone"` y el `Dockerfile` se conservan aunque Vercel los ignore:
-CI construye la imagen y sirve para probar el modo producción en local.
+## `output: standalone` y Vercel son incompatibles
+
+[`next.config.ts`](../next.config.ts) activa `output: "standalone"` **solo cuando
+la variable `VERCEL` no está definida**. No es una preferencia: en modo
+standalone Next empaqueta sus propias dependencias y no emite los archivos de
+traza `.nft.json`, y el paso `onBuildComplete` de Vercel muere con
+`ENOENT: .next/next-server.js.nft.json`.
+
+Fuera de Vercel el modo se conserva porque el `Dockerfile` copia
+`.next/standalone` y CI construye la imagen. No sustituir esa condición por un
+valor fijo sin comprobar los dos caminos.
 
 ## Dos proyectos: staging y producción
 
