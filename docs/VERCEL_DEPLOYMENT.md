@@ -27,6 +27,33 @@ está en uso.
 `output: "standalone"` y el `Dockerfile` se conservan aunque Vercel los ignore:
 CI construye la imagen y sirve para probar el modo producción en local.
 
+## Dos proyectos: staging y producción
+
+El runbook exige un entorno de *staging* separado. En Vercel se resuelve con
+**dos proyectos** apuntando al mismo repositorio, cada uno con sus variables y
+su base:
+
+| | `fdnda-inscripciones-staging` | `fdnda-inscripciones` |
+| --- | --- | --- |
+| `APP_ENV` | `staging` | sin definir |
+| Base Neon | proyecto/rama de staging | `fdnda-inscripciones-prod` |
+| Izipay | sandbox, o `PAYMENTS_MODE=mock` | producción |
+| Registro del banco de datos | no exigido | obligatorio |
+| Dominio | el `*.vercel.app` sirve | dominio propio |
+
+`APP_ENV` solo relaja controles con el valor exacto `staging`. Cualquier otro
+valor, y su ausencia, se tratan como producción: olvidarla nunca abre la puerta.
+Lo que **no** se relaja en staging es el transporte TLS de la base, la longitud
+mínima de los secretos ni la exigencia de HTTPS en la URL pública.
+
+> Un despliegue con `APP_ENV=staging` jamás debe apuntar a la base de
+> producción: aceptaría inscripciones reales pagadas con tarjetas de prueba. La
+> primera línea de log de cada instancia (`deployment_started`) muestra el nivel
+> y la base usada justamente para poder detectarlo de un vistazo.
+
+Activar **Deployment Protection** en el proyecto de staging: expone la
+aplicación completa.
+
 ## Variables de entorno
 
 Cargarlas en **Project Settings → Environment Variables**, marcando
@@ -40,6 +67,7 @@ Partir de [`env.example`](../env.example). Reglas de producción en
 
 | Variable | Valor |
 | --- | --- |
+| `APP_ENV` | `staging` en el proyecto de pruebas; **sin definir** en producción |
 | `DATABASE_URL` | Neon **pooled** (host con `-pooler`), rol `fdnda_app`, `sslmode=require` |
 | `DATABASE_POOL_MAX` | `2` |
 | `MAINTENANCE_SECRET` | aleatorio, mínimo 32 caracteres |

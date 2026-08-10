@@ -80,6 +80,15 @@ describe("production configuration", () => {
     expect(() => assertProductionConfiguration({ force: true })).not.toThrow()
   })
 
+  it("rejects sandbox payments even if APP_ENV holds an unknown value", () => {
+    stubValidProductionEnvironment()
+    vi.stubEnv("APP_ENV", "produccion")
+    vi.stubEnv("IZIPAY_ENDPOINT", "https://sandbox-api-pw.izipay.pe")
+    expect(() => assertProductionConfiguration({ force: true })).toThrow(
+      /no sandbox/
+    )
+  })
+
   it("rejects a connection string without TLS", () => {
     stubValidProductionEnvironment()
     vi.stubEnv(
@@ -88,6 +97,60 @@ describe("production configuration", () => {
     )
     expect(() => assertProductionConfiguration({ force: true })).toThrow(
       /DATABASE_URL debe exigir sslmode/
+    )
+  })
+})
+
+describe("staging tier", () => {
+  it("accepts the Izipay sandbox", () => {
+    stubValidProductionEnvironment()
+    vi.stubEnv("APP_ENV", "staging")
+    vi.stubEnv("IZIPAY_ENDPOINT", "https://sandbox-api-pw.izipay.pe")
+    expect(() => assertProductionConfiguration({ force: true })).not.toThrow()
+  })
+
+  it("accepts simulated payments without Izipay credentials", () => {
+    stubValidProductionEnvironment()
+    vi.stubEnv("APP_ENV", "staging")
+    vi.stubEnv("PAYMENTS_MODE", "mock")
+    for (const name of [
+      "IZIPAY_MERCHANT_CODE",
+      "IZIPAY_API_KEY",
+      "IZIPAY_HASH_KEY",
+      "IZIPAY_PUBLIC_KEY",
+      "IZIPAY_ENDPOINT",
+    ]) {
+      vi.stubEnv(name, "")
+    }
+    expect(() => assertProductionConfiguration({ force: true })).not.toThrow()
+  })
+
+  it("does not demand the personal data bank registration", () => {
+    stubValidProductionEnvironment()
+    vi.stubEnv("APP_ENV", "staging")
+    vi.stubEnv("PERSONAL_DATA_BANK_REGISTRATION_CODE", "")
+    expect(() => assertProductionConfiguration({ force: true })).not.toThrow()
+  })
+
+  // Lo que se relaja son los requisitos del entorno real, no la seguridad del
+  // transporte, la longitud de los secretos ni el aislamiento de la base.
+  it("keeps every transport and secret guarantee", () => {
+    stubValidProductionEnvironment()
+    vi.stubEnv("APP_ENV", "staging")
+    vi.stubEnv("DATABASE_URL", "postgresql://app:secret@localhost:5432/app")
+    vi.stubEnv("AUTH_SECRET", "corto")
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://staging.fdnda.pe")
+    expect(() => assertProductionConfiguration({ force: true })).toThrow(
+      /32 caracteres.*localhost.*sslmode.*dominio público HTTPS/
+    )
+  })
+
+  it("rejects an unsupported payments mode", () => {
+    stubValidProductionEnvironment()
+    vi.stubEnv("APP_ENV", "staging")
+    vi.stubEnv("PAYMENTS_MODE", "gratis")
+    expect(() => assertProductionConfiguration({ force: true })).toThrow(
+      /PAYMENTS_MODE debe ser izipay o mock/
     )
   })
 })

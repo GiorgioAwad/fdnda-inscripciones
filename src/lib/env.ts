@@ -12,6 +12,31 @@ function isProductionRuntime() {
   )
 }
 
+export type DeploymentTier = "production" | "staging"
+
+/**
+ * Nivel del despliegue. En plataformas serverless `NODE_ENV` siempre vale
+ * "production", así que no distingue el entorno real del de pruebas: hace falta
+ * declararlo.
+ *
+ * Solo el valor exacto "staging" relaja los controles. Cualquier otro valor, y
+ * también su ausencia, se tratan como producción: olvidar la variable da el
+ * comportamiento estricto, nunca el permisivo.
+ */
+export function getDeploymentTier(): DeploymentTier {
+  return process.env.APP_ENV === "staging" ? "staging" : "production"
+}
+
+/** Identifica contra qué base apunta el proceso, sin revelar credenciales. */
+export function describeDatabaseTarget(): string {
+  try {
+    const url = new URL(process.env.DATABASE_URL || "")
+    return `${url.hostname}${url.pathname}`
+  } catch {
+    return "desconocida"
+  }
+}
+
 function hasMinimumLength(value: string | undefined, minimum: number) {
   return Boolean(value && value.length >= minimum)
 }
@@ -20,6 +45,9 @@ export function assertProductionConfiguration(options?: { force?: boolean }): vo
   if (!options?.force && !isProductionRuntime()) return
 
   const problems: string[] = []
+  const isStaging = getDeploymentTier() === "staging"
+  const paymentsMode = process.env.PAYMENTS_MODE
+
   // DIRECT_DATABASE_URL no está aquí a propósito: solo la usan las migraciones
   // (prisma.config.ts), nunca el runtime. Exigirla obligaría a cargar en el
   // hosting las credenciales del rol con permisos de DDL, y eso anularía la
@@ -28,24 +56,35 @@ export function assertProductionConfiguration(options?: { force?: boolean }): vo
     "DATABASE_URL",
     "AUTH_SECRET",
     "AUTH_TRUST_HOST",
-    "IZIPAY_MERCHANT_CODE",
-    "IZIPAY_API_KEY",
-    "IZIPAY_HASH_KEY",
-    "IZIPAY_PUBLIC_KEY",
-    "IZIPAY_ENDPOINT",
     "NEXT_PUBLIC_APP_URL",
     "MAINTENANCE_SECRET",
     "IP_HASH_SECRET",
     "PRIVACY_CONTACT_EMAIL",
-    "PERSONAL_DATA_BANK_REGISTRATION_CODE",
     "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY",
-  ] as const
+    // El registro del banco de datos personales ampara el tratamiento real de
+    // datos de titulares; un entorno de pruebas con datos ficticios no lo tiene.
+    ...(isStaging ? [] : ["PERSONAL_DATA_BANK_REGISTRATION_CODE"]),
+    // Las credenciales de la pasarela solo hacen falta si se va a cobrar.
+    ...(paymentsMode === "izipay"
+      ? [
+          "IZIPAY_MERCHANT_CODE",
+          "IZIPAY_API_KEY",
+          "IZIPAY_HASH_KEY",
+          "IZIPAY_PUBLIC_KEY",
+          "IZIPAY_ENDPOINT",
+        ]
+      : []),
+  ]
 
   for (const name of required) {
     if (!process.env[name]?.trim()) problems.push(`${name} no está definido`)
   }
 
-  if (process.env.PAYMENTS_MODE !== "izipay") {
+  if (isStaging) {
+    if (paymentsMode !== "izipay" && paymentsMode !== "mock") {
+      problems.push("PAYMENTS_MODE debe ser izipay o mock")
+    }
+  } else if (paymentsMode !== "izipay") {
     problems.push("PAYMENTS_MODE debe ser izipay")
   }
   if (!hasMinimumLength(process.env.AUTH_SECRET, 32)) {
@@ -88,9 +127,15 @@ export function assertProductionConfiguration(options?: { force?: boolean }): vo
     }
   }
 
-  const endpoint = process.env.IZIPAY_ENDPOINT || ""
-  if (!endpoint.startsWith("https://") || endpoint.toLowerCase().includes("sandbox")) {
-    problems.push("IZIPAY_ENDPOINT debe ser HTTPS de producción, no sandbox")
+  // El sandbox de Izipay solo se admite en staging. En producción cobrar contra
+  // el sandbox aceptaría inscripciones reales sin cobro real.
+  if (paymentsMode === "izipay") {
+    const endpoint = process.env.IZIPAY_ENDPOINT || ""
+    if (!endpoint.startsWith("https://")) {
+      problems.push("IZIPAY_ENDPOINT debe ser HTTPS")
+    } else if (!isStaging && endpoint.toLowerCase().includes("sandbox")) {
+      problems.push("IZIPAY_ENDPOINT debe ser HTTPS de producción, no sandbox")
+    }
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL

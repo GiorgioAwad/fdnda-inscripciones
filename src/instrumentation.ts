@@ -2,8 +2,23 @@ import type { Instrumentation } from "next"
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { assertProductionConfiguration } = await import("@/lib/env")
+    const { assertProductionConfiguration, getDeploymentTier, describeDatabaseTarget } =
+      await import("@/lib/env")
     assertProductionConfiguration()
+
+    // Primera línea de log de cada instancia. Deja a la vista el nivel del
+    // despliegue junto a la base que va a usar: un staging con pagos de prueba
+    // apuntando por error a la base real se detecta aquí y no tras el incidente.
+    console.log(
+      JSON.stringify({
+        level: "info",
+        type: "deployment_started",
+        tier: getDeploymentTier(),
+        paymentsMode: process.env.PAYMENTS_MODE,
+        database: describeDatabaseTarget(),
+        startedAt: new Date().toISOString(),
+      })
+    )
   }
 }
 
