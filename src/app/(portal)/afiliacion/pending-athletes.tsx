@@ -6,7 +6,18 @@ import { toast } from "sonner"
 import { ShoppingBag } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AFFILIATION_STATE_BADGE, Badge } from "@/components/ui/badge"
-import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table"
+import {
+  Table,
+  TableCard,
+  TableCards,
+  TableContainer,
+  TableField,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from "@/components/ui/table"
 import { DISCIPLINES, type DisciplineValue } from "@/lib/disciplines"
 import { cn, formatMoney } from "@/lib/utils"
 import { addAffiliationsAction } from "./actions"
@@ -138,30 +149,101 @@ export function PendingAthletes({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-surface bg-fdnda-surface px-4 py-3">
-        <p className="text-sm text-fdnda-muted">
-          Seleccionadas: <strong className="text-fdnda-ink">{selectedRows.length}</strong> ·
-          Total <strong className="text-fdnda-navy">{formatMoney(selectedTotal)}</strong>
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-surface border border-fdnda-border bg-fdnda-surface px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          {/* «Seleccionar todas» vive aquí y no en la cabecera de la tabla: en
+              móvil la tabla se sustituye por tarjetas, y el control tiene que
+              existir una sola vez en la página, no uno por vista. */}
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-semibold text-fdnda-ink">
+            <input
+              type="checkbox"
+              className="h-5 w-5 accent-fdnda-navy"
+              checked={allSelected}
+              disabled={selectable.length === 0}
+              onChange={toggleAll}
+            />
+            Seleccionar todas las visibles
+          </label>
+          <p className="text-sm text-fdnda-muted">
+            Seleccionadas: <strong className="num text-fdnda-ink">{selectedRows.length}</strong>{" "}
+            · Total <strong className="num text-fdnda-navy">{formatMoney(selectedTotal)}</strong>
+          </p>
+        </div>
         <Button onClick={handleAdd} loading={isPending} disabled={selectedRows.length === 0}>
           <ShoppingBag className="h-4 w-4" aria-hidden="true" />
           Agregar al carrito de afiliación
         </Button>
       </div>
 
-      <TableContainer>
+      {/* En móvil el checkbox estaba en la primera columna y la cuota en la
+          octava: seleccionar obligaba a ir y volver. Aquí el área de selección
+          es la tarjeta entera. */}
+      <TableCards>
+        {visible.map((row) => {
+          const badge =
+            AFFILIATION_STATE_BADGE[row.state] ?? AFFILIATION_STATE_BADGE.SIN_AFILIAR
+          const locked = row.inCart || row.awaitingPayment
+          const style = DISCIPLINES[row.discipline]
+
+          return (
+            <TableCard
+              key={keyOf(row)}
+              lanes={[row.discipline]}
+              title={
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-fdnda-navy"
+                    checked={selected.has(keyOf(row))}
+                    disabled={locked}
+                    onChange={() => toggle(row)}
+                  />
+                  <span>{row.fullName}</span>
+                </label>
+              }
+              subtitle={
+                <span className="ml-7 block">
+                  {style.short} · <span className="num">{row.docLabel}</span>
+                </span>
+              }
+              badges={
+                row.inCart ? (
+                  <Badge variant="info">En el carrito</Badge>
+                ) : row.awaitingPayment ? (
+                  <Badge variant="warning">Orden en curso</Badge>
+                ) : (
+                  <Badge variant={badge.variant}>{badge.label}</Badge>
+                )
+              }
+            >
+              <TableField
+                label="F. nacimiento"
+                value={<span className="num">{row.birthDateLabel}</span>}
+              />
+              <TableField label="Categoría" value={row.categoryLabel} />
+              <TableField
+                label="Situación"
+                value={
+                  row.previousSeasonYear
+                    ? `Reafiliación (última: ${row.previousSeasonYear})`
+                    : "Nuevo en el club"
+                }
+              />
+              <TableField
+                label={`Cuota ${seasonYear}`}
+                value={<span className="num font-semibold">{formatMoney(row.fee)}</span>}
+              />
+            </TableCard>
+          )
+        })}
+      </TableCards>
+
+      <TableContainer className="hidden md:block">
         <Table>
           <THead>
             <TR>
               <TH className="w-12">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5 accent-fdnda-navy"
-                  checked={allSelected}
-                  disabled={selectable.length === 0}
-                  onChange={toggleAll}
-                  aria-label="Seleccionar todas las afiliaciones visibles"
-                />
+                <span className="sr-only">Seleccionar</span>
               </TH>
               <TH>Deportista</TH>
               <TH>Disciplina</TH>

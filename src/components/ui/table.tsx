@@ -93,3 +93,86 @@ export function TH({ className, ...props }: React.ThHTMLAttributes<HTMLTableCell
 export function TD({ className, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return <td className={cn("px-4 py-3.5 text-fdnda-ink", className)} {...props} />
 }
+
+/**
+ * Variante de tarjetas para las tablas de 8 o más columnas.
+ *
+ * `TableContainer` resuelve el desbordamiento con scroll horizontal, pero eso
+ * en un teléfono de 390px significa recorrer dos pantallas y media para llegar
+ * a la última columna —que es justo donde viven las acciones—. Bajo `md:` la
+ * tabla se oculta y estas primitivas presentan las MISMAS filas apiladas.
+ *
+ * Se aplica solo a las tablas que no cubre la suite E2E: dos árboles visibles
+ * a la vez romperían el modo estricto de Playwright.
+ */
+export function TableCards({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLUListElement>) {
+  return <ul className={cn("space-y-3 md:hidden", className)} {...props} />
+}
+
+export function TableCard({
+  lanes,
+  title,
+  subtitle,
+  badges,
+  actions,
+  children,
+  className,
+}: {
+  lanes?: readonly string[]
+  title: React.ReactNode
+  subtitle?: React.ReactNode
+  badges?: React.ReactNode
+  actions?: React.ReactNode
+  children?: React.ReactNode
+  className?: string
+}) {
+  const banded = Boolean(lanes?.length)
+  return (
+    <li
+      className={cn(
+        "relative overflow-hidden rounded-surface border border-fdnda-border bg-white p-4 shadow-raised",
+        banded && "pt-5",
+        className
+      )}
+    >
+      {banded ? <LaneBand disciplines={lanes!} /> : null}
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+        <div className="min-w-0">
+          <p className="font-heading text-base font-bold text-fdnda-navy">{title}</p>
+          {subtitle ? (
+            <p className="text-xs text-fdnda-muted">{subtitle}</p>
+          ) : null}
+        </div>
+        {badges ? <div className="flex flex-wrap gap-1.5">{badges}</div> : null}
+      </div>
+      {children ? (
+        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5">{children}</dl>
+      ) : null}
+      {actions ? (
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-fdnda-border pt-3">
+          {actions}
+        </div>
+      ) : null}
+    </li>
+  )
+}
+
+export function TableField({
+  label,
+  value,
+  wide = false,
+}: {
+  label: string
+  value: React.ReactNode
+  wide?: boolean
+}) {
+  return (
+    <div className={cn("min-w-0", wide && "col-span-2")}>
+      <dt className="text-eyebrow uppercase text-fdnda-muted">{label}</dt>
+      <dd className="mt-0.5 text-sm text-fdnda-ink">{value}</dd>
+    </div>
+  )
+}

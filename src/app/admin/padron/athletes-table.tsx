@@ -7,7 +7,18 @@ import { Button } from "@/components/ui/button"
 import { Input, Label, Select } from "@/components/ui/input"
 import { AFFILIATION_STATE_BADGE, Badge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
-import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table"
+import {
+  Table,
+  TableCard,
+  TableCards,
+  TableContainer,
+  TableField,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from "@/components/ui/table"
 import {
   DISCIPLINES,
   DISCIPLINE_VALUES,
@@ -57,7 +68,89 @@ export function AthletesTable({
 
   return (
     <>
-      <TableContainer>
+      {/* Nueve columnas no caben en un teléfono: en móvil la misma fila se
+          presenta apilada, con las acciones al alcance en vez de en la última
+          columna a la derecha. */}
+      <TableCards>
+        {athletes.length === 0 ? (
+          <li className="rounded-surface border border-fdnda-border bg-white p-6 text-center text-sm text-fdnda-muted">
+            No se encontraron deportistas. Importa el padrón con Excel.
+          </li>
+        ) : (
+          athletes.map((athlete) => (
+            <TableCard
+              key={athlete.id}
+              lanes={athlete.affiliationStates.map((entry) => entry.discipline)}
+              title={`${athlete.lastNames}, ${athlete.firstNames}`}
+              subtitle={
+                <>
+                  {athlete.docType} <span className="num">{athlete.docNumber}</span>
+                </>
+              }
+              badges={
+                <Badge variant={athlete.isActive ? "success" : "danger"}>
+                  {athlete.isActive ? "Activo" : "Inactivo"}
+                </Badge>
+              }
+              actions={
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setEditing(athlete)}>
+                    <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Editar
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      startTransition(async () => {
+                        const r = await toggleAthleteActive(athlete.id)
+                        if (!r.success) toast.error(r.error)
+                      })
+                    }
+                  >
+                    {athlete.isActive ? "Desactivar" : "Activar"}
+                  </Button>
+                </>
+              }
+            >
+              <TableField
+                label="Nacimiento"
+                value={
+                  <span className="num">
+                    {athlete.birthDateISO.split("-").reverse().join("/")}
+                  </span>
+                }
+              />
+              <TableField label="Sexo" value={SEX_LABELS[athlete.sex]} />
+              <TableField label="Categoría" value={athlete.categoryLabel} />
+              <TableField label="Club" value={athlete.clubName} />
+              <TableField
+                wide
+                label="Afiliación"
+                value={
+                  athlete.affiliationStates.length === 0 ? (
+                    "Sin disciplinas"
+                  ) : (
+                    <span className="flex flex-wrap gap-1.5">
+                      {athlete.affiliationStates.map((entry) => {
+                        const badge =
+                          AFFILIATION_STATE_BADGE[entry.state] ??
+                          AFFILIATION_STATE_BADGE.SIN_AFILIAR
+                        return (
+                          <Badge key={entry.discipline} variant={badge.variant}>
+                            {DISCIPLINES[entry.discipline].short} · {badge.label}
+                          </Badge>
+                        )
+                      })}
+                    </span>
+                  )
+                }
+              />
+            </TableCard>
+          ))
+        )}
+      </TableCards>
+
+      <TableContainer className="hidden md:block">
         <Table>
           <THead>
             <TR>
@@ -128,6 +221,7 @@ export function AthletesTable({
                       <Button
                         variant="outline"
                         size="sm"
+                        aria-label={`Editar a ${athlete.lastNames}, ${athlete.firstNames}`}
                         onClick={() => setEditing(athlete)}
                       >
                         <Pencil className="h-3.5 w-3.5" />

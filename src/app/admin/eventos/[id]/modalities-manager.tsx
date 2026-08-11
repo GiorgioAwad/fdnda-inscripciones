@@ -7,7 +7,18 @@ import { Button } from "@/components/ui/button"
 import { Input, Label, Select, Textarea } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
-import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table"
+import {
+  Table,
+  TableCard,
+  TableCards,
+  TableContainer,
+  TableField,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from "@/components/ui/table"
 import { DISCIPLINE_VALUES, DISCIPLINES } from "@/lib/disciplines"
 import {
   birthYearForMaxAge,
@@ -219,7 +230,96 @@ export function ModalitiesManager({
         </div>
       </div>
 
-      <TableContainer>
+      {/* Diez columnas y tres acciones por fila: en un teléfono las acciones
+          quedaban en la columna más lejana. En móvil la misma prueba se
+          presenta apilada y con los botones al pie. */}
+      <TableCards>
+        {modalities.length === 0 ? (
+          <li className="rounded-surface border border-fdnda-border bg-white p-6 text-center text-sm text-fdnda-muted">
+            Sin pruebas. Usa «Nueva prueba» o el generador masivo.
+          </li>
+        ) : (
+          modalities.map((m) => (
+            <TableCard
+              key={m.id}
+              lanes={[m.discipline]}
+              className={!m.isActive ? "opacity-60" : undefined}
+              title={m.name}
+              subtitle={m.category || undefined}
+              badges={
+                <Badge variant={m.isActive ? "success" : "neutral"}>
+                  {m.isActive ? "Activa" : "Inactiva"}
+                </Badge>
+              }
+              actions={
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setFormDiscipline(m.discipline)
+                      setMaxAge(
+                        seasonYear !== null && m.birthYearFrom !== null
+                          ? String(maxAgeForBirthYear(seasonYear, m.birthYearFrom))
+                          : ""
+                      )
+                      setEditing(m)
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Editar
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      startTransition(async () => {
+                        const r = await toggleModalityActive(m.id)
+                        if (!r.success) toast.error(r.error)
+                      })
+                    }
+                  >
+                    {m.isActive ? "Desactivar" : "Activar"}
+                  </Button>
+                </>
+              }
+            >
+              <TableField label="Sexo" value={SEX_RULE_LABELS[m.sexRule]} />
+              <TableField
+                label="Años nac."
+                value={
+                  <span className="num">
+                    {yearRangeLabel(m.birthYearFrom, m.birthYearTo, {
+                      ageRuleMode: disciplineConfigFor(disciplineConfigs, m.discipline)
+                        .ageRuleMode,
+                      seasonYear,
+                    })}
+                  </span>
+                }
+              />
+              <TableField
+                label="Integrantes"
+                value={teamSizeLabel(m.minAthletes, m.maxAthletes)}
+              />
+              <TableField
+                label="Precio"
+                value={<span className="num">{formatMoney(m.price)}</span>}
+              />
+              <TableField
+                wide
+                label="Inscritas"
+                value={
+                  <span className="num">
+                    {m.paidRegistrations} / {m.totalRegistrations}
+                    {m.capacity ? ` (cupo ${m.capacity})` : ""}
+                  </span>
+                }
+              />
+            </TableCard>
+          ))
+        )}
+      </TableCards>
+
+      <TableContainer className="hidden md:block">
         <Table>
           <THead>
             <TR>
@@ -287,6 +387,7 @@ export function ModalitiesManager({
                       <Button
                         variant="outline"
                         size="sm"
+                        aria-label={`Editar la prueba ${m.name}`}
                         onClick={() => {
                           setFormDiscipline(m.discipline)
                           // Recompone la N de «Sub-N» desde el año guardado.
@@ -298,7 +399,7 @@ export function ModalitiesManager({
                           setEditing(m)
                         }}
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                       </Button>
                       <Button
                         variant="ghost"

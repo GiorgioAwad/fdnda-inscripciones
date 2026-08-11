@@ -7,7 +7,18 @@ import { toast } from "sonner"
 import { BadgeCheck, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AFFILIATION_STATE_BADGE, Badge } from "@/components/ui/badge"
-import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table"
+import {
+  Table,
+  TableCard,
+  TableCards,
+  TableContainer,
+  TableField,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from "@/components/ui/table"
 import { DISCIPLINES, type DisciplineValue } from "@/lib/disciplines"
 import { formatDateOnly, formatMoney } from "@/lib/utils"
 import { createPendingClubAffiliation, markAffiliationPaid } from "./actions"
@@ -70,8 +81,124 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
   }
 
   return (
-    <TableContainer>
-      <Table className="min-w-[64rem]">
+    <>
+      {/* En móvil la tabla se sustituye por tarjetas: con diez columnas y un
+          ancho mínimo de 1.024px, un teléfono de 390px obligaba a recorrer dos
+          pantallas y media para llegar a las acciones. Aquí la unidad es el
+          club, no el par club-disciplina. */}
+      <TableCards>
+        {rows.map((row) => (
+          <TableCard
+            key={row.clubId}
+            lanes={row.disciplines.map((entry) => entry.discipline)}
+            title={row.clubName}
+            subtitle={<span className="num">{row.clubCode}</span>}
+            actions={
+              <Link
+                href={`/admin/padron?club=${row.clubId}`}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2.5 text-sm font-semibold text-fdnda-navy hover:bg-fdnda-sky/25"
+              >
+                <Users className="h-4 w-4" aria-hidden="true" />
+                Padrón
+              </Link>
+            }
+          >
+            {row.disciplines.length === 0 ? (
+              <TableField
+                wide
+                label="Disciplinas"
+                value="Sin disciplinas habilitadas en la temporada vigente."
+              />
+            ) : (
+              row.disciplines.map((entry) => {
+                const badge =
+                  AFFILIATION_STATE_BADGE[entry.clubState] ??
+                  AFFILIATION_STATE_BADGE.SIN_AFILIAR
+                const settled =
+                  entry.clubState === "ACTIVA" || entry.clubState === "POR_VENCER"
+                const style = DISCIPLINES[entry.discipline]
+                const Icon = style.icon
+
+                return (
+                  <div
+                    key={`${row.clubId}-${entry.discipline}`}
+                    className="col-span-2 rounded-control border border-fdnda-border p-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-fdnda-ink">
+                        <span
+                          className={`flex h-6 w-6 items-center justify-center rounded-chip text-white ${style.chip}`}
+                        >
+                          <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                        </span>
+                        {style.short}
+                      </span>
+                      <Badge variant={badge.variant}>{badge.label}</Badge>
+                    </div>
+                    <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
+                      <TableField
+                        label="Vigencia"
+                        value={
+                          entry.validToISO ? (
+                            <span className="num">
+                              {formatDateOnly(entry.validToISO)}
+                            </span>
+                          ) : (
+                            "—"
+                          )
+                        }
+                      />
+                      <TableField
+                        label="Cuota"
+                        value={
+                          entry.fee === null ? (
+                            "—"
+                          ) : (
+                            <span className="num">{formatMoney(entry.fee)}</span>
+                          )
+                        }
+                      />
+                      <TableField
+                        label="Deportistas"
+                        value={
+                          <span className="num">
+                            {entry.athletesActive}/{entry.athletesTotal}
+                          </span>
+                        }
+                      />
+                      <TableField
+                        label="Por regularizar"
+                        value={
+                          <span
+                            className={`num ${entry.athletesPending > 0 ? "font-bold text-fdnda-warning" : ""}`}
+                          >
+                            {entry.athletesPending}
+                          </span>
+                        }
+                      />
+                    </div>
+                    {settled ? null : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-3 w-full"
+                        disabled={isPending}
+                        onClick={() => handleMarkPaid(row, entry)}
+                      >
+                        <BadgeCheck className="h-4 w-4" aria-hidden="true" />
+                        {entry.affiliationId ? "Marcar pagada" : "Generar cuota"}
+                      </Button>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </TableCard>
+        ))}
+      </TableCards>
+
+      <TableContainer className="hidden md:block">
+        <Table className="min-w-[64rem]">
         <THead>
           <TR>
             <TH>Club</TH>
@@ -209,6 +336,7 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
           )}
         </TBody>
       </Table>
-    </TableContainer>
+      </TableContainer>
+    </>
   )
 }
