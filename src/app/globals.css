@@ -2,9 +2,15 @@
 
 /* Sistema visual FDNDA: los tonos adicionales son mezclas de la paleta oficial con blanco. */
 @theme inline {
-  --font-sans: "Segoe UI", Arial, sans-serif;
-  --font-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  --font-heading: var(--font-heading-family);
+  /* Tres roles, una familia. Las variables --font-plex-* las inyecta
+     next/font en <html> (ver app/layout.tsx). Antes --font-heading era la
+     MISMA cadena que --font-sans, así que la clase `font-heading`, usada en
+     32 sitios, no cambiaba absolutamente nada: la app no tenía voz. */
+  --font-sans: var(--font-plex-sans), "Segoe UI", Arial, sans-serif;
+  --font-heading: var(--font-plex-condensed), var(--font-plex-sans),
+    "Arial Narrow", sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", Consolas,
+    monospace;
 
   /* Cuatro radios y nada más. Antes estas variables vivían en :root sin generar
      ninguna utilidad, así que no gobernaban nada: los componentes mezclaban
@@ -127,6 +133,15 @@
   --text-display--line-height: 1.03;
   --text-display--letter-spacing: -0.035em;
   --text-display--font-weight: 700;
+
+  /* IBM Plex llega a 700 y no más: no existe el 800. Sin este mapeo, los 35
+     `font-extrabold` del producto los resolvería el navegador por su cuenta
+     sintetizando negrita, y `font-extrabold` dejaría de distinguirse de
+     `font-bold` — el aplanamiento empeoraría en vez de corregirse. Mapearlos
+     aquí lo hace explícito: la jerarquía la cargan la familia, el tamaño y la
+     caja, no un peso que no existe. */
+  --font-weight-extrabold: 700;
+  --font-weight-black: 700;
 }
 
 :root {
@@ -181,11 +196,6 @@
   --color-border-control: #cbd5e1;
   --color-text-primary: #102a43;
   --color-text-secondary: #52606d;
-  /* Stack del sistema: evita depender de una descarga durante build/runtime.
-     Los títulos se distinguen por peso (800) y tracking. Para volver a una
-     display propia basta autohospedarla y apuntar esta variable a ella. */
-  --font-heading-family: "Segoe UI", Arial, sans-serif;
-
   /* Elevación en tres pasos, derivada de rgb(2 55 125) —el azul institucional—
      y nunca de gris ni de negro: sobre un fondo azulado (#f5f8fb) una sombra
      neutra se lee sucia. Antes había una sola sombra en todo el sistema y
@@ -222,11 +232,34 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-h1,
-h2,
-h3,
-.font-heading {
-  font-family: var(--font-heading-family);
+/* Va DENTRO de @layer base a propósito. Antes estaba fuera de capas, y en CSS
+   lo no-encapado le gana a cualquier capa: esta regla pisaba a la utilidad
+   `font-heading` de Tailwind y a cualquier `font-*` puesta sobre un h1-h3.
+   Mientras las dos familias eran la misma cadena no se notaba; con una display
+   distinta, sí. Encapada, las utilidades vuelven a poder sobrescribirla. */
+@layer base {
+  h1,
+  h2,
+  h3,
+  .font-heading {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+}
+
+@layer components {
+  /* Toda cifra del producto: soles, documentos, años de nacimiento, códigos de
+     orden, número de revisión, contadores. El mono es más ancho que la
+     proporcional, así que 0.94em lo compensa y una tabla de 10 columnas no
+     crece. Va en em, de modo que compone con cualquier text-*. Sustituye a la
+     pareja `font-mono tabular-nums` repetida por el producto. */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.94em;
+    letter-spacing: -0.005em;
+  }
 }
 
 button,
