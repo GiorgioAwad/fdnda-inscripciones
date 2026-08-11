@@ -77,7 +77,42 @@ export default function RootLayout({
             este añadía un segundo pie apilado en toda ruta autenticada. El
             enlace a la política vive ahora en esos dos pies. */}
         {children}
-        <Toaster richColors closeButton position="top-center" />
+        {/* sonner traía su propio verde y su propio rojo, ajenos a la paleta:
+            era la única isla visual del producto, con 64 llamadas apuntándole.
+            Sus colores son custom properties, así que se sobrescriben en línea
+            —el estilo inline gana a la hoja que sonner inyecta por JS, sin
+            depender del orden de carga ni de !important—. El mapeo
+            success/error/warning/info ya coincide con los roles de badge.tsx,
+            de modo que ninguna de las 64 llamadas cambia. */}
+        <Toaster
+          richColors
+          closeButton
+          position="top-center"
+          style={
+            {
+              fontFamily: "var(--font-sans)",
+              "--border-radius": "var(--radius-control)",
+              "--normal-bg": "#ffffff",
+              "--normal-text": "var(--color-text-primary)",
+              "--normal-border": "var(--color-border)",
+              "--success-bg": "var(--color-success-soft)",
+              "--success-text": "var(--color-success)",
+              "--success-border": "var(--color-success-ring)",
+              "--error-bg": "var(--color-danger-soft)",
+              "--error-text": "var(--color-danger)",
+              "--error-border": "var(--color-danger-ring)",
+              "--warning-bg": "var(--color-warning-soft)",
+              "--warning-text": "var(--color-warning)",
+              "--warning-border": "var(--color-warning-ring)",
+              "--info-bg": "var(--color-info-soft)",
+              "--info-text": "var(--color-info)",
+              "--info-border": "var(--color-info-ring)",
+            } as React.CSSProperties
+          }
+          toastOptions={{
+            classNames: { title: "font-semibold!" },
+          }}
+        />
       </body>
     </html>
   );

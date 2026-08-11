@@ -62,7 +62,7 @@ export default async function PortalLayout({
     <div className="min-h-dvh bg-fdnda-surface text-fdnda-ink">
       <a
         href="#contenido-principal"
-        className="fixed left-4 top-4 z-50 -translate-y-24 rounded-control bg-fdnda-navy px-4 py-3 text-sm font-semibold text-white transition-transform focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-fdnda-turquoise"
+        className="fixed left-4 top-4 z-50 -translate-y-24 rounded-control bg-white px-4 py-3 text-sm font-semibold text-fdnda-navy-deep shadow-overlay transition-transform focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-fdnda-turquoise"
       >
         Saltar al contenido principal
       </a>
@@ -79,7 +79,7 @@ export default async function PortalLayout({
         affiliationCartCount={clubInCart + athletesInCart}
         pendingAffiliations={pendingAffiliations}
         signOutAction={
-          <SignOutButton className="justify-start text-fdnda-ink hover:bg-fdnda-sky/35 hover:text-fdnda-navy" />
+          <SignOutButton className="justify-start text-white/85 hover:bg-white/10 hover:text-white" />
         }
       />
 

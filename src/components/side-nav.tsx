@@ -41,22 +41,26 @@ function BrandIdentity({
       className="flex min-w-0 items-center gap-3 rounded-control focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-fdnda-turquoise"
       aria-label={homeLabel}
     >
-      <Image
-        src="/fdnda-logo.png"
-        alt="Logotipo de la FDNDA"
-        width={446}
-        height={559}
-        className="h-12 w-auto shrink-0"
-        priority
-      />
+      {/* El escudo necesita su placa blanca: el cromo es navy y el logotipo
+          lleva azul propio, así que sobre el fondo se perdería. */}
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-control bg-white p-1.5 shadow-raised">
+        <Image
+          src="/fdnda-logo.png"
+          alt="Logotipo de la FDNDA"
+          width={446}
+          height={559}
+          className="h-full w-auto"
+          priority
+        />
+      </span>
       <span className="min-w-0">
         <span
           id={titleId}
-          className="font-heading block truncate text-base font-bold leading-tight tracking-wide text-fdnda-navy"
+          className="font-heading block truncate text-base font-bold leading-tight tracking-[0.08em] text-white"
         >
           FDNDA
         </span>
-        <span className="block truncate text-xs font-semibold text-fdnda-turquoise-deep">
+        <span className="block truncate text-xs font-semibold text-fdnda-sky">
           {subtitle}
         </span>
       </span>
@@ -78,7 +82,7 @@ function NavLinks({
       {groups.map((group, index) => (
         <div key={group.title ?? `group-${index}`}>
           {group.title ? (
-            <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-fdnda-muted">
+            <p className="mb-1.5 px-3 text-eyebrow uppercase text-fdnda-sky/70">
               {group.title}
             </p>
           ) : null}
@@ -97,9 +101,11 @@ function NavLinks({
                   aria-current={active ? "page" : undefined}
                   className={cn(
                     "flex min-h-11 items-center gap-3 rounded-control px-3.5 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fdnda-turquoise",
+                    // Sobre cromo oscuro la relación se invierte: el elemento
+                    // activo es el claro, no el oscuro.
                     active
-                      ? "bg-fdnda-navy text-white"
-                      : "text-fdnda-ink hover:bg-fdnda-sky/35 hover:text-fdnda-navy"
+                      ? "bg-white text-fdnda-navy-deep shadow-raised"
+                      : "text-white/80 hover:bg-white/10 hover:text-white"
                   )}
                 >
                   <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
@@ -107,8 +113,8 @@ function NavLinks({
                   {link.badge ? (
                     <span
                       className={cn(
-                        "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold tabular-nums",
-                        active ? "bg-white text-fdnda-navy" : "bg-fdnda-red text-white"
+                        "num flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold",
+                        active ? "bg-fdnda-navy text-white" : "bg-fdnda-red text-white"
                       )}
                     >
                       {link.badge}
@@ -134,11 +140,11 @@ function AccountArea({
   signOutAction: ReactNode
 }) {
   return (
-    <div className="border-t border-fdnda-border px-4 py-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-fdnda-muted">
+    <div className="border-t border-white/15 px-4 py-4">
+      <p className="text-eyebrow uppercase text-fdnda-sky/70">
         {contextLabel ?? "Sesión activa"}
       </p>
-      <p className="mt-1 truncate text-sm font-semibold text-fdnda-navy">{userName}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-white">{userName}</p>
       <div className="mt-2 [&_button]:w-full">{signOutAction}</div>
     </div>
   )
@@ -226,7 +232,7 @@ export function SideNav({
 
   return (
     <>
-      <aside className="print-hidden fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-fdnda-border bg-white lg:flex">
+      <aside className="wave-field-soft print-hidden fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-fdnda-navy bg-fdnda-navy-deep lg:flex">
         <div className="px-5 py-5">
           <BrandIdentity
             homeHref={homeHref}
@@ -244,13 +250,13 @@ export function SideNav({
         />
       </aside>
 
-      <header className="print-hidden sticky top-0 z-30 flex min-h-16 items-center justify-between border-b border-fdnda-border bg-white px-4 py-2 lg:hidden">
+      <header className="wave-field-soft print-hidden sticky top-0 z-30 flex min-h-16 items-center justify-between border-b border-fdnda-navy bg-fdnda-navy-deep px-4 py-2 lg:hidden">
         <BrandIdentity homeHref={homeHref} subtitle={subtitle} homeLabel={homeLabel} />
         <button
           ref={menuButtonRef}
           type="button"
           onClick={() => setOpen(true)}
-          className="ml-3 inline-flex min-h-11 items-center gap-2 rounded-control px-3 text-sm font-semibold text-fdnda-navy transition-colors hover:bg-fdnda-sky/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fdnda-turquoise"
+          className="ml-3 inline-flex min-h-11 items-center gap-2 rounded-control px-3 text-sm font-semibold text-white transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fdnda-turquoise"
           aria-label={menuLabel}
           aria-expanded={open}
           aria-controls={drawerId}
@@ -264,7 +270,7 @@ export function SideNav({
         <div className="fixed inset-0 z-40 lg:hidden">
           <button
             type="button"
-            className="absolute inset-0 cursor-default bg-fdnda-navy/55"
+            className="absolute inset-0 cursor-default bg-fdnda-navy-deep/70"
             onClick={() => setOpen(false)}
             aria-label="Cerrar menú"
             tabIndex={-1}
@@ -275,9 +281,9 @@ export function SideNav({
             role="dialog"
             aria-modal="true"
             aria-labelledby={drawerTitleId}
-            className="absolute inset-y-0 left-0 flex w-[min(20rem,calc(100%-3rem))] flex-col bg-white"
+            className="wave-field-soft absolute inset-y-0 left-0 flex w-[min(20rem,calc(100%-3rem))] flex-col bg-fdnda-navy-deep shadow-overlay"
           >
-            <div className="flex min-h-20 items-center justify-between gap-3 border-b border-fdnda-border px-5 py-3">
+            <div className="flex min-h-20 items-center justify-between gap-3 border-b border-white/15 px-5 py-3">
               <BrandIdentity
                 homeHref={homeHref}
                 subtitle={subtitle}
@@ -288,7 +294,7 @@ export function SideNav({
                 ref={closeButtonRef}
                 type="button"
                 onClick={() => setOpen(false)}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fdnda-navy transition-colors hover:bg-fdnda-sky/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fdnda-turquoise"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-white transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fdnda-turquoise"
                 aria-label="Cerrar menú"
               >
                 <X className="h-5 w-5" aria-hidden="true" />
