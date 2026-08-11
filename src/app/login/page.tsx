@@ -98,7 +98,7 @@ export default async function LoginPage({
             Ingresa con las credenciales asignadas a tu club.
           </p>
           {passwordChanged === "1" ? (
-            <p className="mt-4 rounded-surface border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">
+            <p className="mt-4 rounded-surface border border-fdnda-success-ring bg-fdnda-success-soft p-3 text-sm font-semibold text-fdnda-success">
               Contraseña actualizada. Inicia sesión nuevamente.
             </p>
           ) : null}

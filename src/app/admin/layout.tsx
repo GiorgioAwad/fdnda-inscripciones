@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
 import { FEDERATION_NAME } from "@/lib/brand"
@@ -39,9 +40,15 @@ export default async function AdminLayout({
           {children}
         </main>
 
-        <footer className="border-t border-fdnda-border bg-white">
-          <div className="mx-auto w-full max-w-6xl px-4 py-4 text-xs text-fdnda-muted sm:px-6 lg:px-8">
-            {FEDERATION_NAME} · Administración
+        <footer className="print-hidden border-t border-fdnda-border bg-white">
+          <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-4 text-xs text-fdnda-muted sm:px-6 lg:px-8">
+            <span>{FEDERATION_NAME} · Administración</span>
+            <Link
+              href="/privacidad"
+              className="font-semibold text-fdnda-navy underline underline-offset-2"
+            >
+              Política de Privacidad
+            </Link>
           </div>
         </footer>
       </div>

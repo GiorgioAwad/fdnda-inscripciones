@@ -71,7 +71,7 @@ export default async function OrdenesAdminPage({
       />
 
       {reviewCount > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-fdnda-warning-ring bg-fdnda-warning-soft p-4 text-sm text-fdnda-warning">
           <span className="flex items-center gap-2 font-semibold">
             <AlertTriangle className="h-5 w-5" aria-hidden="true" />
             {reviewCount} orden(es) vencidas tienen un intento de pago y requieren

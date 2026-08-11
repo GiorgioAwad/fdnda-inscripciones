@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
-import Link from "next/link";
 import { FEDERATION_SHORT } from "@/lib/brand";
 import "./globals.css";
 
@@ -39,12 +38,10 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col bg-fdnda-surface text-fdnda-ink">
+        {/* Sin pie aquí: los layouts de zona (portal y admin) pintan el suyo, y
+            este añadía un segundo pie apilado en toda ruta autenticada. El
+            enlace a la política vive ahora en esos dos pies. */}
         {children}
-        <footer className="border-t border-fdnda-border bg-white px-4 py-4 text-center text-xs text-fdnda-muted">
-          <Link href="/privacidad" className="font-semibold text-fdnda-navy underline">
-            Política de Privacidad
-          </Link>
-        </footer>
         <Toaster richColors closeButton position="top-center" />
       </body>
     </html>

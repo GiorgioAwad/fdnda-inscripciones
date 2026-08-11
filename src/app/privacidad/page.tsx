@@ -12,7 +12,7 @@ export default function PrivacyPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6">
-      <article className="space-y-6 rounded-card border border-fdnda-border bg-white p-6 shadow-card sm:p-8">
+      <article className="space-y-6 rounded-surface border border-fdnda-border bg-white p-6 shadow-raised sm:p-8">
         <div>
           <p className="text-sm font-semibold text-fdnda-turquoise-deep">FDNDA</p>
           <h1 className="mt-1 text-3xl font-bold text-fdnda-navy">
