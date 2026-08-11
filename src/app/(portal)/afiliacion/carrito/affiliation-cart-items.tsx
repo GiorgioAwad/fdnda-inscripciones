@@ -70,7 +70,7 @@ export function AffiliationCartItems({
                 <Icon className="h-4 w-4" aria-hidden="true" />
                 {style.label}
               </h2>
-              <p className="text-sm font-bold tabular-nums">{formatMoney(subtotal)}</p>
+              <p className="num text-sm font-bold">{formatMoney(subtotal)}</p>
             </div>
             <ul className="divide-y divide-fdnda-border">
               {groupItems.map((item) => (
@@ -125,7 +125,7 @@ export function AffiliationCartItems({
               <p className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
                 Total a pagar
               </p>
-              <p className="text-3xl font-extrabold tabular-nums tracking-tight text-fdnda-navy">
+              <p className="num text-3xl font-extrabold tracking-tight text-fdnda-navy">
                 {totalLabel}
               </p>
             </div>

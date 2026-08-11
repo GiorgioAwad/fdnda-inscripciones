@@ -148,7 +148,7 @@ export default async function AfiliacionPage({
             >
               {item.label}
               {count > 0 ? (
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-fdnda-red px-1.5 text-[11px] font-bold tabular-nums text-white">
+                <span className="num flex h-5 min-w-5 items-center justify-center rounded-full bg-fdnda-red px-1.5 text-[11px] font-bold text-white">
                   {count}
                 </span>
               ) : null}
@@ -217,7 +217,7 @@ export default async function AfiliacionPage({
                       </div>
                       <div className="flex justify-between gap-3">
                         <dt className="text-fdnda-muted">Deportistas vigentes</dt>
-                        <dd className="font-bold tabular-nums text-fdnda-navy">
+                        <dd className="num font-bold text-fdnda-navy">
                           {row.counts.active} / {row.counts.total}
                         </dd>
                       </div>
@@ -398,7 +398,7 @@ export default async function AfiliacionPage({
                           <TD>
                             {row.athlete.lastNames}, {row.athlete.firstNames}
                           </TD>
-                          <TD className="font-mono text-xs">
+                          <TD className="num text-xs">
                             {row.athlete.docType} {row.athlete.docNumber}
                           </TD>
                           <TD className="text-xs">

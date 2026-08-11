@@ -131,7 +131,7 @@ export default async function PagosPage({
                 const kindBadge = ORDER_KIND_BADGE[order.kind]
                 return (
                   <TR key={order.id}>
-                    <TD className="font-mono text-xs">
+                    <TD className="num text-xs">
                       <span className="flex flex-wrap items-center gap-2">
                         {order.code}
                         {order.isLegacy ? <Badge variant="warning">Legado</Badge> : null}
@@ -141,7 +141,7 @@ export default async function PagosPage({
                       <Badge variant={kindBadge.variant}>{kindBadge.label}</Badge>
                     </TD>
                     <TD className="text-xs">{formatDateTimeLima(order.createdAt)}</TD>
-                    <TD className="text-right tabular-nums">{order._count.items}</TD>
+                    <TD className="num text-right">{order._count.items}</TD>
                     <TD className="text-right font-extrabold">
                       {formatMoney(order.totalAmount)}
                     </TD>

@@ -136,7 +136,7 @@ export default async function DeportistasPage({
                 )}
               >
                 {item.label}
-                <span className="text-xs tabular-nums opacity-70">{item.count}</span>
+                <span className="num text-xs opacity-70">{item.count}</span>
               </Link>
             )
           })}
@@ -179,14 +179,14 @@ export default async function DeportistasPage({
                 const disciplines = athleteDisciplines(row.disciplines)
                 return (
                   <TR key={row.id}>
-                    <TD className="text-xs tabular-nums text-fdnda-muted">
+                    <TD className="num text-xs text-fdnda-muted">
                       {(currentPage - 1) * PAGE_SIZE + index + 1}
                     </TD>
                     <TD className="font-bold text-fdnda-ink">
                       {row.lastNames}, {row.firstNames}
                     </TD>
                     <TD className="text-xs">{formatDateOnly(row.birthDate)}</TD>
-                    <TD className="font-mono text-xs">
+                    <TD className="num text-xs">
                       {row.docType} {row.docNumber}
                     </TD>
                     <TD className="text-xs">{SEX_LABELS[row.sex]}</TD>

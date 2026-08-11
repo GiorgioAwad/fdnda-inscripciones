@@ -138,7 +138,7 @@ export function PendingAthletes({
                 )}
               >
                 {value === "ALL" ? "Todas" : DISCIPLINES[value].label}
-                <span className="text-xs tabular-nums opacity-70">
+                <span className="num text-xs opacity-70">
                   {value === "ALL"
                     ? rows.length
                     : rows.filter((row) => row.discipline === value).length}
@@ -275,7 +275,7 @@ export function PendingAthletes({
                     />
                   </TD>
                   <TD className="font-bold text-fdnda-ink">
-                    <span className="mr-2 text-xs font-normal tabular-nums text-fdnda-muted">
+                    <span className="num mr-2 text-xs font-normal text-fdnda-muted">
                       {index + 1}
                     </span>
                     {row.fullName}
@@ -290,7 +290,7 @@ export function PendingAthletes({
                       {style.short}
                     </span>
                   </TD>
-                  <TD className="font-mono text-xs">{row.docLabel}</TD>
+                  <TD className="num text-xs">{row.docLabel}</TD>
                   <TD className="text-xs">{row.birthDateLabel}</TD>
                   <TD className="text-xs">{row.categoryLabel}</TD>
                   <TD>

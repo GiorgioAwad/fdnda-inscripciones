@@ -171,7 +171,7 @@ export function OrderSummaryView({
                               </span>
                             ))}
                         </span>
-                        <span className="text-fdnda-muted tabular-nums">
+                        <span className="num text-fdnda-muted">
                           {formatMoney(entry.amount)}
                         </span>
                       </li>

@@ -400,7 +400,7 @@ export function SeasonsManager({
                     </ul>
                   )}
                 </TD>
-                <TD className="text-right tabular-nums">
+                <TD className="num text-right">
                   {season.clubAffiliations} clubes · {season.athleteAffiliations} deportistas
                 </TD>
                 <TD>

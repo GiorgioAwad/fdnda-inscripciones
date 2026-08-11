@@ -162,7 +162,7 @@ export function ImportWizard() {
                     </TD>
                     <TD>
                       <span className="text-xs text-fdnda-muted">{row.docType}</span>{" "}
-                      <span className="font-mono">{row.docNumber}</span>
+                      <span className="num">{row.docNumber}</span>
                     </TD>
                     <TD>
                       {row.birthDateISO

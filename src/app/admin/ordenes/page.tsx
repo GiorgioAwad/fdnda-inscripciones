@@ -112,7 +112,7 @@ export default async function OrdenesAdminPage({
                 const badge = ORDER_STATUS_BADGE[order.status]
                 return (
                   <TR key={order.id}>
-                    <TD className="font-mono text-xs">
+                    <TD className="num text-xs">
                       <span className="flex flex-wrap items-center gap-2">
                         {order.code}
                         {order.isLegacy ? <Badge variant="warning">Legado</Badge> : null}
@@ -125,7 +125,7 @@ export default async function OrdenesAdminPage({
                       {formatMoney(order.totalAmount)}
                     </TD>
                     <TD>{order.provider ?? "—"}</TD>
-                    <TD className="max-w-40 truncate font-mono text-xs">
+                    <TD className="num max-w-40 truncate text-xs">
                       {order.providerRef ?? "—"}
                     </TD>
                     <TD>

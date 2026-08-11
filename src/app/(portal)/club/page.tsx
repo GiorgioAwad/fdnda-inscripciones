@@ -51,7 +51,7 @@ export default async function ClubPage() {
               <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
                 Código
               </dt>
-              <dd className="mt-1 font-mono font-bold text-fdnda-ink">{club.code}</dd>
+              <dd className="num mt-1 font-bold text-fdnda-ink">{club.code}</dd>
             </div>
             <div>
               <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">

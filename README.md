@@ -288,13 +288,107 @@ modo de cobro y la cuota: cambiarlos alteraría lo que un club creyó comprar.
 
 ## Agregar una disciplina
 
-1. `src/lib/disciplines.ts` — etiqueta, icono y colores (fuente única: de ahí
-   leen menús, chips, formularios, reportes y los `z.enum`).
+1. `src/lib/disciplines.ts` — etiqueta, icono y colores, incluido `lane` (fuente
+   única: de ahí leen menús, chips, formularios, reportes y los `z.enum`).
 2. `prisma/schema.prisma` — valor nuevo en `enum Discipline`, en **su propia
    migración**: PostgreSQL no deja usar un valor de enum en la misma
    transacción en que se agregó.
 3. `src/lib/event-presets.ts` — cómo cobra, cómo mide edades y qué pruebas trae.
 4. Fijarle la cuota del año en `/admin/temporadas`.
+
+## Sistema visual
+
+Todo vive en `src/app/globals.css`, con tres bloques que no significan lo mismo:
+
+| Bloque | Para qué |
+|---|---|
+| `:root` | El **valor** literal: hex, rem, la cadena del `box-shadow`. Punto único de cambio. |
+| `@theme inline` | El **alias** que genera la utilidad de Tailwind apuntando a `:root`. Cambiar el valor no obliga a recompilar el alias. |
+| `@theme` (sin `inline`) | Sobrescribe la **escala nativa** de Tailwind (`--text-*`, `--font-weight-*`). Aquí no queremos indirección. |
+
+La regla que mantiene esto sano: **lo que es escala se cambia en el token; lo
+que es rol, en el componente. Nunca al revés.** Subir `--text-xs` un punto
+corrige 188 usos sin tocar un `.tsx`; cambiar 188 clases a mano es cómo se
+rompe.
+
+### El andarivel
+
+La firma del producto es una franja horizontal en el borde superior de toda
+superficie que carga datos, y **su color codifica la disciplina**: navy es
+Clavados, rojo Natación Artística, turquesa Polo Acuático — la misma asignación
+que ya usaban el chip y el acento. Si el contenido toca varias, se reparte en
+segmentos en el orden canónico de `DISCIPLINE_VALUES`, para que dos pantallas
+distintas nunca pinten el mismo par al revés.
+
+**Sin disciplina, sin franja.** `LaneBand` devuelve `null` con la lista vacía, y
+eso es deliberado: la decoración es información, y una franja que no significa
+nada es ruido.
+
+Se pasa como prop opcional a `Card`, `TableContainer`, `StatCard` y
+`PageHeader`. Todas son aditivas: sin la prop, el DOM es el de siempre.
+
+En `TableContainer` la franja vive en un envoltorio y no dentro del elemento que
+hace scroll; si se mueve, se desplaza con la tabla y desaparece de la vista.
+`role="region"`, `tabIndex` y `aria-label` tienen que quedarse en el que
+scrollea o el scroll deja de ser alcanzable por teclado.
+
+### Elevación, radios y escala
+
+Tres pasos de sombra con rol, derivados del azul institucional y nunca de gris:
+sobre un fondo azulado una sombra neutra se lee sucia.
+
+- `shadow-raised` — tarjetas en reposo, botones sólidos, `StatCard`.
+- `shadow-floating` — hover de tarjeta enlazada, barras sticky.
+- `shadow-overlay` — diálogo y cajón móvil.
+
+Cuatro radios (`chip`, `control`, `surface`, `panel`) y una escala tipográfica
+con tres peldaños propios: `text-eyebrow` (sustituye la cadena `text-xs
+font-bold uppercase tracking-wider`), `text-metric` (el número héroe) y
+`text-display` (el titular del login).
+
+### Tipografía y cifras
+
+Superfamilia **IBM Plex** en tres roles: Sans para cuerpo, Sans Condensed para
+títulos y cabeceras de tabla, Mono para toda cifra. La condensada no es gusto:
+devuelve ~11% de ancho a las tablas de 9 y 10 columnas.
+
+Se carga con `next/font/google`, que **descarga en build y sirve desde
+`/_next/static/media/`**: no hay petición a Google en runtime y por eso respeta
+la CSP `font-src 'self' data:`. El build necesita red hacia `fonts.gstatic.com`;
+si algún día tuviera que ser hermético, la salida es `next/font/local` con los
+`.woff2` versionados, mismos nombres de variable.
+
+⚠️ **IBM Plex llega a 700 y no más: no existe el peso 800.** Por eso
+`--font-weight-extrabold` y `--font-weight-black` están mapeados a 700. Sin ese
+mapeo, `font-extrabold` dejaría de distinguirse de `font-bold` y la jerarquía se
+aplanaría en vez de corregirse.
+
+Toda cifra del producto —soles, documentos, años, códigos de orden, contadores—
+lleva la clase `.num`: mono, tabular y a `0.94em`, que compensa el mayor ancho
+del monoespaciado para que una tabla de diez columnas no crezca.
+
+### Impresión
+
+Lo que este producto emite en papel es documentación federativa. `@page` A4 con
+márgenes, `thead` repetido entre páginas, y `print-landscape` para el reporte de
+evento, donde nueve columnas no entran en vertical. `PrintSheetHeader` y
+`PrintSheetFooter` (`src/components/print-sheet.tsx`) ponen membrete y casilla de
+firma del delegado.
+
+La franja **sí** se imprime, con `print-color-adjust: exact`, porque identifica
+de qué disciplina es la hoja — pero eso depende de «Gráficos de fondo», que
+viene apagado, y por eso el botón de imprimir lo avisa.
+
+Dos limitaciones conocidas: `counter(page)` solo funciona en los *margin boxes*
+de `@page`, que ningún navegador de escritorio implementa, así que la numeración
+la pone el pie nativo del diálogo; y el reporte imprime la página visible,
+porque sus tablas van de 50 en 50.
+
+### Tablas en móvil
+
+Las de 8 o más columnas se sustituyen por tarjetas bajo `md:` con `TableCards` /
+`TableCard` / `TableField`. **No se aplica a las pantallas cubiertas por la
+suite E2E**: dos árboles visibles a la vez rompen el modo estricto de Playwright.
 
 ## Pagos
 

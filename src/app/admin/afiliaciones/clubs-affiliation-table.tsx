@@ -219,7 +219,7 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
               <TR key={row.clubId}>
                 <TD>
                   <p className="font-bold text-fdnda-ink">{row.clubName}</p>
-                  <p className="font-mono text-xs text-fdnda-muted">{row.clubCode}</p>
+                  <p className="num text-xs text-fdnda-muted">{row.clubCode}</p>
                 </TD>
                 <TD colSpan={8} className="text-xs text-fdnda-muted">
                   Sin disciplinas habilitadas en la temporada vigente.
@@ -258,7 +258,7 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                       {first ? (
                         <>
                           <p className="font-bold text-fdnda-ink">{row.clubName}</p>
-                          <p className="font-mono text-xs text-fdnda-muted">
+                          <p className="num text-xs text-fdnda-muted">
                             {row.clubCode}
                           </p>
                         </>
@@ -283,11 +283,11 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                     <TD className="text-right font-semibold">
                       {entry.fee === null ? "—" : formatMoney(entry.fee)}
                     </TD>
-                    <TD className="text-right tabular-nums">{entry.athletesTotal}</TD>
-                    <TD className="text-right font-bold tabular-nums text-fdnda-navy">
+                    <TD className="num text-right">{entry.athletesTotal}</TD>
+                    <TD className="num text-right font-bold text-fdnda-navy">
                       {entry.athletesActive}
                     </TD>
-                    <TD className="text-right tabular-nums">
+                    <TD className="num text-right">
                       {entry.athletesPending > 0 ? (
                         <span className="font-bold text-fdnda-warning">
                           {entry.athletesPending}
@@ -296,7 +296,7 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                         "0"
                       )}
                     </TD>
-                    <TD className="text-right tabular-nums">
+                    <TD className="num text-right">
                       {entry.athletesExpiredOrMissing > 0 ? (
                         <span className="font-bold text-fdnda-red">
                           {entry.athletesExpiredOrMissing}

@@ -165,7 +165,7 @@ export function ClubsManager({ clubs }: { clubs: ClubRow[] }) {
                       <div className="flex flex-col gap-1">
                         {club.users.map((user) => (
                           <div key={user.id} className="flex items-center gap-2">
-                            <span className="font-mono text-xs">{user.username}</span>
+                            <span className="num text-xs">{user.username}</span>
                             <Badge variant={user.disciplineAccess.length === 0 ? "info" : "neutral"}>
                               {user.disciplineAccess.length === 0
                                 ? "Coordinador"
@@ -372,7 +372,7 @@ export function ClubsManager({ clubs }: { clubs: ClubRow[] }) {
               name="password"
               required
               defaultValue={suggestedPassword}
-              className="font-mono"
+              className="num"
             />
             <p className="mt-1 text-xs text-fdnda-muted">
               Contraseña sugerida generada automáticamente. Cópiala antes de guardar:
@@ -424,7 +424,7 @@ export function ClubsManager({ clubs }: { clubs: ClubRow[] }) {
               name="password"
               required
               defaultValue={suggestedPassword}
-              className="font-mono"
+              className="num"
             />
             <p className="mt-1 text-xs text-fdnda-muted">
               Cópiala antes de guardar: no se volverá a mostrar.

@@ -257,7 +257,7 @@ export default async function ReporteEventoPage({
                         <span className="ml-1 text-xs text-fdnda-neutral">(reserva)</span>
                       ) : null}
                     </TD>
-                    <TD className="font-mono text-xs">{row.docNumber}</TD>
+                    <TD className="num text-xs">{row.docNumber}</TD>
                     <TD>{row.birthYear}</TD>
                     <TD>{row.sex}</TD>
                     <TD>{row.clubName}</TD>
@@ -315,7 +315,7 @@ export default async function ReporteEventoPage({
                 {athleteFeeRows.map((row, index) => (
                   <TR key={`${row.docNumber}-${row.discipline}-${index}`}>
                     <TD className="font-medium text-fdnda-ink">{row.athleteName}</TD>
-                    <TD className="font-mono text-xs">{row.docNumber}</TD>
+                    <TD className="num text-xs">{row.docNumber}</TD>
                     <TD>{row.birthYear}</TD>
                     <TD>{row.sex}</TD>
                     <TD>{row.clubName}</TD>
@@ -374,7 +374,7 @@ export default async function ReporteEventoPage({
                   const badge = ORDER_STATUS_BADGE[order.status]
                   return (
                     <TR key={order.code}>
-                      <TD className="font-mono text-xs">
+                      <TD className="num text-xs">
                         <span className="flex flex-wrap items-center gap-2">
                           {order.code}
                           {order.isLegacy ? <Badge variant="warning">Legado</Badge> : null}

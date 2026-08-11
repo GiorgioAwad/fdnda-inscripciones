@@ -180,7 +180,7 @@ export function AthletesTable({
                   </TD>
                   <TD>
                     <span className="text-xs text-fdnda-muted">{athlete.docType}</span>{" "}
-                    <span className="font-mono">{athlete.docNumber}</span>
+                    <span className="num">{athlete.docNumber}</span>
                   </TD>
                   <TD>
                     {athlete.birthDateISO.split("-").reverse().join("/")}{" "}
