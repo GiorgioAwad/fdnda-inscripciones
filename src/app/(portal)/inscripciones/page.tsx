@@ -120,6 +120,7 @@ export default async function RegistrationsPage({
       <PageHeader
         icon={ClipboardList}
         eyebrow="Competencias"
+        lanes={scope.disciplines}
         title="Inscripciones"
         description="Elige una competencia para empezar o retoma una inscripción en curso. Todo queda guardado automáticamente."
       />
@@ -128,7 +129,7 @@ export default async function RegistrationsPage({
         <div>
           <h2
             id="open-events-title"
-            className="font-heading text-xl font-bold text-fdnda-navy"
+            className="font-heading text-2xl text-fdnda-navy"
           >
             Competencias abiertas
           </h2>
@@ -184,8 +185,11 @@ export default async function RegistrationsPage({
                   className="group block h-full rounded-surface focus-visible:outline-none"
                   aria-label={`${action} en ${event.name}`}
                 >
-                  <Card className="flex h-full flex-col overflow-hidden transition-[border-color,transform,box-shadow] duration-200 group-hover:-translate-y-0.5 group-hover:border-fdnda-turquoise group-hover:shadow-floating group-focus-visible:ring-4 group-focus-visible:ring-fdnda-sky">
-                    <div className="wave-field flex min-h-20 flex-wrap items-end gap-2 bg-fdnda-navy px-5 py-4">
+                  <Card
+                    lanes={event.disciplines}
+                    className="flex h-full flex-col transition-[border-color,transform,box-shadow] duration-200 group-hover:-translate-y-1 group-hover:border-fdnda-turquoise group-hover:shadow-floating group-focus-visible:ring-4 group-focus-visible:ring-fdnda-sky"
+                  >
+                    <div className="wave-field flex min-h-20 flex-wrap items-end gap-2 bg-fdnda-navy px-5 pb-4 pt-5">
                       {event.disciplines.map((discipline) => {
                         const style = disciplineStyle(discipline)
                         const Icon = style.icon
@@ -203,7 +207,7 @@ export default async function RegistrationsPage({
 
                     <article className="flex flex-1 flex-col p-5 sm:p-6">
                       <div className="flex items-start justify-between gap-3">
-                        <h3 className="text-lg font-extrabold leading-snug text-fdnda-navy transition-colors group-hover:text-fdnda-turquoise-deep">
+                        <h3 className="font-heading text-xl leading-snug text-fdnda-navy transition-colors group-hover:text-fdnda-turquoise-deep">
                           {event.name}
                         </h3>
                         {activePlan ? (
@@ -276,7 +280,7 @@ export default async function RegistrationsPage({
         <div>
           <h2
             id="registrations-title"
-            className="font-heading text-xl font-bold text-fdnda-navy"
+            className="font-heading text-2xl text-fdnda-navy"
           >
             Tus inscripciones
           </h2>
@@ -297,39 +301,47 @@ export default async function RegistrationsPage({
               const status = statusMeta[plan.status] ?? statusMeta.DRAFT
               const order = plan.orders[0]
               return (
-                <Card key={plan.id} className="flex flex-col p-5">
+                <Card
+                  key={plan.id}
+                  lanes={plan.event?.disciplines ?? []}
+                  className="flex flex-col p-5 pt-6"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-fdnda-turquoise-deep">
+                      <p className="text-eyebrow uppercase text-fdnda-turquoise-deep">
                         {plan.event
                           ? formatDateOnly(plan.event.startDate)
                           : "Competencia pendiente"}
                       </p>
-                      <h3 className="mt-1 font-heading text-lg font-bold text-fdnda-navy">
+                      <h3 className="mt-1 font-heading text-xl text-fdnda-navy">
                         {plan.event?.name ?? "Inscripción sin competencia"}
                       </h3>
                     </div>
                     <Badge variant={status.variant}>{status.label}</Badge>
                   </div>
-                  <dl className="mt-4 grid grid-cols-2 gap-3 rounded-control bg-fdnda-surface p-3 text-sm">
-                    <div>
-                      <dt className="text-xs text-fdnda-muted">Deportistas</dt>
-                      <dd className="font-bold text-fdnda-ink">{plan._count.athletes}</dd>
+                  {/* Las tres métricas separadas por divisoria en vez de una caja
+                      gris: son cifras, y las cifras del sistema se dicen en mono. */}
+                  <dl className="mt-4 grid grid-cols-3 divide-x divide-fdnda-border rounded-control border border-fdnda-border">
+                    <div className="px-3 py-2.5">
+                      <dt className="text-eyebrow uppercase text-fdnda-muted">
+                        Deportistas
+                      </dt>
+                      <dd className="num mt-0.5 text-xl font-bold text-fdnda-navy">
+                        {plan._count.athletes}
+                      </dd>
                     </div>
-                    <div>
-                      <dt className="text-xs text-fdnda-muted">Pruebas</dt>
-                      <dd className="font-bold text-fdnda-ink">
+                    <div className="px-3 py-2.5">
+                      <dt className="text-eyebrow uppercase text-fdnda-muted">Pruebas</dt>
+                      <dd className="num mt-0.5 text-xl font-bold text-fdnda-navy">
                         {plan._count.registrations}
                       </dd>
                     </div>
-                    {order ? (
-                      <div className="col-span-2">
-                        <dt className="text-xs text-fdnda-muted">Total</dt>
-                        <dd className="font-bold text-fdnda-ink">
-                          {formatMoney(order.totalAmount)}
-                        </dd>
-                      </div>
-                    ) : null}
+                    <div className="px-3 py-2.5">
+                      <dt className="text-eyebrow uppercase text-fdnda-muted">Total</dt>
+                      <dd className="num mt-0.5 text-xl font-bold text-fdnda-navy">
+                        {order ? formatMoney(order.totalAmount) : "—"}
+                      </dd>
+                    </div>
                   </dl>
                   <div className="mt-5 flex flex-wrap gap-2">
                     <Link

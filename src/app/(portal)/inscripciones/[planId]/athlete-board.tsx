@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Plus, Search, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { formatDateOnly, SEX_LABELS } from "@/lib/utils"
 import { AthleteEntryCard } from "./athlete-entry-card"
 import { TeamFormationPanel, type FormationDraft } from "./team-formation-panel"
@@ -82,6 +83,9 @@ export function AthleteBoard({
   const individualModalities = modalities.filter((row) => row.maxAthletes === 1)
   const teamModalities = modalities.filter((row) => row.maxAthletes > 1)
   const rosterIds = new Set(roster.map((athlete) => athlete.id))
+  // Las disciplinas que realmente ofrece esta competencia, deducidas de sus
+  // pruebas: es lo que pinta la franja de la nómina.
+  const eventDisciplines = [...new Set(modalities.map((row) => row.discipline))]
 
   // Pruebas individuales marcadas por deportista.
   const selectedByAthlete = new Map<string, Set<string>>()
@@ -110,7 +114,7 @@ export function AthleteBoard({
   return (
     <section className="space-y-5" aria-labelledby="board-heading">
       <div>
-        <h2 id="board-heading" className="font-heading text-xl font-bold text-fdnda-navy">
+        <h2 id="board-heading" className="font-heading text-2xl text-fdnda-navy">
           Arma tu planilla
         </h2>
         <p className="mt-1 text-sm text-fdnda-muted">
@@ -128,12 +132,15 @@ export function AthleteBoard({
       >
         <label className="relative flex-1">
           <span className="sr-only">Buscar deportista</span>
-          <Search className="absolute left-3 top-3.5 h-4 w-4 text-fdnda-muted" />
-          <input
+          <Search
+            className="pointer-events-none absolute left-3 top-3.5 z-10 h-4 w-4 text-fdnda-muted"
+            aria-hidden="true"
+          />
+          <Input
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Nombre o documento"
-            className="min-h-11 w-full rounded-control border border-fdnda-border bg-white pl-10 pr-3 text-sm outline-none focus:border-fdnda-turquoise focus:ring-2 focus:ring-fdnda-turquoise/25"
+            className="pl-10"
           />
         </label>
         <Button type="submit" variant="outline" loading={isNavigating}>
@@ -143,22 +150,24 @@ export function AthleteBoard({
 
       {notInRoster.length > 0 && !readOnly ? (
         <Card className="overflow-hidden">
-          <div className="border-b border-fdnda-border bg-fdnda-surface px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-fdnda-muted">
-            Agregar a la planilla · {athletePage.total} resultado(s)
+          <div className="border-b border-fdnda-border bg-fdnda-surface px-4 py-3 text-eyebrow uppercase text-fdnda-muted">
+            Agregar a la planilla · <span className="num">{athletePage.total}</span>{" "}
+            resultado(s)
           </div>
           <ul className="divide-y divide-fdnda-border">
             {notInRoster.map((athlete) => (
               <li
                 key={athlete.id}
-                className="flex flex-wrap items-center gap-3 px-4 py-2.5"
+                className="flex flex-wrap items-center gap-3 px-4 py-3"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block font-semibold text-fdnda-ink">
+                  <span className="block text-base font-semibold text-fdnda-ink">
                     {athlete.lastNames}, {athlete.firstNames}
                   </span>
                   <span className="block text-xs text-fdnda-muted">
-                    {athlete.docType} {athlete.docNumber} ·{" "}
-                    {formatDateOnly(athlete.birthDate)} · {SEX_LABELS[athlete.sex]}
+                    {athlete.docType} <span className="num">{athlete.docNumber}</span> ·{" "}
+                    <span className="num">{formatDateOnly(athlete.birthDate)}</span> ·{" "}
+                    {SEX_LABELS[athlete.sex]}
                   </span>
                 </span>
                 <Button
@@ -198,9 +207,16 @@ export function AthleteBoard({
         </nav>
       ) : null}
 
-      <Card className="overflow-hidden">
-        <div className="border-b border-fdnda-border bg-fdnda-surface px-4 py-3 text-sm">
-          <strong>{roster.length}</strong> deportista(s) en la planilla
+      {/* La nómina es el dato que el delegado mira cien veces mientras arma la
+          planilla, y estaba dicho en la misma voz que todo lo demás. Ahora es
+          una barra de estado con la cifra en el rango de métrica y la franja de
+          las disciplinas de la competencia. */}
+      <Card lanes={eventDisciplines} className="overflow-hidden">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-fdnda-border bg-fdnda-surface px-5 py-4">
+          <span className="num text-metric text-fdnda-navy">{roster.length}</span>
+          <span className="text-eyebrow uppercase text-fdnda-muted">
+            deportista(s) en la planilla
+          </span>
         </div>
         {roster.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">

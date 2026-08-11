@@ -1,7 +1,6 @@
 import { Suspense } from "react"
 import Image from "next/image"
 import type { Metadata } from "next"
-import { BadgeCheck, CalendarCheck2, UsersRound } from "lucide-react"
 import { FEDERATION_NAME, FEDERATION_SHORT } from "@/lib/brand"
 import { LoginForm } from "./login-form"
 
@@ -21,14 +20,11 @@ export default async function LoginPage({
     <main className="grid min-h-dvh w-full min-w-0 grid-cols-[minmax(0,1fr)] bg-white lg:grid-cols-[minmax(380px,0.9fr)_minmax(520px,1.1fr)]">
       <section className="relative isolate min-w-0 overflow-hidden bg-fdnda-navy px-6 py-8 text-white sm:px-10 lg:min-h-dvh lg:px-12 lg:py-12 xl:px-16">
         <div className="wave-field absolute inset-0 -z-20 opacity-30" aria-hidden="true" />
-        <div
-          className="absolute -right-28 top-1/2 -z-10 h-96 w-96 -translate-y-1/2 rounded-full border border-white/10"
-          aria-hidden="true"
-        />
-        <div
-          className="absolute -right-10 top-1/2 -z-10 h-56 w-56 -translate-y-1/2 rounded-full border border-fdnda-sky/25"
-          aria-hidden="true"
-        />
+        {/* Aquí había dos círculos concéntricos que no decían nada del deporte.
+            Probé sustituirlos por andariveles cruzando el panel y a media
+            opacidad leían como fallos de render, no como sogas: la textura de
+            agua ya carga el ambiente y la barra corta de abajo es la firma.
+            Un acento basta. */}
 
         <div className="mx-auto flex h-full w-full max-w-2xl flex-col lg:min-h-[calc(100dvh-6rem)] lg:justify-between">
           <div className="flex items-center gap-3">
@@ -48,14 +44,13 @@ export default async function LoginPage({
           </div>
 
           <div className="max-w-xl py-8 lg:py-12">
-            <div className="mb-6 flex items-center gap-2" aria-hidden="true">
-              <span className="h-1 w-12 bg-fdnda-turquoise" />
-              <span className="h-1 w-5 bg-fdnda-red" />
-            </div>
-            <p className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-fdnda-sky">
+            {/* El andarivel de marca, ahora la firma del sistema en vez de dos
+                barras sueltas puestas a mano. */}
+            <div className="lane-rope mb-6 h-1.5 w-24 rounded-full" aria-hidden="true" />
+            <p className="mb-3 text-eyebrow uppercase text-fdnda-sky">
               {FEDERATION_NAME}
             </p>
-            <h1 className="font-heading max-w-lg text-3xl font-extrabold leading-[1.08] tracking-tight sm:text-4xl lg:text-5xl xl:text-[3.4rem]">
+            <h1 className="font-heading max-w-lg text-4xl leading-[1.05] lg:text-display">
               La gestión deportiva, en un solo lugar.
             </h1>
             <p className="mt-5 max-w-lg text-sm leading-relaxed text-white/75 sm:text-base">
@@ -64,11 +59,16 @@ export default async function LoginPage({
             </p>
           </div>
 
-          <div className="hidden grid-cols-1 gap-3 lg:grid xl:grid-cols-3">
-            <LoginFeature icon={BadgeCheck} number="01" label="Afiliación" />
-            <LoginFeature icon={UsersRound} number="02" label="Deportistas" />
-            <LoginFeature icon={CalendarCheck2} number="03" label="Competencias" />
-          </div>
+          {/* Los tres pasos van numerados porque son de verdad una secuencia:
+              un club se afilia, registra su padrón y recién entonces puede
+              inscribir. Antes eran tres tarjetas sueltas con icono, y el icono
+              se comía el ancho hasta cortar «Competencias». Sin él caben, y
+              unidas por una divisoria se leen como el recorrido que son. */}
+          <ol className="hidden overflow-hidden rounded-surface border border-white/15 lg:grid lg:grid-cols-3 lg:gap-px lg:bg-white/15">
+            <LoginStep number="01" label="Afiliación" />
+            <LoginStep number="02" label="Deportistas" />
+            <LoginStep number="03" label="Competencias" />
+          </ol>
         </div>
       </section>
 
@@ -85,12 +85,12 @@ export default async function LoginPage({
             className="mb-7 h-24 w-auto"
             priority
           />
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-fdnda-turquoise-deep">
+          <p className="text-eyebrow uppercase text-fdnda-turquoise-deep">
             Acceso institucional
           </p>
           <h2
             id="login-title"
-            className="font-heading mt-2 text-3xl font-bold tracking-wide text-fdnda-navy"
+            className="font-heading mt-2 text-3xl text-fdnda-navy"
           >
             Iniciar sesión
           </h2>
@@ -118,24 +118,11 @@ export default async function LoginPage({
   )
 }
 
-function LoginFeature({
-  icon: Icon,
-  number,
-  label,
-}: {
-  icon: typeof BadgeCheck
-  number: string
-  label: string
-}) {
+function LoginStep({ number, label }: { number: string; label: string }) {
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-surface border border-white/15 bg-white/[0.07] px-4 py-3.5 backdrop-blur-sm">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-fdnda-sky/15 text-fdnda-sky">
-        <Icon className="h-5 w-5" aria-hidden="true" />
-      </span>
-      <div className="min-w-0">
-        <p className="text-[0.65rem] font-bold tracking-[0.18em] text-white/50">{number}</p>
-        <p className="truncate text-sm font-semibold text-white">{label}</p>
-      </div>
-    </div>
+    <li className="min-w-0 bg-fdnda-navy-deep/60 px-4 py-3.5 backdrop-blur-sm">
+      <p className="num text-[0.7rem] font-semibold text-fdnda-sky">{number}</p>
+      <p className="font-heading mt-0.5 text-base font-bold text-white">{label}</p>
+    </li>
   )
 }

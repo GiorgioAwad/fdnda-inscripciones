@@ -15,6 +15,8 @@ export interface EventReport {
     id: string
     name: string
     status: string
+    // Solo para presentación: la franja de andarivel del encabezado.
+    disciplines: string[]
   }
   totals: {
     paidRegistrations: number
@@ -522,7 +524,7 @@ export async function getClubEventReport(
 export async function getEventReport(eventId: string): Promise<EventReport | null> {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { id: true, name: true, status: true },
+    select: { id: true, name: true, status: true, disciplines: true },
   })
   if (!event) return null
 
@@ -718,7 +720,12 @@ export async function getEventReport(eventId: string): Promise<EventReport | nul
 
   return {
     event: frozenEvent
-      ? { id: event.id, name: frozenEvent.name, status: event.status }
+      ? {
+          id: event.id,
+          name: frozenEvent.name,
+          status: event.status,
+          disciplines: event.disciplines,
+        }
       : event,
     totals: {
       paidRegistrations: paidRegistrations.length,

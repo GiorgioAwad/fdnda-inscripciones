@@ -1312,7 +1312,17 @@ export async function listRegistrationPlans(
         : {}),
     },
     include: {
-      event: { select: { id: true, name: true, startDate: true, endDate: true } },
+      // `disciplines` es solo para presentación: la franja de andarivel de la
+      // tarjeta de planilla necesita saber de qué deporte habla el evento.
+      event: {
+        select: {
+          id: true,
+          name: true,
+          startDate: true,
+          endDate: true,
+          disciplines: true,
+        },
+      },
       _count: { select: { athletes: true, registrations: true } },
       orders: {
         where: { status: { in: ["PENDING", "PAID"] } },

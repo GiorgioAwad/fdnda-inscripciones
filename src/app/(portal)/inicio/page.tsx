@@ -181,6 +181,7 @@ export default async function InicioPage() {
       <PageHeader
         icon={Home}
         eyebrow="Panel del club"
+        lanes={panel.disciplines.map((row) => row.discipline)}
         title={`Bienvenido, ${user.clubName}`}
         description={
           panel.season
@@ -201,14 +202,14 @@ export default async function InicioPage() {
           {/* Próximo paso: siempre uno solo, con un único CTA. */}
           <div
             role="status"
-            className={`flex flex-wrap items-center justify-between gap-3 rounded-surface border px-4 py-4 text-sm font-semibold ${stepStyle.box}`}
+            className={`flex flex-wrap items-center justify-between gap-4 rounded-panel border border-l-4 px-5 py-4 text-sm font-semibold shadow-floating ${stepStyle.box}`}
           >
             <span className="flex items-start gap-2">
               <StepIcon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
               {step.message}
             </span>
             <Link href={step.href}>
-              <Button>
+              <Button size="lg">
                 {step.cta}
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Button>
@@ -216,8 +217,11 @@ export default async function InicioPage() {
           </div>
 
           {/* Estado por disciplina: reemplaza las dos tarjetas y los tres StatCard. */}
-          <Card className="overflow-hidden">
-            <CardHeader className="flex-row items-center justify-between gap-3 border-b border-fdnda-border py-4">
+          <Card
+            lanes={panel.disciplines.map((row) => row.discipline)}
+            className="overflow-hidden"
+          >
+            <CardHeader className="flex-row items-center justify-between gap-3 border-b border-fdnda-border py-4 pt-5">
               <CardTitle>Afiliación {panel.season.year} por disciplina</CardTitle>
               <Link
                 href="/afiliacion"
@@ -261,7 +265,7 @@ export default async function InicioPage() {
                         <div className="flex items-center gap-4">
                           <p className="text-right text-xs text-fdnda-muted">
                             Deportistas vigentes
-                            <span className="ml-2 text-sm font-bold tabular-nums text-fdnda-navy">
+                            <span className="num ml-2 text-base font-bold text-fdnda-navy">
                               {row.counts.active}/{row.counts.total}
                             </span>
                           </p>

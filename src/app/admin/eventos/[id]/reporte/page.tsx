@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { ArrowLeft, Download, Medal, Receipt, Users, Wallet } from "lucide-react"
+import { ArrowLeft, BarChart3, Download, Medal, Receipt, Users, Wallet } from "lucide-react"
 import { getEventReport } from "@/lib/event-report"
 import { expireStaleOrders } from "@/lib/orders"
 import { formatDateTimeLima, formatMoney } from "@/lib/utils"
@@ -9,6 +9,9 @@ import { Badge, ORDER_STATUS_BADGE } from "@/components/ui/badge"
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table"
 import { StatCard, type StatTone } from "@/components/stat-card"
 import { Pagination } from "@/components/pagination"
+import { PageHeader } from "@/components/page-header"
+import { PrintButton } from "@/components/print-button"
+import { disciplineLabel } from "@/lib/disciplines"
 
 export const dynamic = "force-dynamic"
 
@@ -91,24 +94,30 @@ export default async function ReporteEventoPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link
-            href={`/admin/eventos/${id}`}
-            className="mb-1 inline-flex items-center gap-1 text-xs text-fdnda-muted hover:text-fdnda-ink"
-          >
-            <ArrowLeft className="h-3 w-3" /> Volver al evento
-          </Link>
-          <h1 className="text-xl font-bold text-fdnda-ink">
-            Reporte — {report.event.name}
-          </h1>
-        </div>
-        <a href={`/api/admin/eventos/${id}/export`} download>
-          <Button>
-            <Download className="h-4 w-4" /> Exportar Excel
-          </Button>
-        </a>
-      </div>
+      <Link
+        href={`/admin/eventos/${id}`}
+        className="print-hidden inline-flex items-center gap-1 text-xs text-fdnda-muted hover:text-fdnda-ink"
+      >
+        <ArrowLeft className="h-3 w-3" aria-hidden="true" /> Volver al evento
+      </Link>
+
+      <PageHeader
+        icon={BarChart3}
+        eyebrow="Reporte de evento"
+        lanes={report.event.disciplines}
+        title={report.event.name}
+        description="Inscripciones, cuotas y recaudación de la competencia."
+        actions={
+          <div className="print-hidden flex flex-wrap gap-2">
+            <PrintButton label="Imprimir reporte" />
+            <a href={`/api/admin/eventos/${id}/export`} download>
+              <Button>
+                <Download className="h-4 w-4" aria-hidden="true" /> Exportar Excel
+              </Button>
+            </a>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => (
@@ -123,7 +132,7 @@ export default async function ReporteEventoPage({
       </div>
 
       <section>
-        <h2 className="mb-3 text-base font-semibold text-fdnda-ink">
+        <h2 className="mb-3 font-heading text-xl text-fdnda-navy">
           Resumen por prueba
         </h2>
         <TableContainer>
@@ -144,7 +153,7 @@ export default async function ReporteEventoPage({
             <TBody>
               {report.modalityRows.map((row) => (
                 <TR key={row.modalityId}>
-                  <TD className="text-xs">{row.discipline}</TD>
+                  <TD className="text-xs">{disciplineLabel(row.discipline)}</TD>
                   <TD className="font-medium text-fdnda-ink">{row.name}</TD>
                   <TD>{row.category || "—"}</TD>
                   <TD>{row.sexLabel}</TD>
@@ -163,7 +172,7 @@ export default async function ReporteEventoPage({
       </section>
 
       <section>
-        <h2 className="mb-3 text-base font-semibold text-fdnda-ink">
+        <h2 className="mb-3 font-heading text-xl text-fdnda-navy">
           Por club (solo pagadas)
         </h2>
         <TableContainer>
@@ -201,7 +210,7 @@ export default async function ReporteEventoPage({
       </section>
 
       <section>
-        <h2 className="mb-3 text-base font-semibold text-fdnda-ink">
+        <h2 className="mb-3 font-heading text-xl text-fdnda-navy">
           Listado nominal ({report.nominalRows.length})
         </h2>
         <TableContainer>
@@ -266,7 +275,7 @@ export default async function ReporteEventoPage({
 
       {report.athleteFeeRows.length > 0 ? (
         <section>
-          <h2 className="mb-1 text-base font-semibold text-fdnda-ink">
+          <h2 className="mb-1 font-heading text-xl text-fdnda-navy">
             Cuotas por deportista ({report.athleteFeeRows.length})
           </h2>
           <p className="mb-3 text-sm text-fdnda-muted">
@@ -296,7 +305,7 @@ export default async function ReporteEventoPage({
                     <TD>{row.birthYear}</TD>
                     <TD>{row.sex}</TD>
                     <TD>{row.clubName}</TD>
-                    <TD>{row.discipline}</TD>
+                    <TD>{disciplineLabel(row.discipline)}</TD>
                     <TD className="text-right font-semibold">{formatMoney(row.fee)}</TD>
                     <TD>
                       <Badge variant={row.status === "Pagada" ? "success" : "warning"}>
@@ -323,7 +332,7 @@ export default async function ReporteEventoPage({
       ) : null}
 
       <section>
-        <h2 className="mb-3 text-base font-semibold text-fdnda-ink">
+        <h2 className="mb-3 font-heading text-xl text-fdnda-navy">
           Órdenes con inscripciones de este evento
         </h2>
         <TableContainer>

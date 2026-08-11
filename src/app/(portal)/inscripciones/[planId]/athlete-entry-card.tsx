@@ -77,18 +77,23 @@ export function AthleteEntryCard({
             aria-hidden="true"
           />
           <span className="min-w-0 flex-1">
-            <span className="block font-bold text-fdnda-ink">{athleteName(athlete)}</span>
+            <span className="block text-base font-bold text-fdnda-ink">{athleteName(athlete)}</span>
             <span className="block text-xs text-fdnda-muted">
-              {athlete.docType} {athlete.docNumber} ·{" "}
-              {new Date(athlete.birthDate).getUTCFullYear()} · {SEX_LABELS[athlete.sex]}
+              {athlete.docType} <span className="num">{athlete.docNumber}</span> ·{" "}
+              <span className="num">{new Date(athlete.birthDate).getUTCFullYear()}</span> ·{" "}
+              {SEX_LABELS[athlete.sex]}
             </span>
           </span>
         </button>
-        <span className="text-sm font-semibold text-fdnda-navy">
-          {selectedCount === 0
-            ? "Sin pruebas"
-            : `${selectedCount} de ${eligible.length + teamEntryLabels.length} prueba(s)`}
-        </span>
+        {selectedCount === 0 ? (
+          <Badge variant="neutral">Sin pruebas</Badge>
+        ) : (
+          <span className="whitespace-nowrap text-sm font-semibold text-fdnda-navy">
+            <span className="num">{selectedCount}</span> de{" "}
+            <span className="num">{eligible.length + teamEntryLabels.length}</span>{" "}
+            prueba(s)
+          </span>
+        )}
         {!readOnly ? (
           <Button
             size="icon"
@@ -130,10 +135,10 @@ export function AthleteEntryCard({
                 return (
                   <li key={modality.id}>
                     <label
-                      className={`flex min-h-11 items-center gap-2.5 rounded-control px-2.5 py-2 text-sm ${
+                      className={`flex min-h-11 items-center gap-2.5 rounded-control px-2.5 py-2 text-sm transition-colors motion-reduce:transition-none ${
                         locked
                           ? "cursor-not-allowed bg-fdnda-sunken text-fdnda-muted"
-                          : "cursor-pointer hover:bg-white"
+                          : "cursor-pointer hover:bg-white hover:shadow-raised has-checked:bg-fdnda-navy-soft has-checked:ring-1 has-checked:ring-inset has-checked:ring-fdnda-navy/20"
                       }`}
                     >
                       <input
