@@ -318,12 +318,108 @@ table th {
   );
 }
 
+/* Impresión. Lo que este producto emite en papel es documentación federativa:
+   planillas de inscripción, constancias de pago y reportes de evento. Antes
+   eran ocho líneas que solo ocultaban el cromo, así que la hoja 2 de un
+   listado nominal salía sin saber qué era cada columna. */
+@page {
+  size: A4 portrait;
+  margin: 16mm 14mm 22mm;
+}
+
+/* Página con nombre para los reportes anchos. La soportan los navegadores
+   basados en Chromium; en el resto degrada a vertical, que sigue siendo
+   legible. */
+@page landscape {
+  size: A4 landscape;
+  margin: 12mm 12mm 18mm;
+}
+
+.print-landscape {
+  page: landscape;
+}
+
+.print-only {
+  display: none;
+}
+
 @media print {
   .print-hidden {
     display: none !important;
   }
+  .print-only {
+    display: block !important;
+  }
+
+  html,
   body {
-    background: white !important;
+    background: #fff !important;
+  }
+  body {
+    font-size: 10.5pt;
+  }
+
+  /* La cabecera se repite en cada hoja: sin esto, la segunda página de un
+     nominal de 300 filas no dice qué es cada columna. */
+  thead {
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-footer-group;
+  }
+  tr,
+  li,
+  .break-inside-avoid {
+    break-inside: avoid;
+  }
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  /* Los contenedores con scroll tienen que soltar el contenido: en papel no
+     hay dónde desplazarse. */
+  [role="region"],
+  .overflow-x-auto,
+  .overflow-y-auto {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  table {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* El relieve es cromo de pantalla y en papel solo ensucia. */
+  .shadow-raised,
+  .shadow-floating,
+  .shadow-overlay {
+    box-shadow: none !important;
+  }
+  a[href] {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* La franja de andarivel SÍ se imprime: es lo que identifica de qué
+     disciplina es la hoja. Requiere «Gráficos de fondo» en el diálogo de
+     impresión, y por eso la interfaz lo avisa junto al botón. */
+  [class*="lane"],
+  thead,
+  [class*="bg-fdnda"] {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-sheet-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-top: 1pt solid #102a43;
+    padding-top: 3mm;
+    font-size: 8.5pt;
   }
 }
 

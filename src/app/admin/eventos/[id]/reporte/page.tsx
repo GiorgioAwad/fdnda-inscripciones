@@ -11,6 +11,7 @@ import { StatCard, type StatTone } from "@/components/stat-card"
 import { Pagination } from "@/components/pagination"
 import { PageHeader } from "@/components/page-header"
 import { PrintButton } from "@/components/print-button"
+import { PrintSheetFooter, PrintSheetHeader } from "@/components/print-sheet"
 import { disciplineLabel } from "@/lib/disciplines"
 
 export const dynamic = "force-dynamic"
@@ -93,7 +94,19 @@ export default async function ReporteEventoPage({
   ]
 
   return (
-    <div className="space-y-6">
+    <div className="print-landscape space-y-6">
+      <PrintSheetHeader
+        title="Reporte de inscripciones"
+        eventName={report.event.name}
+        disciplines={report.event.disciplines}
+        meta={[
+          { label: "Inscripciones pagadas", value: String(report.totals.paidRegistrations) },
+          { label: "Por pagar", value: String(report.totals.pendingRegistrations) },
+          { label: "Deportistas", value: String(report.totals.distinctAthletes) },
+          { label: "Recaudado", value: formatMoney(report.totals.revenue) },
+        ]}
+      />
+
       <Link
         href={`/admin/eventos/${id}`}
         className="print-hidden inline-flex items-center gap-1 text-xs text-fdnda-muted hover:text-fdnda-ink"
@@ -102,6 +115,7 @@ export default async function ReporteEventoPage({
       </Link>
 
       <PageHeader
+        className="print-hidden"
         icon={BarChart3}
         eyebrow="Reporte de evento"
         lanes={report.event.disciplines}
@@ -119,7 +133,7 @@ export default async function ReporteEventoPage({
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="print-hidden grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => (
           <StatCard
             key={stat.label}
@@ -395,6 +409,7 @@ export default async function ReporteEventoPage({
           className="mt-4"
         />
       </section>
+      <PrintSheetFooter signatureLabel="Nombre y firma del responsable de la federación" />
     </div>
   )
 }

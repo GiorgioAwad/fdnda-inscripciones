@@ -21,6 +21,7 @@ import { Badge, ORDER_STATUS_BADGE } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { OrderSummaryView } from "@/components/order-summary-view"
 import { PrintButton } from "@/components/print-button"
+import { PrintSheetFooter, PrintSheetHeader } from "@/components/print-sheet"
 import { MockPaymentPanel } from "./mock-payment-panel"
 import { IzipayCheckout } from "./izipay-checkout"
 import { PendingOrderPoller } from "./pending-order-poller"
@@ -82,6 +83,24 @@ export default async function PagoPage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
+      <PrintSheetHeader
+        title={
+          order.kind === "REGISTRATION"
+            ? "Constancia de inscripción"
+            : "Constancia de afiliación"
+        }
+        eventName={summary?.event?.name ?? undefined}
+        clubName={frozenClubName ?? order.club.name}
+        disciplines={detailedSummary?.disciplines.map((row) => row.discipline) ?? []}
+        meta={[
+          { label: "Orden", value: order.code },
+          { label: "Total", value: formatMoney(order.totalAmount) },
+          ...(order.paidAt
+            ? [{ label: "Pagado", value: formatDateTimeLima(order.paidAt) }]
+            : []),
+        ]}
+      />
+
       <div className="animate-fade-up">
         <Link
           href="/inscripciones"
@@ -237,6 +256,7 @@ export default async function PagoPage({
           )}
         </>
       ) : null}
+      <PrintSheetFooter signatureLabel="Recibido conforme · nombre y firma" />
     </div>
   )
 }

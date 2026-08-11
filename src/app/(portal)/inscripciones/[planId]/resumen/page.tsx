@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { PageHeader } from "@/components/page-header"
+import { PrintSheetFooter, PrintSheetHeader } from "@/components/print-sheet"
 import { getCurrentUser } from "@/lib/auth"
 import { disciplineLabel } from "@/lib/disciplines"
 import { prisma } from "@/lib/prisma"
@@ -105,6 +106,11 @@ export default async function PrintablePlanSummary({
       entry.athletes.map((row) => row.athleteId)
     )
   )
+  // Las disciplinas que aparecen realmente en esta planilla: es lo que pinta la
+  // franja, en pantalla y en la hoja impresa.
+  const sheetDisciplines = [
+    ...new Set(plan.registrations.map((entry) => entry.modality.discipline)),
+  ]
   const frozenSummary = currentFrozen.length > 0
     ? {
         rosterAthleteCount: frozenAthletes.size || plan.athletes.length,
@@ -125,8 +131,23 @@ export default async function PrintablePlanSummary({
 
   return (
     <div className="space-y-6 bg-white print:p-0">
+      <PrintSheetHeader
+        title="Planilla de inscripción"
+        eventName={frozenHeader?.event.name ?? plan.event?.name ?? undefined}
+        clubName={frozenHeader?.club.name ?? plan.club.name}
+        disciplines={sheetDisciplines}
+        meta={[
+          { label: "Revisión", value: String(expectedRevision) },
+          { label: "Deportistas", value: String(frozenSummary.rosterAthleteCount) },
+          { label: "Formaciones", value: String(frozenSummary.entryCount) },
+          { label: "Total", value: formatMoney(frozenSummary.totalAmount) },
+        ]}
+      />
+
       <PageHeader
+        className="print-hidden"
         icon={ClipboardCheck}
+        lanes={sheetDisciplines}
         eyebrow={`Planilla · revisión ${expectedRevision}`}
         title={frozenHeader?.event.name ?? plan.event?.name ?? "Planilla sin competencia"}
         description={`${frozenHeader?.club.name ?? plan.club.name}${frozenHeader ? ` · ${formatDateOnly(frozenHeader.event.startDate)} al ${formatDateOnly(frozenHeader.event.endDate)}` : plan.event ? ` · ${formatDateOnly(plan.event.startDate)} al ${formatDateOnly(plan.event.endDate)}` : ""}`}
@@ -171,12 +192,19 @@ export default async function PrintablePlanSummary({
           {validation && validation.issues.length > 0 ? <section><h2 className="mb-3 font-heading text-lg font-bold text-fdnda-navy">Observaciones de validación</h2><ul className="space-y-2">{validation.issues.map((issue, index) => <li key={`${issue.code}-${index}`} className="flex gap-2 text-sm"><Badge variant={issue.severity === "ERROR" ? "danger" : "warning"}>{issue.severity === "ERROR" ? "Error" : "Aviso"}</Badge><span>{issue.message}</span></li>)}</ul></section> : null}
         </>
       )}
+
+      {revisionChanged ? null : <PrintSheetFooter />}
     </div>
   )
 }
 
 function Metric({ label, value }: { label: string; value: React.ReactNode }) {
-  return <Card className="p-4"><p className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">{label}</p><p className="mt-1 text-xl font-extrabold text-fdnda-navy">{value}</p></Card>
+  return (
+    <Card className="p-4">
+      <p className="text-eyebrow uppercase text-fdnda-muted">{label}</p>
+      <p className="num mt-1 text-2xl text-fdnda-navy">{value}</p>
+    </Card>
+  )
 }
 
 function FrozenItemCard({

@@ -17,7 +17,7 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="min-h-dvh bg-fdnda-surface text-fdnda-ink">
+    <div className="min-h-dvh bg-fdnda-surface text-fdnda-ink print:bg-white">
       <a
         href="#contenido-principal"
         className="fixed left-4 top-4 z-50 -translate-y-24 rounded-control bg-white px-4 py-3 text-sm font-semibold text-fdnda-navy-deep shadow-overlay transition-transform focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-fdnda-turquoise"
