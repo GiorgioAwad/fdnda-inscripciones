@@ -13,6 +13,7 @@ import {
   TableCards,
   TableContainer,
   TableField,
+  stickyCell,
   TBody,
   TD,
   TH,
@@ -210,7 +211,7 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
             <TH className="text-right">Activas</TH>
             <TH className="text-right">Pendientes</TH>
             <TH className="text-right">Sin vigencia</TH>
-            <TH className="text-right">Acciones</TH>
+            <TH className={`text-right ${stickyCell.head}`}>Acciones</TH>
           </TR>
         </THead>
         <TBody>
@@ -224,7 +225,7 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                 <TD colSpan={8} className="text-xs text-fdnda-muted">
                   Sin disciplinas habilitadas en la temporada vigente.
                 </TD>
-                <TD>
+                <TD className={stickyCell.cell}>
                   <div className="flex justify-end">
                     <Link
                       href={`/admin/padron?club=${row.clubId}`}
@@ -305,8 +306,12 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                         "0"
                       )}
                     </TD>
-                    <TD>
-                      <div className="flex justify-end gap-1">
+                    <TD className={stickyCell.cell}>
+                      {/* Apiladas, no en línea: «Padrón» es del club y
+                          «Marcar pagada» de la disciplina, así que no son
+                          hermanas. En línea, esta columna se comía 227px y
+                          empujaba la tabla fuera del contenedor. */}
+                      <div className="flex flex-col items-end gap-1">
                         {first ? (
                           <Link
                             href={`/admin/padron?club=${row.clubId}`}

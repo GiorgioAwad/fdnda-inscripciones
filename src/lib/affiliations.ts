@@ -726,6 +726,10 @@ export async function getFederationOverview() {
   const allDisciplineRows = rows.flatMap((row) => row.disciplines)
 
   const totals = {
+    // Denominador en la MISMA unidad que los contadores de abajo. Sin él, quien
+    // consuma `clubsAffiliated` acaba dividiéndolo entre el número de clubes y
+    // sale un «30/11»: pares partidos por clubes.
+    clubDisciplinesTotal: allDisciplineRows.length,
     clubsAffiliated: allDisciplineRows.filter((row) => isSettledState(row.clubState))
       .length,
     clubsPending: allDisciplineRows.filter((row) => row.clubState === "PENDIENTE")

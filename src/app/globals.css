@@ -49,6 +49,7 @@
   --color-fdnda-turquoise-soft: var(--color-secondary-soft);
   --color-fdnda-sky: var(--color-surface-accent);
   --color-fdnda-sky-soft: var(--color-surface-accent-soft);
+  --color-fdnda-sky-head: var(--color-surface-accent-head);
   --color-fdnda-red: var(--color-danger-accent);
   --color-fdnda-red-deep: var(--color-danger-accent-deep);
   --color-fdnda-red-soft: var(--color-danger-accent-soft);
@@ -154,6 +155,11 @@
   --color-secondary-soft: #e7f8fd;
   --color-surface-accent: #98e7f6;
   --color-surface-accent-soft: #f2fcfe;
+  /* El celeste al 25% ya resuelto sobre blanco. Existe porque una celda fijada
+     necesita fondo OPACO —el resto de la tabla pasa por debajo— y el
+     `bg-fdnda-sky/25` translúcido de la cabecera dejaba una costura visible
+     justo donde la columna se ancla. */
+  --color-surface-accent-head: #e5f9fd;
   --color-danger-accent: #c92e29;
   --color-danger-accent-deep: #9e2420;
   --color-danger-accent-soft: #fff1f0;

@@ -79,15 +79,22 @@ export default async function AdminDashboardPage() {
           tone="navy"
           href="/admin/padron"
         />
+        {/* La etiqueta decía «Clubes afiliados» y el valor dividía pares
+            (club, disciplina) entre número de clubes: con 11 clubes y tres
+            disciplinas salía «30/11». Con cuota por disciplina la unidad es la
+            cuota, no el club —un club puede estar al día en polo y deber
+            clavados—, así que ahora numerador y denominador cuentan lo mismo y
+            la etiqueta lo dice. Es el mismo nombre que ya usa el panel de
+            afiliaciones. */}
         <StatCard
           label={
             affiliations.season
-              ? `Clubes afiliados ${affiliations.season.year}`
+              ? `Cuotas de club vigentes ${affiliations.season.year}`
               : "Sin temporada vigente"
           }
           value={
             affiliations.totals
-              ? `${affiliations.totals.clubsAffiliated}/${affiliations.clubs.length}`
+              ? `${affiliations.totals.clubsAffiliated}/${affiliations.totals.clubDisciplinesTotal}`
               : "—"
           }
           icon={ShieldCheck}

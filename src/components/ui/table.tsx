@@ -51,7 +51,7 @@ export function THead({ className, ...props }: React.HTMLAttributes<HTMLTableSec
   return (
     <thead
       className={cn(
-        "border-b-2 border-fdnda-sky/70 bg-fdnda-sky/25 text-left",
+        "border-b-2 border-fdnda-sky/70 bg-fdnda-sky-head text-left",
         className
       )}
       {...props}
@@ -63,11 +63,13 @@ export function TBody({ className, ...props }: React.HTMLAttributes<HTMLTableSec
   return <tbody className={cn("divide-y divide-fdnda-border", className)} {...props} />
 }
 
+// `group` para que una celda fijada (ver `stickyCell`) pueda replicar el tinte
+// de la fila: al tener fondo opaco propio, no lo hereda.
 export function TR({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) {
   return (
     <tr
       className={cn(
-        "transition-colors motion-reduce:transition-none hover:bg-fdnda-sky/15 focus-within:bg-fdnda-sky/15",
+        "group transition-colors motion-reduce:transition-none hover:bg-fdnda-sky/15 focus-within:bg-fdnda-sky/15",
         className
       )}
       {...props}
@@ -75,14 +77,36 @@ export function TR({ className, ...props }: React.HTMLAttributes<HTMLTableRowEle
   )
 }
 
-// La cabecera va en la condensada y no se parte en dos líneas. No es un gesto
-// estético: las tablas de este producto llegan a 10 columnas, y la condensada
-// devuelve ~11% de ancho a las celdas de datos justo donde más falta hace.
+/**
+ * Fija la última columna al borde derecho de una tabla que desborda.
+ *
+ * Las acciones viven en la última columna, que es justo la que se pierde al
+ * desplazarse. Ajustar anchos hasta que quepa solo aplaza el problema: basta un
+ * club con nombre largo o una pantalla de 1280px para volver a romperlo. Fijada,
+ * la acción está siempre a la vista.
+ *
+ * El fondo tiene que ser OPACO —el resto de la tabla pasa por debajo— y por eso
+ * la cabecera no puede usar el `bg-fdnda-sky/25` translúcido del `THead`.
+ */
+export const stickyCell = {
+  head: "sticky right-0 z-20 bg-fdnda-sky-head border-l border-fdnda-border",
+  cell: "sticky right-0 z-10 bg-white border-l border-fdnda-border group-hover:bg-fdnda-sky/15 group-focus-within:bg-fdnda-sky/15",
+} as const
+
+// La cabecera va en la condensada, que devuelve ~11% de ancho a las celdas de
+// datos justo donde más falta hace: estas tablas llegan a 10 columnas.
+//
+// Y SIN `whitespace-nowrap`. Lo llevó un tiempo y era exactamente al revés de
+// lo que se buscaba: en el panel de afiliaciones las columnas numéricas las
+// dimensionaba su cabecera y no su dato, así que «Deportistas» ocupaba 115px
+// para mostrar un solo dígito y la tabla se iba 165px por encima del
+// contenedor. Dejar que un titular de dos palabras se parta en dos líneas es
+// lo que hace que la tabla quepa.
 export function TH({ className, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
       className={cn(
-        "whitespace-nowrap px-4 py-3.5 font-heading text-eyebrow uppercase text-fdnda-navy",
+        "px-4 py-3.5 font-heading text-eyebrow uppercase text-fdnda-navy",
         className
       )}
       {...props}
