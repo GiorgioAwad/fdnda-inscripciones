@@ -161,7 +161,7 @@ export function ReviewPanel({
         </>
       )}
 
-      <div className="sticky bottom-4 flex flex-col gap-3 rounded-surface border-2 border-fdnda-navy bg-white p-4 shadow-lg sm:flex-row sm:items-center sm:justify-between">
+      <div className="sticky bottom-4 flex flex-col gap-3 rounded-surface border-2 border-fdnda-navy bg-white p-4 shadow-overlay sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-fdnda-muted">
           {validation
             ? `Total a pagar: ${formatMoney(validation.summary.totalAmount)}`

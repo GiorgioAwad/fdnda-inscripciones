@@ -130,8 +130,11 @@ export function Dialog({ open, onClose, title, description, children, className 
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         className={cn(
-          "animate-dialog-pop relative z-10 flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-surface bg-white shadow-lg",
-          "focus:outline-none motion-reduce:animate-none sm:max-h-[calc(100dvh-2rem)] sm:max-w-lg sm:rounded-control",
+          // El radio del diálogo era menor que el de las tarjetas que tiene
+          // detrás, justo al revés de lo que pide la jerarquía: lo que flota
+          // por encima no puede ser el elemento más duro de la pantalla.
+          "animate-dialog-pop relative z-10 flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-surface bg-white shadow-overlay",
+          "focus:outline-none motion-reduce:animate-none sm:max-h-[calc(100dvh-2rem)] sm:max-w-lg sm:rounded-surface",
           className
         )}
       >
@@ -139,7 +142,7 @@ export function Dialog({ open, onClose, title, description, children, className 
           <div className="min-w-0 py-1">
             <h2
               id={titleId}
-              className="font-heading text-lg font-bold leading-6 text-fdnda-navy"
+              className="font-heading text-xl font-bold leading-6 text-fdnda-navy"
             >
               {title}
             </h2>

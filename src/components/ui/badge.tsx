@@ -30,7 +30,11 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex min-h-6 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset",
+        // El tamaño va fijo y NO usa text-xs a propósito: text-xs subió a 13px
+        // para el cuerpo del producto, pero la insignia no puede crecer con él.
+        // Hay celdas con tres insignias apiladas (padrón, afiliaciones) donde
+        // un punto más rompe la altura de la fila.
+        "inline-flex min-h-6 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.6875rem] font-semibold tracking-[0.01em] ring-1 ring-inset",
         variantClasses[variant],
         className
       )}

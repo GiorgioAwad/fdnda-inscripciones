@@ -32,7 +32,7 @@ export default async function LoginPage({
 
         <div className="mx-auto flex h-full w-full max-w-2xl flex-col lg:min-h-[calc(100dvh-6rem)] lg:justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-control bg-white p-1.5 shadow-sm">
+            <span className="flex h-11 w-11 items-center justify-center rounded-control bg-white p-1.5 shadow-raised">
               <Image
                 src="/fdnda-logo.png"
                 alt=""

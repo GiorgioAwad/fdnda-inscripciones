@@ -184,7 +184,7 @@ export default async function RegistrationsPage({
                   className="group block h-full rounded-surface focus-visible:outline-none"
                   aria-label={`${action} en ${event.name}`}
                 >
-                  <Card className="flex h-full flex-col overflow-hidden transition-[border-color,transform,box-shadow] duration-200 group-hover:-translate-y-0.5 group-hover:border-fdnda-turquoise group-hover:shadow-[var(--shadow-surface)] group-focus-visible:ring-4 group-focus-visible:ring-fdnda-sky">
+                  <Card className="flex h-full flex-col overflow-hidden transition-[border-color,transform,box-shadow] duration-200 group-hover:-translate-y-0.5 group-hover:border-fdnda-turquoise group-hover:shadow-floating group-focus-visible:ring-4 group-focus-visible:ring-fdnda-sky">
                     <div className="wave-field flex min-h-20 flex-wrap items-end gap-2 bg-fdnda-navy px-5 py-4">
                       {event.disciplines.map((discipline) => {
                         const style = disciplineStyle(discipline)

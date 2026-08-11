@@ -4,10 +4,13 @@ import { cn } from "@/lib/utils"
 type Variant = "default" | "secondary" | "outline" | "ghost" | "destructive"
 type Size = "default" | "sm" | "lg" | "icon"
 
+// Solo los botones sólidos llevan elevación: son los que representan la acción
+// principal y deben leerse como un objeto que se puede pulsar. Los demás
+// (outline, ghost, secondary) se quedan planos para no competir con ellos.
 const variantClasses: Record<Variant, string> = {
   default:
-    "border border-fdnda-navy bg-fdnda-navy text-white hover:bg-fdnda-navy/90 " +
-    "active:bg-fdnda-navy/80",
+    "border border-fdnda-navy bg-fdnda-navy text-white shadow-raised hover:bg-fdnda-navy/90 " +
+    "active:translate-y-px active:bg-fdnda-navy/80 active:shadow-none",
   secondary:
     "border border-fdnda-sky bg-fdnda-sky/45 text-fdnda-navy hover:bg-fdnda-sky/70 " +
     "active:bg-fdnda-sky",
@@ -17,8 +20,8 @@ const variantClasses: Record<Variant, string> = {
   ghost:
     "border border-transparent text-fdnda-navy hover:bg-fdnda-sky/25 active:bg-fdnda-sky/40",
   destructive:
-    "border border-fdnda-red bg-fdnda-red text-white hover:bg-fdnda-red/90 " +
-    "active:bg-fdnda-red/80",
+    "border border-fdnda-red bg-fdnda-red text-white shadow-raised hover:bg-fdnda-red/90 " +
+    "active:translate-y-px active:bg-fdnda-red/80 active:shadow-none",
 }
 
 const sizeClasses: Record<Size, string> = {
@@ -58,7 +61,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       data-loading={loading || undefined}
       className={cn(
         "inline-flex select-none items-center justify-center gap-2 rounded-control font-semibold",
-        "transition-colors duration-150 motion-reduce:transition-none",
+        "transition-[background-color,border-color,box-shadow,transform] duration-150 motion-reduce:transition-none",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-turquoise focus-visible:ring-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-55",
         variantClasses[variant],

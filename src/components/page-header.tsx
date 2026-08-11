@@ -1,14 +1,21 @@
 import * as React from "react"
 import type { LucideIcon } from "lucide-react"
+import { LaneBand } from "@/components/ui/lane-band"
 import { cn } from "@/lib/utils"
 
-// Encabezado de página consistente: icono en chip degradado + título + acciones.
+// Encabezado de página consistente: icono en chip + título + acciones.
+//
+// Con `lanes` el encabezado deja de ser texto suelto sobre el fondo y pasa a
+// «modo superficie»: una tarjeta con la franja de andarivel de las disciplinas
+// de la pantalla. Sin `lanes` el markup es exactamente el de siempre, de modo
+// que las ~20 pantallas que ya lo usan no cambian de caja.
 export function PageHeader({
   icon: Icon,
   title,
   description,
   actions,
   eyebrow,
+  lanes,
   className,
 }: {
   icon?: LucideIcon
@@ -16,15 +23,20 @@ export function PageHeader({
   description?: React.ReactNode
   actions?: React.ReactNode
   eyebrow?: React.ReactNode
+  lanes?: readonly string[]
   className?: string
 }) {
+  const banded = Boolean(lanes?.length)
   return (
     <div
       className={cn(
         "flex flex-wrap items-start justify-between gap-x-4 gap-y-3",
+        banded &&
+          "relative overflow-hidden rounded-surface border border-fdnda-border bg-white p-5 pt-6 shadow-raised",
         className
       )}
     >
+      {banded ? <LaneBand disciplines={lanes!} strong /> : null}
       <div className="flex min-w-0 items-start gap-3.5">
         {Icon ? (
           // Antes era navy sólido, el mismo color exacto del chip de Clavados: en
@@ -40,11 +52,11 @@ export function PageHeader({
         ) : null}
         <div className="min-w-0">
           {eyebrow ? (
-            <div className="mb-1 text-xs font-bold uppercase tracking-wider text-fdnda-turquoise-deep">
+            <div className="mb-1.5 text-eyebrow uppercase text-fdnda-turquoise-deep">
               {eyebrow}
             </div>
           ) : null}
-          <h1 className="font-heading text-2xl font-extrabold leading-tight tracking-tight text-fdnda-navy sm:text-3xl">
+          <h1 className="font-heading text-3xl leading-tight text-fdnda-navy sm:text-4xl">
             {title}
           </h1>
           {description ? (

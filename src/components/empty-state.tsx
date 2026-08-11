@@ -21,12 +21,12 @@ export function EmptyState({
       )}
     >
       <div
-        className="flex h-14 w-14 items-center justify-center rounded-control border border-fdnda-sky bg-fdnda-sky/30 text-fdnda-navy"
+        className="flex h-16 w-16 items-center justify-center rounded-panel border border-fdnda-sky bg-fdnda-sky/30 text-fdnda-navy"
         aria-hidden="true"
       >
         <Icon className="h-7 w-7" />
       </div>
-      <p className="font-heading text-base font-bold text-fdnda-navy">{title}</p>
+      <p className="font-heading text-lg font-bold text-fdnda-navy">{title}</p>
       {children ? (
         <div className="max-w-sm text-sm leading-6 text-fdnda-muted">{children}</div>
       ) : null}

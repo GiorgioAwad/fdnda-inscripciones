@@ -1,30 +1,44 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { LaneBand } from "./lane-band"
 
 // Las tablas siempre van dentro de un contenedor con scroll horizontal propio
 // para que la página nunca se desborde en móvil.
+//
+// Con `lanes` hay dos elementos, no uno: la franja NO puede vivir dentro del
+// elemento que hace scroll o se desplazaría con él y se saldría de la vista al
+// mover una tabla ancha. Vive en el envoltorio; el que scrollea conserva
+// role="region", tabIndex y aria-label, porque moverlos al envoltorio dejaría
+// el scroll inalcanzable por teclado.
 export function TableContainer({
   className,
   children,
+  lanes,
   "aria-label": ariaLabel = "Tabla con desplazamiento horizontal",
   tabIndex = 0,
   ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+}: React.HTMLAttributes<HTMLDivElement> & { lanes?: readonly string[] }) {
+  const banded = Boolean(lanes?.length)
   return (
     <div
-      role="region"
-      aria-label={ariaLabel}
-      tabIndex={tabIndex}
       className={cn(
-        "overflow-x-auto overscroll-x-contain rounded-surface border border-fdnda-border bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-turquoise focus-visible:ring-offset-2",
+        "relative overflow-hidden rounded-surface border border-fdnda-border bg-white shadow-raised",
         className
       )}
-      {...props}
     >
-      <p className="border-b border-fdnda-border bg-fdnda-surface px-4 py-2 text-xs font-semibold text-fdnda-muted md:hidden">
-        Desliza horizontalmente para ver toda la tabla.
-      </p>
-      {children}
+      {banded ? <LaneBand disciplines={lanes!} /> : null}
+      <div
+        role="region"
+        aria-label={ariaLabel}
+        tabIndex={tabIndex}
+        className="overflow-x-auto overscroll-x-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fdnda-turquoise"
+        {...props}
+      >
+        <p className="border-b border-fdnda-border bg-fdnda-surface px-4 py-2 text-xs font-semibold text-fdnda-muted md:hidden">
+          Desliza horizontalmente para ver toda la tabla.
+        </p>
+        {children}
+      </div>
     </div>
   )
 }
@@ -37,7 +51,7 @@ export function THead({ className, ...props }: React.HTMLAttributes<HTMLTableSec
   return (
     <thead
       className={cn(
-        "border-b border-fdnda-sky/70 bg-fdnda-sky/20 text-left",
+        "border-b-2 border-fdnda-sky/70 bg-fdnda-sky/25 text-left",
         className
       )}
       {...props}
@@ -61,11 +75,14 @@ export function TR({ className, ...props }: React.HTMLAttributes<HTMLTableRowEle
   )
 }
 
+// La cabecera va en la condensada y no se parte en dos líneas. No es un gesto
+// estético: las tablas de este producto llegan a 10 columnas, y la condensada
+// devuelve ~11% de ancho a las celdas de datos justo donde más falta hace.
 export function TH({ className, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
       className={cn(
-        "px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-fdnda-navy",
+        "whitespace-nowrap px-4 py-3.5 font-heading text-eyebrow uppercase text-fdnda-navy",
         className
       )}
       {...props}

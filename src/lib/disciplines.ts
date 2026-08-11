@@ -24,6 +24,11 @@ export interface DisciplineStyle {
   accent: string
   // Chip legible sobre el azul institucional (tarjetas de evento).
   onNavy: string
+  // Color de la franja de andarivel del borde superior de una superficie.
+  // A diferencia de `chip` y `accent`, que acompañan a una etiqueta escrita,
+  // este color viaja solo: es lo único que dice de qué disciplina es la
+  // tarjeta cuando el ojo la recorre de lejos.
+  lane: string
 }
 
 export const DISCIPLINES: Record<DisciplineValue, DisciplineStyle> = {
@@ -34,6 +39,7 @@ export const DISCIPLINES: Record<DisciplineValue, DisciplineStyle> = {
     chip: "bg-fdnda-navy",
     accent: "text-fdnda-navy",
     onNavy: "bg-white text-fdnda-navy",
+    lane: "bg-fdnda-navy",
   },
   ARTISTIC_SWIMMING: {
     label: "Natación Artística",
@@ -42,6 +48,7 @@ export const DISCIPLINES: Record<DisciplineValue, DisciplineStyle> = {
     chip: "bg-fdnda-red",
     accent: "text-fdnda-red-deep",
     onNavy: "bg-fdnda-red text-white",
+    lane: "bg-fdnda-red",
   },
   WATER_POLO: {
     // El turquesa de marca con texto blanco da 3.14:1 y no llega a AA (4.5:1).
@@ -54,6 +61,9 @@ export const DISCIPLINES: Record<DisciplineValue, DisciplineStyle> = {
     chip: "bg-fdnda-turquoise-deep",
     accent: "text-fdnda-turquoise-deep",
     onNavy: "bg-fdnda-turquoise text-fdnda-navy-deep",
+    // La franja no lleva texto encima, así que aquí sí puede ir el turquesa de
+    // marca: el requisito de 4.5:1 aplica al texto, no a una banda de color.
+    lane: "bg-fdnda-turquoise",
   },
 }
 

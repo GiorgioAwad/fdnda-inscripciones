@@ -57,7 +57,7 @@ export default async function AdminDashboardPage() {
         description="Estado general de la plataforma de inscripciones."
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label="Eventos abiertos"
           value={String(openEvents)}

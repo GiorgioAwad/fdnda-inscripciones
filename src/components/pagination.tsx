@@ -73,9 +73,9 @@ export function Pagination({
               aria-current={page === currentPage ? "page" : undefined}
               aria-label={`Página ${page}`}
               className={cn(
-                "inline-flex min-h-11 min-w-11 items-center justify-center rounded-control px-3 font-semibold",
+                "num inline-flex min-h-11 min-w-11 items-center justify-center rounded-control px-3 font-semibold",
                 page === currentPage
-                  ? "bg-fdnda-turquoise-deep text-white"
+                  ? "bg-fdnda-turquoise-deep text-white shadow-raised"
                   : "text-fdnda-muted hover:bg-fdnda-sunken hover:text-fdnda-navy"
               )}
             >

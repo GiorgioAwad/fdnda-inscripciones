@@ -12,7 +12,7 @@ export default async function PasswordChangePage() {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-fdnda-sunken px-5 py-10">
-      <section className="w-full max-w-md rounded-surface border border-fdnda-border bg-white p-6 shadow-sm sm:p-8">
+      <section className="w-full max-w-md rounded-surface border border-fdnda-border bg-white p-6 shadow-floating sm:p-8">
         <span className="mb-5 flex h-12 w-12 items-center justify-center rounded-control bg-fdnda-sky-soft text-fdnda-navy">
           <LockKeyhole className="h-6 w-6" aria-hidden="true" />
         </span>

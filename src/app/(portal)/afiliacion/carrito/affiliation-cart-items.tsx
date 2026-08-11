@@ -119,7 +119,7 @@ export function AffiliationCartItems({
       })}
 
       <div className="sticky bottom-4">
-        <div className="overflow-hidden rounded-surface border-2 border-fdnda-navy bg-white shadow-[0_12px_32px_rgb(2_55_125_/_0.12)]">
+        <div className="overflow-hidden rounded-surface border-2 border-fdnda-navy bg-white shadow-overlay">
           <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">

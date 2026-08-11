@@ -150,7 +150,7 @@ export default async function PagoPage({
 
       {/* Estado / acción según estado de la orden */}
       {order.status === "PAID" ? (
-        <div role="status" className="animate-fade-up overflow-hidden rounded-surface border-2 border-fdnda-turquoise bg-white shadow-[var(--shadow-surface)]">
+        <div role="status" className="animate-fade-up overflow-hidden rounded-surface border-2 border-fdnda-turquoise bg-white shadow-floating">
           <div className="flex flex-col items-center gap-3 px-6 py-9 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-fdnda-turquoise-soft text-fdnda-navy ring-1 ring-inset ring-fdnda-turquoise/25">
               <CheckCircle2 className="h-9 w-9" aria-hidden="true" />

@@ -63,7 +63,7 @@ export default async function EventoDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-5 overflow-hidden rounded-surface border border-fdnda-border bg-white p-5 shadow-[var(--shadow-surface)] sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-5 overflow-hidden rounded-surface border border-fdnda-border bg-white p-5 shadow-raised sm:p-6">
         <div className="min-w-0">
           <Link
             href="/admin/eventos"

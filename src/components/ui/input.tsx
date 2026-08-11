@@ -8,7 +8,7 @@ export const Input = React.forwardRef<
   <input
     ref={ref}
     className={cn(
-      "h-11 w-full rounded-control border border-fdnda-border-control bg-white px-3.5 text-sm text-fdnda-ink",
+      "h-11 w-full rounded-control border border-fdnda-border-control bg-white px-3.5 text-base text-fdnda-ink shadow-[inset_0_1px_2px_rgb(2_55_125/0.05)]",
       "placeholder:text-fdnda-muted transition-colors motion-reduce:transition-none",
       "hover:border-fdnda-turquoise/70",
       "focus:border-fdnda-turquoise focus:outline-none focus:ring-2 focus:ring-fdnda-turquoise/25",
@@ -29,7 +29,7 @@ export const Textarea = React.forwardRef<
   <textarea
     ref={ref}
     className={cn(
-      "min-h-28 w-full resize-y rounded-control border border-fdnda-border-control bg-white px-3.5 py-3 text-sm text-fdnda-ink",
+      "min-h-28 w-full resize-y rounded-control border border-fdnda-border-control bg-white px-3.5 py-3 text-base text-fdnda-ink shadow-[inset_0_1px_2px_rgb(2_55_125/0.05)]",
       "placeholder:text-fdnda-muted transition-colors motion-reduce:transition-none",
       "hover:border-fdnda-turquoise/70",
       "focus:border-fdnda-turquoise focus:outline-none focus:ring-2 focus:ring-fdnda-turquoise/25",
@@ -50,7 +50,7 @@ export const Select = React.forwardRef<
   <select
     ref={ref}
     className={cn(
-      "h-11 w-full rounded-control border border-fdnda-border-control bg-white px-3 text-sm text-fdnda-ink",
+      "h-11 w-full rounded-control border border-fdnda-border-control bg-white px-3 text-base text-fdnda-ink shadow-[inset_0_1px_2px_rgb(2_55_125/0.05)]",
       "transition-colors motion-reduce:transition-none hover:border-fdnda-turquoise/70",
       "focus:border-fdnda-turquoise focus:outline-none focus:ring-2 focus:ring-fdnda-turquoise/25",
       "aria-invalid:border-fdnda-red aria-invalid:ring-2 aria-invalid:ring-fdnda-red/20",
@@ -68,7 +68,7 @@ export function Label({
 }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return (
     <label
-      className={cn("mb-1.5 block text-sm font-semibold text-fdnda-navy", className)}
+      className={cn("mb-1.5 block text-sm font-semibold text-fdnda-ink", className)}
       {...props}
     />
   )
