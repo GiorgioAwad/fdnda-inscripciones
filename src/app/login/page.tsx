@@ -20,7 +20,7 @@ export default async function LoginPage({
   return (
     <main className="grid min-h-dvh w-full min-w-0 grid-cols-[minmax(0,1fr)] bg-white lg:grid-cols-[minmax(380px,0.9fr)_minmax(520px,1.1fr)]">
       <section className="relative isolate min-w-0 overflow-hidden bg-fdnda-navy px-6 py-8 text-white sm:px-10 lg:min-h-dvh lg:px-12 lg:py-12 xl:px-16">
-        <div className="wave-pattern absolute inset-0 -z-20 opacity-30" aria-hidden="true" />
+        <div className="wave-field absolute inset-0 -z-20 opacity-30" aria-hidden="true" />
         <div
           className="absolute -right-28 top-1/2 -z-10 h-96 w-96 -translate-y-1/2 rounded-full border border-white/10"
           aria-hidden="true"
