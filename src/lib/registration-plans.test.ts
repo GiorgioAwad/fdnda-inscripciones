@@ -42,6 +42,7 @@ vi.mock("./prisma", () => ({ prisma: database.prisma }))
 
 import {
   createOrResumeRegistrationPlan,
+  entryChargeNoteFor,
   entryChargeSuffix,
   isRetryableRegistrationPlanTransactionError,
   saveRegistrationPlanEntry,
@@ -392,5 +393,37 @@ describe("nota de la formación en el comprobante", () => {
 
   it("no agrega nota cuando la formación sí se cobra", () => {
     expect(entryChargeSuffix("CHARGED")).toBe("")
+  })
+})
+
+describe("entryChargeNoteFor: por qué corresponde cada nota", () => {
+  it("cobra la formación cuando el evento la cobra y el club no se bajó (paysEntry null = lo que diga el evento)", () => {
+    expect(
+      entryChargeNoteFor({ chargesEntry: true, paysEntry: null })
+    ).toBe("CHARGED")
+  })
+
+  it("cobra la formación cuando el evento la cobra y el club eligió pagarla explícitamente", () => {
+    expect(
+      entryChargeNoteFor({ chargesEntry: true, paysEntry: true })
+    ).toBe("CHARGED")
+  })
+
+  it("el club paga por deportista cuando el evento cobra formación pero el club se bajó de ese concepto", () => {
+    expect(
+      entryChargeNoteFor({ chargesEntry: true, paysEntry: false })
+    ).toBe("CLUB_PAYS_PER_ATHLETE")
+  })
+
+  it("va en la cuota cuando el evento no cobra formación en esa disciplina, sin importar la elección del club", () => {
+    expect(
+      entryChargeNoteFor({ chargesEntry: false, paysEntry: null })
+    ).toBe("IN_ATHLETE_FEE")
+  })
+
+  it("cuando la disciplina no cobra formación esa es la razón, aunque el club también se haya bajado", () => {
+    expect(
+      entryChargeNoteFor({ chargesEntry: false, paysEntry: false })
+    ).toBe("IN_ATHLETE_FEE")
   })
 })

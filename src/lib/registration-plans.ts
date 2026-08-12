@@ -1433,6 +1433,24 @@ export function entryChargeSuffix(note: EntryChargeNote): string {
   return ""
 }
 
+/**
+ * Por que una formacion aparece en S/ 0. El orden importa: si la disciplina no
+ * cobra por formacion, ESA es la razon real y gana sobre la eleccion del club,
+ * aunque el club tambien se haya bajado del concepto.
+ *
+ * `chargesEntry` en `undefined` (disciplina ausente del desglose) se trata como
+ * `true`: es el comportamiento historico y hoy no puede pasar, porque el motor
+ * emite una linea ENTRY por cada formacion.
+ */
+export function entryChargeNoteFor(input: {
+  chargesEntry: boolean
+  paysEntry: boolean | null
+}): EntryChargeNote {
+  if (!input.chargesEntry) return "IN_ATHLETE_FEE"
+  if (input.paysEntry === false) return "CLUB_PAYS_PER_ATHLETE"
+  return "CHARGED"
+}
+
 function buildRegistrationDescription(
   plan: RegistrationPlanForValidation,
   registration: RegistrationPlanForValidation["registrations"][number],
@@ -1775,11 +1793,11 @@ export async function checkoutRegistrationPlan(input: {
       const chargesEntryByDiscipline = new Map(
         pricing.byDiscipline.map((row) => [row.discipline as string, row.chargesEntry])
       )
-      const noteFor = (discipline: string): EntryChargeNote => {
-        if (chargesEntryByDiscipline.get(discipline) === false) return "IN_ATHLETE_FEE"
-        if (plan.paysEntry === false) return "CLUB_PAYS_PER_ATHLETE"
-        return "CHARGED"
-      }
+      const noteFor = (discipline: string): EntryChargeNote =>
+        entryChargeNoteFor({
+          chargesEntry: chargesEntryByDiscipline.get(discipline) ?? true,
+          paysEntry: plan.paysEntry,
+        })
 
       const created = await tx.order.create({
         data: {
