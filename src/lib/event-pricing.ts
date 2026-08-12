@@ -5,37 +5,35 @@ import { isDiscipline, type DisciplineValue } from "./disciplines"
 // evento". La configuración vive en EventDisciplineConfig, pero NO todos los
 // eventos tienen fila: los creados antes de esa tabla no tienen ninguna.
 //
-// De ahí la regla que sostiene todo el rollout: AUSENCIA DE FILA = PER_ENTRY +
-// RANGE, es decir el comportamiento histórico (precio por formación, ventana
-// birthYearFrom..birthYearTo). Ningún evento anterior cambia de precio ni de
-// elegibilidad por el hecho de existir esta tabla.
+// De ahí la regla que sostiene todo el rollout: AUSENCIA DE FILA = cobra por
+// formación (chargesEntry) y RANGE, es decir el comportamiento histórico
+// (precio por formación, ventana birthYearFrom..birthYearTo). Ningún evento
+// anterior cambia de precio ni de elegibilidad por el hecho de existir esta
+// tabla.
 
-export type PricingModeValue = "PER_ENTRY" | "PER_ATHLETE"
 export type AgeRuleModeValue = "RANGE" | "MAX_AGE_ONLY"
 
-export const DEFAULT_PRICING_MODE: PricingModeValue = "PER_ENTRY"
 export const DEFAULT_AGE_RULE_MODE: AgeRuleModeValue = "RANGE"
 
 // Forma mínima que necesita este módulo. Se declara acá en vez de importar el
 // tipo de Prisma para que las funciones puras sigan siendo testeables sin base.
 export interface EventDisciplineConfigLike {
   discipline: string
-  pricingMode: string
+  chargesEntry: boolean
+  chargesAthleteFee: boolean
   athleteFee: unknown
   ageRuleMode: string
 }
 
 export interface EffectiveDisciplineConfig {
   discipline: DisciplineValue
-  pricingMode: PricingModeValue
-  // Monto de la cuota fija por deportista, como string decimal para no perder
-  // precisión al cruzar el límite servidor/cliente. null en PER_ENTRY.
+  // Los dos son independientes: polo prende los dos y los cobros se suman.
+  chargesEntry: boolean
+  chargesAthleteFee: boolean
+  // Monto de la cuota por deportista, como string decimal para no perder
+  // precisión al cruzar el límite servidor/cliente. null si no se cobra.
   athleteFee: string | null
   ageRuleMode: AgeRuleModeValue
-}
-
-function pricingModeOf(value: string): PricingModeValue {
-  return value === "PER_ATHLETE" ? "PER_ATHLETE" : DEFAULT_PRICING_MODE
 }
 
 function ageRuleModeOf(value: string): AgeRuleModeValue {
@@ -44,7 +42,8 @@ function ageRuleModeOf(value: string): AgeRuleModeValue {
 
 /**
  * Configuración efectiva de una disciplina en un evento. Sin fila devuelve el
- * default histórico, así que es seguro llamarla para cualquier evento.
+ * default histórico —cobra por formación—, así que es seguro llamarla para
+ * cualquier evento, incluidos los anteriores a esta tabla.
  */
 export function disciplineConfigFor(
   configs: readonly EventDisciplineConfigLike[],
@@ -59,20 +58,21 @@ export function disciplineConfigFor(
   if (!row) {
     return {
       discipline: normalized,
-      pricingMode: DEFAULT_PRICING_MODE,
+      chargesEntry: true,
+      chargesAthleteFee: false,
       athleteFee: null,
       ageRuleMode: DEFAULT_AGE_RULE_MODE,
     }
   }
 
-  const pricingMode = pricingModeOf(row.pricingMode)
   return {
     discipline: normalized,
-    pricingMode,
-    // La cuota solo tiene sentido en PER_ATHLETE; en PER_ENTRY se ignora aunque
-    // haya quedado un valor de una configuración anterior.
+    chargesEntry: row.chargesEntry,
+    chargesAthleteFee: row.chargesAthleteFee,
+    // La cuota solo tiene sentido si se cobra; si el concepto se apagó, un
+    // valor residual de una configuración anterior se ignora.
     athleteFee:
-      pricingMode === "PER_ATHLETE" && row.athleteFee != null
+      row.chargesAthleteFee && row.athleteFee != null
         ? String(row.athleteFee)
         : null,
     ageRuleMode: ageRuleModeOf(row.ageRuleMode),
@@ -80,14 +80,13 @@ export function disciplineConfigFor(
 }
 
 /**
- * Una disciplina PER_ATHLETE sin cuota positiva está mal configurada: el evento
- * no puede cobrar. Se detecta al abrir el evento (admin) y otra vez al validar
- * la planilla, por si la configuración cambió después.
+ * Un concepto habilitado sin precio no puede vender. La cuota por deportista es
+ * la única que se valida acá: el precio de la formación vive en la prueba.
  */
 export function isPricingConfigurationValid(
   config: EffectiveDisciplineConfig
 ): boolean {
-  if (config.pricingMode !== "PER_ATHLETE") return true
+  if (!config.chargesAthleteFee) return true
   if (config.athleteFee === null) return false
   const fee = Number(config.athleteFee)
   return Number.isFinite(fee) && fee > 0
@@ -141,7 +140,9 @@ export interface PlanPricingLine {
 
 export interface DisciplinePricingSummary {
   discipline: DisciplineValue
-  pricingMode: PricingModeValue
+  // Qué cobra el evento en esta disciplina. Los dos pueden ser ciertos.
+  chargesEntry: boolean
+  chargesAthleteFee: boolean
   entryCount: number
   /** Deportistas distintos con al menos una formación en la disciplina. */
   athleteCount: number
@@ -157,7 +158,7 @@ export interface PlanPricing {
   total: Prisma.Decimal
   byDiscipline: DisciplinePricingSummary[]
   coveredAthleteFees: number
-  /** Disciplinas PER_ATHLETE sin cuota positiva: el evento no puede cobrar. */
+  /** Disciplinas con un concepto habilitado pero sin cuota positiva: el evento no puede cobrar. */
   misconfiguredDisciplines: DisciplineValue[]
 }
 
@@ -166,6 +167,9 @@ export interface PlanPricing {
 export interface PricingPlanLike {
   id: string
   eventId: string | null
+  /** Qué conceptos eligió pagar el club. null = lo que diga el evento. */
+  paysEntry?: boolean | null
+  paysAthleteFee?: boolean | null
   registrations: Array<{
     id: string
     modality: { discipline: string; price: unknown }
@@ -198,9 +202,12 @@ export type CoverageLookup = (input: {
  * Importe de una planilla, con el desglose que consumen la validación, el
  * checkout y el resumen. Es la única fuente del total: nadie más suma precios.
  *
- * En disciplinas PER_ATHLETE las formaciones valen 0 y el cobro se concentra en
- * una cuota por deportista, que además se omite si ese deportista ya la pagó en
- * otra orden del mismo evento (planilla suplementaria).
+ * Cada disciplina puede cobrar por formación, por deportista, o los dos a la
+ * vez (polo). Si el evento no cobra un concepto, la formación (o la cuota) vale
+ * 0. La elección del club (paysEntry/paysAthleteFee) puede apagar un concepto
+ * que el evento sí cobra, pero nunca prender uno que el evento no cobra. La
+ * cuota por deportista además se omite si ese deportista ya la pagó en otra
+ * orden del mismo evento (planilla suplementaria).
  */
 export async function computePlanPricing(
   lookupCoverage: CoverageLookup,
@@ -210,6 +217,11 @@ export async function computePlanPricing(
   const lines: PlanPricingLine[] = []
   const misconfigured = new Set<DisciplineValue>()
 
+  // La elección del club NUNCA prende un concepto que el evento no cobra: solo
+  // puede apagar uno. Por eso es un AND, no un OR.
+  const paysEntry = plan.paysEntry ?? true
+  const paysAthleteFee = plan.paysAthleteFee ?? true
+
   // Deportistas distintos por disciplina, en orden estable de aparición.
   const athletesByDiscipline = new Map<
     DisciplineValue,
@@ -218,8 +230,9 @@ export async function computePlanPricing(
 
   for (const registration of plan.registrations) {
     const config = disciplineConfigFor(configs, registration.modality.discipline)
-    const perAthlete = config.pricingMode === "PER_ATHLETE"
-    if (perAthlete && !isPricingConfigurationValid(config)) {
+    const chargeEntry = config.chargesEntry && paysEntry
+    const chargeFee = config.chargesAthleteFee && paysAthleteFee
+    if (chargeFee && !isPricingConfigurationValid(config)) {
       misconfigured.add(config.discipline)
     }
 
@@ -227,14 +240,15 @@ export async function computePlanPricing(
       kind: "ENTRY",
       discipline: config.discipline,
       registrationId: registration.id,
-      // En PER_ATHLETE la formación no cuesta: el cobro va en la cuota.
-      amount: perAthlete
-        ? new Prisma.Decimal(0)
-        : new Prisma.Decimal(String(registration.modality.price)),
+      // La línea existe siempre —es el registro nominal— pero vale 0 cuando
+      // este plan no paga por formación.
+      amount: chargeEntry
+        ? new Prisma.Decimal(String(registration.modality.price))
+        : new Prisma.Decimal(0),
       alreadyCovered: false,
     })
 
-    if (!perAthlete) continue
+    if (!chargeFee) continue
     const bucket =
       athletesByDiscipline.get(config.discipline) ??
       new Map<string, { firstNames: string; lastNames: string }>()
@@ -287,11 +301,13 @@ export async function computePlanPricing(
 
   const byDiscipline = new Map<DisciplineValue, DisciplinePricingSummary>()
   for (const line of lines) {
+    const config = disciplineConfigFor(configs, line.discipline)
     const summary =
       byDiscipline.get(line.discipline) ??
       ({
         discipline: line.discipline,
-        pricingMode: disciplineConfigFor(configs, line.discipline).pricingMode,
+        chargesEntry: config.chargesEntry,
+        chargesAthleteFee: config.chargesAthleteFee,
         entryCount: 0,
         athleteCount: 0,
         entriesAmount: 0,
@@ -310,10 +326,10 @@ export async function computePlanPricing(
     byDiscipline.set(line.discipline, summary)
   }
 
-  // Deportistas distintos también en las disciplinas que cobran por formación.
+  // Deportistas distintos también en las disciplinas que no emiten línea de cuota.
   for (const registration of plan.registrations) {
     const config = disciplineConfigFor(configs, registration.modality.discipline)
-    if (config.pricingMode === "PER_ATHLETE") continue
+    if (config.chargesAthleteFee && paysAthleteFee) continue
     const summary = byDiscipline.get(config.discipline)
     if (!summary) continue
     summary.athleteCount = countDistinctAthletes(plan, config.discipline, configs)

@@ -11,17 +11,27 @@ import {
   type PricingPlanLike,
 } from "./event-pricing"
 
-const perAthlete = {
+const soloCuota = {
   discipline: "DIVING",
-  pricingMode: "PER_ATHLETE",
+  chargesEntry: false,
+  chargesAthleteFee: true,
   athleteFee: "80.00",
   ageRuleMode: "RANGE",
 }
 
 const subN = {
   discipline: "WATER_POLO",
-  pricingMode: "PER_ENTRY",
+  chargesEntry: true,
+  chargesAthleteFee: false,
   athleteFee: null,
+  ageRuleMode: "MAX_AGE_ONLY",
+}
+
+const poloAmbos = {
+  discipline: "WATER_POLO",
+  chargesEntry: true,
+  chargesAthleteFee: true,
+  athleteFee: "60.00",
   ageRuleMode: "MAX_AGE_ONLY",
 }
 
@@ -29,61 +39,76 @@ describe("disciplineConfigFor", () => {
   it("sin fila devuelve el default histórico: los eventos previos no cambian", () => {
     expect(disciplineConfigFor([], "DIVING")).toEqual({
       discipline: "DIVING",
-      pricingMode: "PER_ENTRY",
+      chargesEntry: true,
+      chargesAthleteFee: false,
       athleteFee: null,
       ageRuleMode: "RANGE",
     })
   })
 
   it("no mezcla disciplinas: una config de clavados no aplica a polo", () => {
-    expect(disciplineConfigFor([perAthlete], "WATER_POLO").pricingMode).toBe(
-      "PER_ENTRY"
-    )
+    const config = disciplineConfigFor([soloCuota], "WATER_POLO")
+    expect(config.chargesEntry).toBe(true)
+    expect(config.chargesAthleteFee).toBe(false)
   })
 
-  it("lee la cuota fija de una disciplina PER_ATHLETE", () => {
-    const config = disciplineConfigFor([perAthlete], "DIVING")
-    expect(config.pricingMode).toBe("PER_ATHLETE")
+  it("lee la cuota fija de una disciplina que cobra por deportista", () => {
+    const config = disciplineConfigFor([soloCuota], "DIVING")
+    expect(config.chargesAthleteFee).toBe(true)
     expect(config.athleteFee).toBe("80.00")
   })
 
-  it("ignora una cuota residual cuando la disciplina volvió a PER_ENTRY", () => {
+  it("polo puede cobrar los dos conceptos a la vez", () => {
+    const config = disciplineConfigFor([poloAmbos], "WATER_POLO")
+    expect(config.chargesEntry).toBe(true)
+    expect(config.chargesAthleteFee).toBe(true)
+    expect(config.athleteFee).toBe("60.00")
+  })
+
+  it("ignora una cuota residual cuando ya no se cobra por deportista", () => {
     const config = disciplineConfigFor(
-      [{ ...perAthlete, pricingMode: "PER_ENTRY" }],
+      [{ ...soloCuota, chargesAthleteFee: false, chargesEntry: true }],
       "DIVING"
     )
     expect(config.athleteFee).toBeNull()
   })
 
-  it("trata un modo desconocido como el default en vez de romper", () => {
+  it("trata una regla de edad desconocida como el default en vez de romper", () => {
     const config = disciplineConfigFor(
-      [{ ...subN, pricingMode: "LO_QUE_SEA", ageRuleMode: "OTRA_COSA" }],
+      [{ ...subN, ageRuleMode: "OTRA_COSA" }],
       "WATER_POLO"
     )
-    expect(config.pricingMode).toBe("PER_ENTRY")
     expect(config.ageRuleMode).toBe("RANGE")
   })
 })
 
 describe("isPricingConfigurationValid", () => {
-  it("acepta PER_ENTRY sin cuota", () => {
+  it("acepta una disciplina que solo cobra por formación", () => {
     expect(
       isPricingConfigurationValid(disciplineConfigFor([], "ARTISTIC_SWIMMING"))
     ).toBe(true)
   })
 
-  it("rechaza PER_ATHLETE sin cuota", () => {
+  it("rechaza cobrar por deportista sin cuota", () => {
     expect(
       isPricingConfigurationValid(
-        disciplineConfigFor([{ ...perAthlete, athleteFee: null }], "DIVING")
+        disciplineConfigFor([{ ...soloCuota, athleteFee: null }], "DIVING")
       )
     ).toBe(false)
   })
 
-  it("rechaza PER_ATHLETE con cuota cero", () => {
+  it("rechaza cobrar por deportista con cuota cero", () => {
     expect(
       isPricingConfigurationValid(
-        disciplineConfigFor([{ ...perAthlete, athleteFee: "0" }], "DIVING")
+        disciplineConfigFor([{ ...soloCuota, athleteFee: "0" }], "DIVING")
+      )
+    ).toBe(false)
+  })
+
+  it("rechaza polo con los dos conceptos si la cuota falta", () => {
+    expect(
+      isPricingConfigurationValid(
+        disciplineConfigFor([{ ...poloAmbos, athleteFee: null }], "WATER_POLO")
       )
     ).toBe(false)
   })
@@ -183,7 +208,8 @@ const NO_COVERAGE = coverage([])
 const DIVING_FLAT: EventDisciplineConfigLike[] = [
   {
     discipline: "DIVING",
-    pricingMode: "PER_ATHLETE",
+    chargesEntry: false,
+    chargesAthleteFee: true,
     athleteFee: "80.00",
     ageRuleMode: "RANGE",
   },
@@ -284,8 +310,16 @@ describe("computePlanPricing · cuota fija por deportista", () => {
     const artistic = pricing.byDiscipline.find(
       (d) => d.discipline === "ARTISTIC_SWIMMING"
     )!
-    expect(diving).toMatchObject({ entriesAmount: 0, feesAmount: 80, subtotal: 80 })
+    expect(diving).toMatchObject({
+      chargesEntry: false,
+      chargesAthleteFee: true,
+      entriesAmount: 0,
+      feesAmount: 80,
+      subtotal: 80,
+    })
     expect(artistic).toMatchObject({
+      chargesEntry: true,
+      chargesAthleteFee: false,
       entriesAmount: 150,
       feesAmount: 0,
       subtotal: 150,
@@ -313,5 +347,126 @@ describe("computePlanPricing · cuota fija por deportista", () => {
     const artistic = pricing.byDiscipline[0]
     expect(artistic.entryCount).toBe(2)
     expect(artistic.athleteCount).toBe(2)
+  })
+})
+
+const POLO_AMBOS: EventDisciplineConfigLike[] = [
+  {
+    discipline: "WATER_POLO",
+    chargesEntry: true,
+    chargesAthleteFee: true,
+    athleteFee: "60.00",
+    ageRuleMode: "MAX_AGE_ONLY",
+  },
+]
+
+function planCon(
+  choice: { paysEntry?: boolean | null; paysAthleteFee?: boolean | null },
+  registrations: PricingPlanLike["registrations"]
+): PricingPlanLike {
+  return { id: "plan-1", eventId: "event-1", ...choice, registrations }
+}
+
+describe("computePlanPricing · polo cobra los dos conceptos", () => {
+  const plantel = () =>
+    entry("r1", "WATER_POLO", "500.00", [
+      ["a1", ANA],
+      ["a2", LUZ],
+    ])
+
+  it("sin elección explícita cobra el plantel y las dos cuotas", async () => {
+    const pricing = await computePlanPricing(
+      NO_COVERAGE,
+      plan([plantel()]),
+      POLO_AMBOS
+    )
+    expect(pricing.total.toString()).toBe("620")
+  })
+
+  it("el club que solo paga por deportista no paga el plantel", async () => {
+    const pricing = await computePlanPricing(
+      NO_COVERAGE,
+      planCon({ paysEntry: false, paysAthleteFee: true }, [plantel()]),
+      POLO_AMBOS
+    )
+    expect(pricing.total.toString()).toBe("120")
+    // La formación se conserva como registro nominal, pero a 0.
+    const entryLine = pricing.lines.find((l) => l.kind === "ENTRY")!
+    expect(entryLine.amount.isZero()).toBe(true)
+  })
+
+  it("el club que solo paga el plantel no paga cuotas", async () => {
+    const pricing = await computePlanPricing(
+      NO_COVERAGE,
+      planCon({ paysEntry: true, paysAthleteFee: false }, [plantel()]),
+      POLO_AMBOS
+    )
+    expect(pricing.total.toString()).toBe("500")
+    expect(pricing.lines.filter((l) => l.kind === "ATHLETE_FEE")).toHaveLength(0)
+  })
+
+  it("no marcar ningún concepto deja el total en cero: la validación lo bloquea", async () => {
+    const pricing = await computePlanPricing(
+      NO_COVERAGE,
+      planCon({ paysEntry: false, paysAthleteFee: false }, [plantel()]),
+      POLO_AMBOS
+    )
+    expect(pricing.total.toString()).toBe("0")
+  })
+
+  it("la elección del club no puede prender un concepto que el evento no cobra", async () => {
+    const pricing = await computePlanPricing(
+      NO_COVERAGE,
+      planCon({ paysEntry: true, paysAthleteFee: true }, [
+        entry("r1", "ARTISTIC_SWIMMING", "150.00", [["a1", ANA]]),
+      ]),
+      []
+    )
+    expect(pricing.total.toString()).toBe("150")
+    expect(pricing.lines.filter((l) => l.kind === "ATHLETE_FEE")).toHaveLength(0)
+  })
+
+  it("una cuota ya pagada no se vuelve a cobrar aunque el plantel sí", async () => {
+    const pricing = await computePlanPricing(
+      coverage([{ discipline: "WATER_POLO", athleteId: "a1", code: "INS-XYZ" }]),
+      plan([plantel()]),
+      POLO_AMBOS
+    )
+    expect(pricing.total.toString()).toBe("560")
+    expect(pricing.coveredAthleteFees).toBe(1)
+  })
+
+  it("el desglose por disciplina reporta los dos conceptos", async () => {
+    const pricing = await computePlanPricing(
+      NO_COVERAGE,
+      plan([plantel()]),
+      POLO_AMBOS
+    )
+    expect(pricing.byDiscipline[0]).toMatchObject({
+      discipline: "WATER_POLO",
+      chargesEntry: true,
+      chargesAthleteFee: true,
+      entriesAmount: 500,
+      feesAmount: 120,
+      subtotal: 620,
+    })
+  })
+
+  it("señala el concepto habilitado sin cuota en vez de cobrar cero", async () => {
+    const pricing = await computePlanPricing(
+      NO_COVERAGE,
+      plan([plantel()]),
+      [{ ...POLO_AMBOS[0], athleteFee: null }]
+    )
+    expect(pricing.misconfiguredDisciplines).toEqual(["WATER_POLO"])
+  })
+
+  it("no señala mala configuración si el club no eligió pagar esa cuota", async () => {
+    const pricing = await computePlanPricing(
+      NO_COVERAGE,
+      planCon({ paysAthleteFee: false }, [plantel()]),
+      [{ ...POLO_AMBOS[0], athleteFee: null }]
+    )
+    expect(pricing.misconfiguredDisciplines).toEqual([])
   })
 })
