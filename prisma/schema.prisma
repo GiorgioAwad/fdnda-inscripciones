@@ -367,9 +367,16 @@ model EventDisciplineConfig {
   event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
   discipline Discipline
 
+  // Los dos conceptos son independientes y pueden estar prendidos a la vez:
+  // polo cobra la inscripcion del plantel Y una cuota por jugador. Los defaults
+  // son el comportamiento historico, que es lo que hace que un evento sin fila
+  // en esta tabla siga cobrando por formacion.
+  chargesEntry      Boolean     @default(true)
+  chargesAthleteFee Boolean     @default(false)
+  // Se retira en la release siguiente: durante el despliegue conviven
+  // instancias viejas que todavia la leen.
   pricingMode PricingMode @default(PER_ENTRY)
-  // Cuota fija por deportista. Requerida (y > 0) cuando pricingMode es
-  // PER_ATHLETE; ignorada en PER_ENTRY.
+  // Cuota fija por deportista. Requerida (y > 0) cuando chargesAthleteFee.
   athleteFee  Decimal?    @db.Decimal(10, 2)
   ageRuleMode AgeRuleMode @default(RANGE)
 
@@ -517,6 +524,11 @@ model RegistrationPlan {
   event       Event?                 @relation(fields: [eventId], references: [id], onDelete: SetNull)
   // Sección operativa dueña de la planilla. Null = planilla coordinadora/legada.
   disciplineScope Discipline?
+  // Que conceptos eligio pagar el club. null = lo que diga el evento; solo un
+  // false explicito quita el cobro. La eleccion es una por planilla porque la
+  // planilla ya esta acotada a un evento y a una disciplina.
+  paysEntry      Boolean?
+  paysAthleteFee Boolean?
   createdById String
   createdBy   User                   @relation(fields: [createdById], references: [id])
   status      RegistrationPlanStatus @default(DRAFT)
