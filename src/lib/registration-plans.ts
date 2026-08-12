@@ -1421,10 +1421,22 @@ function serializableValidation(
   }
 }
 
+export type EntryChargeNote = "CHARGED" | "IN_ATHLETE_FEE" | "CLUB_PAYS_PER_ATHLETE"
+
+/**
+ * Por qué una formación aparece en S/ 0 en el comprobante. Sin esta nota la
+ * línea parecería decir que la prueba fue gratis.
+ */
+export function entryChargeSuffix(note: EntryChargeNote): string {
+  if (note === "IN_ATHLETE_FEE") return " | incluida en la cuota por deportista"
+  if (note === "CLUB_PAYS_PER_ATHLETE") return " | sin cargo: el club paga por deportista"
+  return ""
+}
+
 function buildRegistrationDescription(
   plan: RegistrationPlanForValidation,
   registration: RegistrationPlanForValidation["registrations"][number],
-  includedInAthleteFee = false
+  note: EntryChargeNote = "CHARGED"
 ): string {
   const modality = registration.modality
   const label = [
@@ -1440,10 +1452,7 @@ function buildRegistrationDescription(
         `${row.athlete.firstNames} ${row.athlete.lastNames}${row.isReserve ? " (reserva)" : ""}`
     )
     .join(", ")
-  // La formación va a S/ 0 cuando la disciplina cobra cuota fija: sin esta nota
-  // el comprobante parecería decir que la prueba fue gratis.
-  const suffix = includedInAthleteFee ? " | incluida en la cuota por deportista" : ""
-  return `${plan.event?.name ?? "Competencia"} | ${label} | ${athletes}${suffix}`
+  return `${plan.event?.name ?? "Competencia"} | ${label} | ${athletes}${entryChargeSuffix(note)}`
 }
 
 function buildAthleteFeeDescription(
@@ -1761,13 +1770,16 @@ export async function checkoutRegistrationPlan(input: {
           .filter((line) => line.kind === "ENTRY")
           .map((line) => [line.registrationId!, line.amount])
       )
-      // Disciplinas cuyo cobro va en la cuota y no en la formación: sus líneas
-      // valen 0 y la descripción tiene que decir por qué.
-      const perAthleteDisciplines = new Set(
-        pricing.byDiscipline
-          .filter((row) => row.pricingMode === "PER_ATHLETE")
-          .map((row) => row.discipline as string)
+      // Por qué la línea de una formación puede valer 0: o el evento no cobra
+      // por formación en esa disciplina, o el club eligió no pagar ese concepto.
+      const chargesEntryByDiscipline = new Map(
+        pricing.byDiscipline.map((row) => [row.discipline as string, row.chargesEntry])
       )
+      const noteFor = (discipline: string): EntryChargeNote => {
+        if (chargesEntryByDiscipline.get(discipline) === false) return "IN_ATHLETE_FEE"
+        if (plan.paysEntry === false) return "CLUB_PAYS_PER_ATHLETE"
+        return "CHARGED"
+      }
 
       const created = await tx.order.create({
         data: {
@@ -1796,7 +1808,7 @@ export async function checkoutRegistrationPlan(input: {
                   description: buildRegistrationDescription(
                     plan,
                     registration,
-                    perAthleteDisciplines.has(registration.modality.discipline)
+                    noteFor(registration.modality.discipline)
                   ),
                   registrationSnapshot: buildRegistrationSnapshot(
                     plan,

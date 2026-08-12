@@ -42,6 +42,7 @@ vi.mock("./prisma", () => ({ prisma: database.prisma }))
 
 import {
   createOrResumeRegistrationPlan,
+  entryChargeSuffix,
   isRetryableRegistrationPlanTransactionError,
   saveRegistrationPlanEntry,
   setRegistrationPlanAthleteSelection,
@@ -373,5 +374,23 @@ describe("autoguardado incremental de la nómina", () => {
 
     expect(result).toMatchObject({ success: true })
     expect(database.tx.registration.deleteMany).not.toHaveBeenCalled()
+  })
+})
+
+describe("nota de la formación en el comprobante", () => {
+  it("explica que la formación va en la cuota cuando el evento no la cobra", () => {
+    expect(entryChargeSuffix("IN_ATHLETE_FEE")).toBe(
+      " | incluida en la cuota por deportista"
+    )
+  })
+
+  it("explica que el club eligió pagar por deportista", () => {
+    expect(entryChargeSuffix("CLUB_PAYS_PER_ATHLETE")).toBe(
+      " | sin cargo: el club paga por deportista"
+    )
+  })
+
+  it("no agrega nota cuando la formación sí se cobra", () => {
+    expect(entryChargeSuffix("CHARGED")).toBe("")
   })
 })
