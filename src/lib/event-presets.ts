@@ -1,5 +1,5 @@
 import { DISCIPLINE_VALUES, type DisciplineValue } from "./disciplines"
-import type { AgeRuleModeValue, PricingModeValue } from "./event-pricing"
+import type { AgeRuleModeValue } from "./event-pricing"
 
 // Cómo se ve un evento de cada disciplina: cómo cobra, cómo mide las edades y
 // qué pruebas suele tener. Es lo que hace que el formulario de creación cambie
@@ -20,7 +20,8 @@ export interface ModalityPreset {
 }
 
 export interface DisciplinePreset {
-  defaultPricingMode: PricingModeValue
+  defaultChargesEntry: boolean
+  defaultChargesAthleteFee: boolean
   defaultAgeRuleMode: AgeRuleModeValue
   /** Explica al admin qué significa el modo de cobro en esta disciplina. */
   pricingHint: string
@@ -39,7 +40,8 @@ const INDIVIDUAL: Pick<ModalityPreset, "minAthletes" | "maxAthletes"> = {
 export const DISCIPLINE_PRESETS: Record<DisciplineValue, DisciplinePreset> = {
   DIVING: {
     // Un clavadista paga una sola vez por el evento, haga una prueba o seis.
-    defaultPricingMode: "PER_ATHLETE",
+    defaultChargesEntry: false,
+    defaultChargesAthleteFee: true,
     defaultAgeRuleMode: "RANGE",
     pricingHint:
       "Cada clavadista paga una cuota fija por todo el evento, sin importar cuántas pruebas haga.",
@@ -58,7 +60,8 @@ export const DISCIPLINE_PRESETS: Record<DisciplineValue, DisciplinePreset> = {
     ],
   },
   ARTISTIC_SWIMMING: {
-    defaultPricingMode: "PER_ENTRY",
+    defaultChargesEntry: true,
+    defaultChargesAthleteFee: false,
     defaultAgeRuleMode: "RANGE",
     pricingHint:
       "Cada prueba tiene su propio precio y se cobra una vez por formación (un solo, un dueto, un equipo).",
@@ -85,10 +88,11 @@ export const DISCIPLINE_PRESETS: Record<DisciplineValue, DisciplinePreset> = {
     ],
   },
   WATER_POLO: {
-    defaultPricingMode: "PER_ENTRY",
+    defaultChargesEntry: true,
+    defaultChargesAthleteFee: true,
     defaultAgeRuleMode: "RANGE",
     pricingHint:
-      "Se cobra una vez por plantel inscrito en cada categoría.",
+      "Se cobra la inscripción del plantel y además una cuota por cada jugador. El club elige cuáles paga.",
     categoryHint:
       "Categorías por rango de año de nacimiento, igual que en las demás disciplinas.",
     categoryPlaceholder: "Sub 14|2013|2016\nSub 16|2011|2012\nSub 18|2009|2010",

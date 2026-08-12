@@ -6,7 +6,6 @@ import {
   Prisma,
   type AgeRuleMode,
   type Discipline,
-  type PricingMode,
   type SexRule,
 } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
@@ -122,7 +121,8 @@ const eventSchema = z.object({
   discipline: z.enum(DISCIPLINE_VALUES, {
     message: "Selecciona la disciplina del evento",
   }),
-  pricingMode: z.enum(["PER_ENTRY", "PER_ATHLETE"]),
+  chargesEntry: z.boolean(),
+  chargesAthleteFee: z.boolean(),
   athleteFee: z.string().optional(),
   ageRuleMode: z.enum(["RANGE", "MAX_AGE_ONLY"]),
   venue: z.string().trim().max(120).optional(),
@@ -145,7 +145,8 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     seasonId: String(formData.get("seasonId") ?? ""),
     name: formData.get("name"),
     discipline: formData.get("discipline"),
-    pricingMode: String(formData.get("pricingMode") ?? "PER_ENTRY"),
+    chargesEntry: formData.get("chargesEntry") === "on",
+    chargesAthleteFee: formData.get("chargesAthleteFee") === "on",
     athleteFee: String(formData.get("athleteFee") ?? ""),
     ageRuleMode: String(formData.get("ageRuleMode") ?? "RANGE"),
     venue: String(formData.get("venue") ?? ""),
@@ -168,13 +169,19 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
   if (athleteFee === "invalid") {
     return { success: false, error: "Cuota por deportista inválida." }
   }
+  if (!parsed.data.chargesEntry && !parsed.data.chargesAthleteFee) {
+    return {
+      success: false,
+      error: "El evento debe cobrar al menos un concepto.",
+    }
+  }
   if (
-    parsed.data.pricingMode === "PER_ATHLETE" &&
+    parsed.data.chargesAthleteFee &&
     (athleteFee === null || athleteFee <= 0)
   ) {
     return {
       success: false,
-      error: "La cuota fija por deportista debe ser mayor que cero.",
+      error: "La cuota por deportista debe ser mayor que cero.",
     }
   }
 
@@ -273,9 +280,10 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
   }
 
   const config = {
-    pricingMode: parsed.data.pricingMode as PricingMode,
+    chargesEntry: parsed.data.chargesEntry,
+    chargesAthleteFee: parsed.data.chargesAthleteFee,
     athleteFee:
-      parsed.data.pricingMode === "PER_ATHLETE" && athleteFee !== null
+      parsed.data.chargesAthleteFee && athleteFee !== null
         ? new Prisma.Decimal(athleteFee.toFixed(2))
         : null,
     ageRuleMode: parsed.data.ageRuleMode as AgeRuleMode,
@@ -292,7 +300,8 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     const currentFee = current?.athleteFee?.toString() ?? null
     const nextFee = config.athleteFee?.toString() ?? null
     if (
-      (current?.pricingMode ?? "PER_ENTRY") !== config.pricingMode ||
+      (current?.chargesEntry ?? true) !== config.chargesEntry ||
+      (current?.chargesAthleteFee ?? false) !== config.chargesAthleteFee ||
       (current?.ageRuleMode ?? "RANGE") !== config.ageRuleMode ||
       currentFee !== nextFee
     ) {
@@ -343,10 +352,10 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       })
       if (!categories.ok) return { success: false, error: categories.error }
 
-      // En PER_ATHLETE el precio no vive en la prueba sino en la cuota fija.
-      const price = parsed.data.pricingMode === "PER_ATHLETE"
-        ? 0
-        : parseFee(parsed.data.presetPrice)
+      // Si el evento no cobra por formación, las pruebas nacen en 0.
+      const price = parsed.data.chargesEntry
+        ? parseFee(parsed.data.presetPrice)
+        : 0
       if (price === "invalid" || price === null) {
         return { success: false, error: "Indica el precio de las pruebas." }
       }

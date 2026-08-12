@@ -282,11 +282,14 @@ function normalizeLiveRegistration(
   registration: LiveRegistration,
   disciplineConfigs: readonly EventDisciplineConfigLike[]
 ): NormalizedRegistration {
-  // Sin snapshot hay que reconstruir el importe. Si la disciplina cobra cuota
-  // fija, la formación no cuesta: usar el precio de lista duplicaría el ingreso.
-  const perAthlete =
-    disciplineConfigFor(disciplineConfigs, registration.modality.discipline)
-      .pricingMode === "PER_ATHLETE"
+  // Sin snapshot hay que reconstruir el importe. Si la disciplina no cobra por
+  // formación (chargesEntry apagado), la prueba no cuesta nada aunque tenga un
+  // precio de lista: usarlo duplicaría el ingreso que ya cubre la cuota por
+  // deportista. Es el mismo criterio que usa computePlanPricing.
+  const chargesEntry = disciplineConfigFor(
+    disciplineConfigs,
+    registration.modality.discipline
+  ).chargesEntry
   return {
     registrationId: registration.id,
     modalityId: registration.modality.id,
@@ -294,7 +297,7 @@ function normalizeLiveRegistration(
     modalityName: registration.modality.name,
     category: registration.modality.category ?? "",
     sexRule: registration.modality.sexRule,
-    price: perAthlete ? 0 : toAmount(registration.modality.price),
+    price: chargesEntry ? toAmount(registration.modality.price) : 0,
     clubName: registration.club.name,
     status: registration.status as "PAID" | "PENDING_PAYMENT",
     athletes: registration.athletes.map((row) => ({

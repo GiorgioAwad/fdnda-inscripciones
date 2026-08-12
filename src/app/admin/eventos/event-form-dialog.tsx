@@ -9,7 +9,7 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input"
 import { Dialog } from "@/components/ui/dialog"
 import { DISCIPLINE_VALUES, DISCIPLINES, type DisciplineValue } from "@/lib/disciplines"
 import { DISCIPLINE_PRESETS } from "@/lib/event-presets"
-import type { AgeRuleModeValue, PricingModeValue } from "@/lib/event-pricing"
+import type { AgeRuleModeValue } from "@/lib/event-pricing"
 import { saveEvent } from "./actions"
 
 export interface EventFormData {
@@ -23,7 +23,8 @@ export interface EventFormData {
   deadlineLocal: string // YYYY-MM-DDTHH:mm (hora Lima)
   description: string
   seasonId: string
-  pricingMode: PricingModeValue
+  chargesEntry: boolean
+  chargesAthleteFee: boolean
   athleteFee: string
   ageRuleMode: AgeRuleModeValue
   /** true si el evento ya vendió inscripciones: la configuración se congela. */
@@ -78,8 +79,11 @@ export function EventFormFields({
   const [discipline, setDiscipline] = useState<DisciplineValue | "">(initialDiscipline)
   const preset = discipline ? DISCIPLINE_PRESETS[discipline] : null
 
-  const [pricingMode, setPricingMode] = useState<PricingModeValue>(
-    event?.pricingMode ?? "PER_ENTRY"
+  const [chargesEntry, setChargesEntry] = useState(
+    event?.chargesEntry ?? preset?.defaultChargesEntry ?? true
+  )
+  const [chargesAthleteFee, setChargesAthleteFee] = useState(
+    event?.chargesAthleteFee ?? preset?.defaultChargesAthleteFee ?? false
   )
   const [ageRuleMode, setAgeRuleMode] = useState<AgeRuleModeValue>(
     event?.ageRuleMode ?? "RANGE"
@@ -98,7 +102,8 @@ export function EventFormFields({
     }
     setDiscipline(value)
     const next = DISCIPLINE_PRESETS[value]
-    setPricingMode(next.defaultPricingMode)
+    setChargesEntry(next.defaultChargesEntry)
+    setChargesAthleteFee(next.defaultChargesAthleteFee)
     setAgeRuleMode(next.defaultAgeRuleMode)
     setSelectedModalities(next.modalities.map((modality) => modality.name))
     const categoryId = nextCategoryId.current
@@ -299,25 +304,40 @@ export function EventFormFields({
           </legend>
 
           <div className="mt-2 space-y-4">
-            <div>
-              <Label htmlFor="ev-pricing">Cómo se cobra</Label>
-              <Select
-                id="ev-pricing"
-                name="pricingMode"
-                value={pricingMode}
-                onChange={(e) => setPricingMode(e.target.value as PricingModeValue)}
-              >
-                <option value="PER_ENTRY">Precio por prueba (cada formación paga)</option>
-                <option value="PER_ATHLETE">
-                  Cuota fija por deportista (todo el evento)
-                </option>
-              </Select>
+            <fieldset>
+              <legend className="text-sm font-bold text-fdnda-ink">Qué se cobra</legend>
               <p className="mt-1 text-xs leading-5 text-fdnda-muted">
                 {preset.pricingHint}
               </p>
-            </div>
+              <label className="mt-2 flex items-start gap-2.5 text-sm">
+                <input
+                  type="checkbox"
+                  name="chargesEntry"
+                  checked={chargesEntry}
+                  onChange={(e) => setChargesEntry(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-fdnda-turquoise-deep"
+                />
+                <span>Inscripción por formación (cada plantel, dueto o equipo paga)</span>
+              </label>
+              <label className="mt-2 flex items-start gap-2.5 text-sm">
+                <input
+                  type="checkbox"
+                  name="chargesAthleteFee"
+                  checked={chargesAthleteFee}
+                  onChange={(e) => setChargesAthleteFee(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-fdnda-turquoise-deep"
+                />
+                <span>Cuota por deportista (una sola vez en todo el evento)</span>
+              </label>
+              {chargesEntry && chargesAthleteFee ? (
+                <p className="mt-2 rounded-control bg-fdnda-sky/25 p-2 text-xs text-fdnda-navy">
+                  Con los dos conceptos, cada club elige en su planilla cuáles
+                  paga. Debe marcar al menos uno.
+                </p>
+              ) : null}
+            </fieldset>
 
-            {pricingMode === "PER_ATHLETE" ? (
+            {chargesAthleteFee ? (
               <div>
                 <Label htmlFor="ev-athlete-fee">Cuota por deportista (S/)</Label>
                 <Input
@@ -332,7 +352,7 @@ export function EventFormFields({
                 />
                 <p className="mt-1 text-xs leading-5 text-fdnda-muted">
                   Se cobra una sola vez por deportista aunque compita en varias
-                  pruebas. Las pruebas se crean con precio 0.
+                  pruebas.
                 </p>
               </div>
             ) : (
@@ -565,7 +585,7 @@ export function EventFormFields({
                       </div>
                     </div>
 
-                    {pricingMode === "PER_ENTRY" ? (
+                    {chargesEntry ? (
                       <div>
                         <Label htmlFor="ev-preset-price">Precio por prueba (S/)</Label>
                         <Input

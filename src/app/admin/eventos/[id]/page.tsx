@@ -4,7 +4,7 @@ import { ArrowLeft, BarChart3 } from "lucide-react"
 import { prisma } from "@/lib/prisma"
 import { disciplineLabel } from "@/lib/disciplines"
 import { disciplineConfigFor } from "@/lib/event-pricing"
-import { formatDateOnly, formatDateTimeLima, formatMoney } from "@/lib/utils"
+import { formatDateOnly, formatDateTimeLima } from "@/lib/utils"
 import { Badge, EVENT_STATUS_BADGE } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -53,7 +53,7 @@ export default async function EventoDetailPage({
 
   const badge = EVENT_STATUS_BADGE[event.status]
   // Configuración de la disciplina principal, que es la única para eventos
-  // nuevos. Sin fila vale el default histórico (PER_ENTRY + RANGE).
+  // nuevos. Sin fila vale el default histórico (cobra por formación + RANGE).
   const primaryDiscipline = event.disciplines[0] ?? ""
   const primaryConfig = disciplineConfigFor(event.disciplineConfigs, primaryDiscipline)
   // Una inscripción ya vendida congela cómo cobra y cómo mide edades el evento.
@@ -87,9 +87,11 @@ export default async function EventoDetailPage({
             {event.venue ? <span>· {event.venue}</span> : null}
           </div>
           <p className="mt-2 text-xs font-semibold text-fdnda-turquoise-deep">
-            {primaryConfig.pricingMode === "PER_ATHLETE"
-              ? `Cuota fija de ${formatMoney(primaryConfig.athleteFee)} por deportista para todo el evento`
-              : "Cobro por prueba: cada formación paga el precio de su prueba"}
+            {primaryConfig.chargesEntry && primaryConfig.chargesAthleteFee
+              ? "Cobra la formación y una cuota por deportista"
+              : primaryConfig.chargesAthleteFee
+                ? "Cuota fija por deportista"
+                : "Precio por formación"}
             {primaryConfig.ageRuleMode === "MAX_AGE_ONLY"
               ? " · categorías Sub-N (solo edad máxima)"
               : ""}
@@ -116,7 +118,8 @@ export default async function EventoDetailPage({
               deadlineLocal: toLimaLocalInput(event.registrationDeadline),
               description: event.description ?? "",
               seasonId: event.seasonId ?? "",
-              pricingMode: primaryConfig.pricingMode,
+              chargesEntry: primaryConfig.chargesEntry,
+              chargesAthleteFee: primaryConfig.chargesAthleteFee,
               athleteFee: primaryConfig.athleteFee ?? "",
               ageRuleMode: primaryConfig.ageRuleMode,
               hasLockedEntries,
@@ -140,7 +143,8 @@ export default async function EventoDetailPage({
         eventDisciplines={event.disciplines}
         disciplineConfigs={event.disciplineConfigs.map((config) => ({
           discipline: config.discipline,
-          pricingMode: config.pricingMode,
+          chargesEntry: config.chargesEntry,
+          chargesAthleteFee: config.chargesAthleteFee,
           athleteFee: config.athleteFee?.toString() ?? null,
           ageRuleMode: config.ageRuleMode,
         }))}
