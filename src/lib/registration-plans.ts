@@ -1232,6 +1232,46 @@ export async function updateRegistrationPlanStep(input: {
   }
 }
 
+/**
+ * Guarda qué conceptos eligió pagar el club. Solo tiene efecto cuando el evento
+ * cobra los dos; la validación es la que bloquea apagarlos ambos, porque acá no
+ * se conoce la configuración del evento sin una consulta extra.
+ */
+export async function setRegistrationPlanCharges(input: {
+  planId: string
+  clubId: string
+  expectedRevision: number
+  paysEntry: boolean
+  paysAthleteFee: boolean
+}): Promise<RegistrationPlanActionResult<RegistrationPlanRef>> {
+  try {
+    return await planMutationTransaction(async (tx) => {
+      await lockPlan(tx, input.planId)
+      const editable = await editablePlan(tx, input)
+      if (!editable.ok) return editable.result
+
+      const updated = await tx.registrationPlan.update({
+        where: { id: editable.plan.id },
+        data: {
+          paysEntry: input.paysEntry,
+          paysAthleteFee: input.paysAthleteFee,
+          revision: { increment: 1 },
+        },
+      })
+      return { success: true, ...planRef(updated) }
+    })
+  } catch (error) {
+    console.error("setRegistrationPlanCharges error:", error)
+    return {
+      success: false,
+      code: isRetryableRegistrationPlanTransactionError(error)
+        ? "CONCURRENT_CHANGE"
+        : "UNEXPECTED_ERROR",
+      error: "No se pudo guardar la forma de pago. Vuelve a intentarlo.",
+    }
+  }
+}
+
 export async function abandonRegistrationPlan(input: {
   planId: string
   clubId: string

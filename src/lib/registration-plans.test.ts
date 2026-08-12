@@ -47,6 +47,7 @@ import {
   isRetryableRegistrationPlanTransactionError,
   saveRegistrationPlanEntry,
   setRegistrationPlanAthleteSelection,
+  setRegistrationPlanCharges,
 } from "./registration-plans"
 
 describe("deteccion de conflictos transaccionales reintentables", () => {
@@ -425,5 +426,90 @@ describe("entryChargeNoteFor: por qué corresponde cada nota", () => {
     expect(
       entryChargeNoteFor({ chargesEntry: false, paysEntry: false })
     ).toBe("IN_ATHLETE_FEE")
+  })
+})
+
+describe("elección de conceptos de cobro", () => {
+  function editablePlan() {
+    database.tx.registrationPlan.findFirst.mockResolvedValue({
+      id: "plan-1",
+      clubId: "club-1",
+      eventId: "event-1",
+      disciplineScope: "WATER_POLO",
+      status: "DRAFT",
+      revision: 4,
+      currentStep: 2,
+    })
+    database.tx.registrationPlan.update.mockResolvedValue({
+      id: "plan-1",
+      status: "DRAFT",
+      revision: 5,
+      currentStep: 2,
+      eventId: "event-1",
+    })
+  }
+
+  it("guarda las dos banderas y sube la revisión", async () => {
+    editablePlan()
+
+    const result = await setRegistrationPlanCharges({
+      planId: "plan-1",
+      clubId: "club-1",
+      expectedRevision: 4,
+      paysEntry: false,
+      paysAthleteFee: true,
+    })
+
+    expect(result).toMatchObject({ success: true, revision: 5 })
+    expect(database.tx.registrationPlan.update).toHaveBeenCalledWith({
+      where: { id: "plan-1" },
+      data: {
+        paysEntry: false,
+        paysAthleteFee: true,
+        revision: { increment: 1 },
+      },
+    })
+  })
+
+  it("rechaza una planilla que ya tiene orden", async () => {
+    editablePlan()
+    database.tx.registrationPlan.findFirst.mockResolvedValue({
+      id: "plan-1",
+      clubId: "club-1",
+      eventId: "event-1",
+      disciplineScope: "WATER_POLO",
+      status: "AWAITING_PAYMENT",
+      revision: 4,
+      currentStep: 4,
+    })
+
+    const result = await setRegistrationPlanCharges({
+      planId: "plan-1",
+      clubId: "club-1",
+      expectedRevision: 4,
+      paysEntry: true,
+      paysAthleteFee: true,
+    })
+
+    expect(result).toMatchObject({ success: false, code: "PLAN_NOT_EDITABLE" })
+    expect(database.tx.registrationPlan.update).not.toHaveBeenCalled()
+  })
+
+  it("rechaza una revisión vieja en vez de pisar otro cambio", async () => {
+    editablePlan()
+
+    const result = await setRegistrationPlanCharges({
+      planId: "plan-1",
+      clubId: "club-1",
+      expectedRevision: 3,
+      paysEntry: true,
+      paysAthleteFee: false,
+    })
+
+    expect(result).toMatchObject({
+      success: false,
+      code: "REVISION_CONFLICT",
+      currentRevision: 4,
+    })
   })
 })

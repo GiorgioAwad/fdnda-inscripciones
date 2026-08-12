@@ -10,6 +10,7 @@ import {
   replaceRegistrationPlanRoster,
   saveRegistrationPlanEntry,
   setRegistrationPlanAthleteSelection,
+  setRegistrationPlanCharges,
   selectRegistrationPlanEvent,
   toggleRegistrationPlanIndividualEntry,
   updateRegistrationPlanStep,
@@ -214,6 +215,24 @@ export async function savePlanStepAction(input: {
   const result = await updateRegistrationPlanStep({
     ...parsed.data,
     clubId: user.clubId,
+  })
+  if (result.success) refresh(result.planId)
+  return result
+}
+
+export async function setPlanChargesAction(input: {
+  planId: string
+  expectedRevision: number
+  paysEntry: boolean
+  paysAthleteFee: boolean
+}) {
+  const user = await requireClubUser()
+  const result = await setRegistrationPlanCharges({
+    planId: input.planId,
+    clubId: user.clubId,
+    expectedRevision: input.expectedRevision,
+    paysEntry: input.paysEntry,
+    paysAthleteFee: input.paysAthleteFee,
   })
   if (result.success) refresh(result.planId)
   return result
