@@ -42,6 +42,7 @@ export type PlanValidationIssueCode =
   | "UPGRADE_CONFIGURATION_INVALID"
   | "CATEGORY_UPGRADE_USED"
   | "DISCIPLINE_PRICING_INVALID"
+  | "CHARGE_SELECTION_REQUIRED"
   | "AGE_RULE_INVALID"
   | "ATHLETE_FEE_ALREADY_PAID"
 
@@ -802,6 +803,21 @@ export async function validateRegistrationPlanInTransaction(
         )
       }
     }
+  }
+
+  // El club puede elegir qué conceptos paga solo cuando el evento cobra los dos.
+  // Apagarlos ambos dejaría la planilla en S/ 0 con deportistas inscritos.
+  const ofreceEleccion = pricing.byDiscipline.some(
+    (row) => row.chargesEntry && row.chargesAthleteFee
+  )
+  if (ofreceEleccion && plan.paysEntry === false && plan.paysAthleteFee === false) {
+    issues.push(
+      issue(
+        "CHARGE_SELECTION_REQUIRED",
+        "Elige al menos una forma de pago: la inscripción del equipo o la cuota por deportista.",
+        "EDIT_ENTRY"
+      )
+    )
   }
 
   // Una disciplina que cobra por deportista sin cuota positiva no puede vender.

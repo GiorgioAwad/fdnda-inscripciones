@@ -117,6 +117,15 @@ function plan(input: {
   roster: Athlete[]
   registrations: Registration[]
   categories?: Category[]
+  disciplineConfigs?: Array<{
+    discipline: string
+    chargesEntry: boolean
+    chargesAthleteFee: boolean
+    athleteFee: string | null
+    ageRuleMode: string
+  }>
+  paysEntry?: boolean | null
+  paysAthleteFee?: boolean | null
 }): RegistrationPlanForValidation {
   const disciplines = [
     ...new Set(input.registrations.map((row) => row.modality.discipline)),
@@ -130,6 +139,8 @@ function plan(input: {
     status: "DRAFT",
     revision: 7,
     currentStep: 3,
+    paysEntry: input.paysEntry ?? null,
+    paysAthleteFee: input.paysAthleteFee ?? null,
     createdAt: now,
     updatedAt: now,
     club: {
@@ -163,6 +174,7 @@ function plan(input: {
         updatedAt: now,
         categories: input.categories ?? [],
       },
+      disciplineConfigs: input.disciplineConfigs ?? [],
     },
     athletes: input.roster.map((row) => ({
       id: `roster-${row.id}`,
@@ -223,6 +235,7 @@ function transactionMock(target: RegistrationPlanForValidation, overrides: TxOve
     athleteAffiliation: { findMany: athleteAffiliationFindMany },
     registration: { groupBy: registrationGroupBy },
     registrationAthlete: { findMany: duplicateFindMany },
+    eventAthleteFee: { findMany: vi.fn().mockResolvedValue([]) },
   } as unknown as PlanTransactionClient
 
   return {
@@ -353,7 +366,8 @@ describe("validación autoritativa de planillas", () => {
       byDiscipline: [
         {
           discipline: "ARTISTIC_SWIMMING",
-          pricingMode: "PER_ENTRY",
+          chargesEntry: true,
+          chargesAthleteFee: false,
           entryCount: 1,
           athleteCount: 2,
           entriesAmount: 350,
@@ -556,5 +570,98 @@ describe("validación autoritativa de planillas", () => {
         }),
       })
     )
+  })
+})
+
+describe("elección de conceptos de cobro", () => {
+  // Tipado explícito: sin él, TS infiere athleteFee como string a secas (por el
+  // literal "60.00") y el test que lo apaga con athleteFee: null no compila.
+  const POLO_AMBOS: Array<{
+    discipline: string
+    chargesEntry: boolean
+    chargesAthleteFee: boolean
+    athleteFee: string | null
+    ageRuleMode: string
+  }> = [
+    {
+      discipline: "WATER_POLO",
+      chargesEntry: true,
+      chargesAthleteFee: true,
+      athleteFee: "60.00",
+      ageRuleMode: "RANGE",
+    },
+  ]
+
+  function planteles(
+    disciplineConfigs: typeof POLO_AMBOS,
+    choice: { paysEntry?: boolean | null; paysAthleteFee?: boolean | null }
+  ) {
+    const jugador = athlete("j1", { disciplines: ["WATER_POLO"] })
+    const plantel = modality("m-polo", {
+      discipline: "WATER_POLO",
+      name: "Plantel",
+      minAthletes: 1,
+      maxAthletes: 14,
+      price: new Prisma.Decimal(500),
+    })
+    return plan({
+      roster: [jugador],
+      registrations: [registration("r1", plantel, [{ athlete: jugador }])],
+      disciplineConfigs,
+      ...choice,
+    })
+  }
+
+  it("bloquea la planilla que no eligió pagar ningún concepto", async () => {
+    const target = planteles(POLO_AMBOS, {
+      paysEntry: false,
+      paysAthleteFee: false,
+    })
+    const { tx } = transactionMock(target)
+
+    const result = await validateRegistrationPlanInTransaction(
+      tx,
+      { planId: "plan-1", clubId: "club-1", now },
+      target
+    )
+
+    expect(result.valid).toBe(false)
+    expect(
+      result.issues.find((row) => row.code === "CHARGE_SELECTION_REQUIRED")
+    ).toMatchObject({ severity: "ERROR", action: "EDIT_ENTRY" })
+  })
+
+  it("no exige elección cuando el evento cobra un solo concepto", async () => {
+    const target = planteles(
+      [{ ...POLO_AMBOS[0], chargesAthleteFee: false, athleteFee: null }],
+      { paysEntry: false, paysAthleteFee: false }
+    )
+    const { tx } = transactionMock(target)
+
+    const result = await validateRegistrationPlanInTransaction(
+      tx,
+      { planId: "plan-1", clubId: "club-1", now },
+      target
+    )
+
+    expect(
+      result.issues.some((row) => row.code === "CHARGE_SELECTION_REQUIRED")
+    ).toBe(false)
+  })
+
+  it("una planilla sin elección explícita paga los dos conceptos", async () => {
+    const target = planteles(POLO_AMBOS, {})
+    const { tx } = transactionMock(target)
+
+    const result = await validateRegistrationPlanInTransaction(
+      tx,
+      { planId: "plan-1", clubId: "club-1", now },
+      target
+    )
+
+    expect(result.summary.totalAmount).toBe(560)
+    expect(
+      result.issues.some((row) => row.code === "CHARGE_SELECTION_REQUIRED")
+    ).toBe(false)
   })
 })
