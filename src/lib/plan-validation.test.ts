@@ -197,6 +197,12 @@ interface TxOverrides {
     athlete: { firstNames: string; lastNames: string }
     registration: { id: string }
   }>
+  /** Filas crudas que devolvería `tx.eventAthleteFee.findMany`, tal como las lee `coverageLookupFor`. */
+  eventAthleteFees?: Array<{
+    discipline: string
+    athleteId: string
+    orderItems: Array<{ order: { code: string } }>
+  }>
 }
 
 function transactionMock(target: RegistrationPlanForValidation, overrides: TxOverrides = {}) {
@@ -235,7 +241,9 @@ function transactionMock(target: RegistrationPlanForValidation, overrides: TxOve
     athleteAffiliation: { findMany: athleteAffiliationFindMany },
     registration: { groupBy: registrationGroupBy },
     registrationAthlete: { findMany: duplicateFindMany },
-    eventAthleteFee: { findMany: vi.fn().mockResolvedValue([]) },
+    eventAthleteFee: {
+      findMany: vi.fn().mockResolvedValue(overrides.eventAthleteFees ?? []),
+    },
   } as unknown as PlanTransactionClient
 
   return {
@@ -631,10 +639,14 @@ describe("elección de conceptos de cobro", () => {
     ).toMatchObject({ severity: "ERROR", action: "EDIT_ENTRY" })
   })
 
-  it("no exige elección cuando el evento cobra un solo concepto", async () => {
+  // Ojo: esto NO es "apagar un concepto que el evento no cobra" (eso no debería
+  // exigir nada, y no lo exige: ver el test de la cuota ya cubierta más abajo).
+  // Acá el evento cobra un solo concepto y el club apaga justo ese: la planilla
+  // igual queda en S/ 0, así que sí tiene que bloquear.
+  it("exige elección cuando el evento de un solo concepto apaga esa única bandera", async () => {
     const target = planteles(
       [{ ...POLO_AMBOS[0], chargesAthleteFee: false, athleteFee: null }],
-      { paysEntry: false, paysAthleteFee: false }
+      { paysEntry: false }
     )
     const { tx } = transactionMock(target)
 
@@ -644,6 +656,90 @@ describe("elección de conceptos de cobro", () => {
       target
     )
 
+    expect(result.valid).toBe(false)
+    expect(
+      result.issues.find((row) => row.code === "CHARGE_SELECTION_REQUIRED")
+    ).toMatchObject({ severity: "ERROR", action: "EDIT_ENTRY" })
+  })
+
+  it("bloquea la planilla multidisciplina que reparte los conceptos entre disciplinas", async () => {
+    // Clavados solo cobra cuota por deportista; polo solo cobra formación. Ninguna
+    // fila de byDiscipline tiene los dos conceptos, pero apagar las dos banderas
+    // igual deja la planilla entera en S/ 0: la regla vieja se escapaba acá.
+    const jugador = athlete("j-polo", { disciplines: ["WATER_POLO"] })
+    const clavadista = athlete("j-diving", { disciplines: ["DIVING"] })
+    const plantel = modality("m-polo-multi", {
+      discipline: "WATER_POLO",
+      name: "Plantel",
+      minAthletes: 1,
+      maxAthletes: 14,
+      price: new Prisma.Decimal(500),
+    })
+    const prueba = modality("m-diving-multi", {
+      discipline: "DIVING",
+      name: "Individual",
+      price: new Prisma.Decimal(60),
+    })
+    const target = plan({
+      roster: [jugador, clavadista],
+      registrations: [
+        registration("r-polo", plantel, [{ athlete: jugador }]),
+        registration("r-diving", prueba, [{ athlete: clavadista }]),
+      ],
+      disciplineConfigs: [
+        {
+          discipline: "WATER_POLO",
+          chargesEntry: true,
+          chargesAthleteFee: false,
+          athleteFee: null,
+          ageRuleMode: "RANGE",
+        },
+        {
+          discipline: "DIVING",
+          chargesEntry: false,
+          chargesAthleteFee: true,
+          athleteFee: "60.00",
+          ageRuleMode: "RANGE",
+        },
+      ],
+      paysEntry: false,
+      paysAthleteFee: false,
+    })
+    const { tx } = transactionMock(target)
+
+    const result = await validateRegistrationPlanInTransaction(
+      tx,
+      { planId: "plan-1", clubId: "club-1", now },
+      target
+    )
+
+    expect(result.valid).toBe(false)
+    expect(
+      result.issues.find((row) => row.code === "CHARGE_SELECTION_REQUIRED")
+    ).toMatchObject({ severity: "ERROR", action: "EDIT_ENTRY" })
+  })
+
+  it("no exige elección cuando la única cuota que cobra el evento ya está cubierta por otra orden", async () => {
+    // El concepto sigue prendido (nadie lo apagó): el total en 0 es porque ya se
+    // pagó en otra orden, no porque el club haya elegido no pagar nada.
+    const target = planteles([{ ...POLO_AMBOS[0], chargesEntry: false }], {})
+    const { tx } = transactionMock(target, {
+      eventAthleteFees: [
+        {
+          discipline: "WATER_POLO",
+          athleteId: "j1",
+          orderItems: [{ order: { code: "ORD-1" } }],
+        },
+      ],
+    })
+
+    const result = await validateRegistrationPlanInTransaction(
+      tx,
+      { planId: "plan-1", clubId: "club-1", now },
+      target
+    )
+
+    expect(result.summary.totalAmount).toBe(0)
     expect(
       result.issues.some((row) => row.code === "CHARGE_SELECTION_REQUIRED")
     ).toBe(false)

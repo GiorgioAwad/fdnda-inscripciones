@@ -805,12 +805,20 @@ export async function validateRegistrationPlanInTransaction(
     }
   }
 
-  // El club puede elegir qué conceptos paga solo cuando el evento cobra los dos.
-  // Apagarlos ambos dejaría la planilla en S/ 0 con deportistas inscritos.
-  const ofreceEleccion = pricing.byDiscipline.some(
-    (row) => row.chargesEntry && row.chargesAthleteFee
+  // Un concepto sigue en pie si el evento lo cobra y el club no lo apago.
+  // `null` no es `false`: una planilla que nunca toco la eleccion paga todo.
+  //
+  // La pregunta NO es "el evento ofrecia elegir" sino "queda algo cobrandose":
+  // en un evento multidisciplina los dos conceptos pueden vivir en disciplinas
+  // distintas, y en uno de un solo concepto apagar esa unica bandera tambien
+  // dejaria la planilla en cero. La server action recibe booleanos del cliente,
+  // asi que esta es la unica guarda real.
+  const cobraAlgo = pricing.byDiscipline.some(
+    (row) =>
+      (row.chargesEntry && plan.paysEntry !== false) ||
+      (row.chargesAthleteFee && plan.paysAthleteFee !== false)
   )
-  if (ofreceEleccion && plan.paysEntry === false && plan.paysAthleteFee === false) {
+  if (!cobraAlgo && plan.registrations.length > 0) {
     issues.push(
       issue(
         "CHARGE_SELECTION_REQUIRED",
