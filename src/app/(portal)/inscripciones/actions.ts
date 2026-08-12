@@ -226,13 +226,16 @@ export async function setPlanChargesAction(input: {
   paysEntry: boolean
   paysAthleteFee: boolean
 }) {
+  const parsed = mutationSchema
+    .extend({ paysEntry: z.boolean(), paysAthleteFee: z.boolean() })
+    .safeParse(input)
+  if (!parsed.success) return invalid()
   const user = await requireClubUser()
+  const denied = await authorize(() => assertPlanAccess(user, parsed.data.planId))
+  if (denied) return denied
   const result = await setRegistrationPlanCharges({
-    planId: input.planId,
+    ...parsed.data,
     clubId: user.clubId,
-    expectedRevision: input.expectedRevision,
-    paysEntry: input.paysEntry,
-    paysAthleteFee: input.paysAthleteFee,
   })
   if (result.success) refresh(result.planId)
   return result
