@@ -23,6 +23,7 @@ import {
   savePlanEntryAction,
   savePlanStepAction,
   setPlanAthleteAction,
+  setPlanChargesAction,
   selectPlanEventAction,
   toggleAthleteModalityAction,
   validatePlanAction,
@@ -30,6 +31,7 @@ import {
 import { persistedStepFor, resumeStep, type StepNumber } from "../steps"
 import { usePlanAutosave } from "../use-plan-autosave"
 import { AthleteBoard } from "./athlete-board"
+import { ChargeSelectionCard } from "./charge-selection-card"
 import { EventStep } from "./event-step"
 import { ReviewPanel } from "./review-panel"
 import type { FormationDraft } from "./team-formation-panel"
@@ -95,6 +97,11 @@ export function RegistrationPlanWizard({
     initialValidation
   )
   const [checkingOut, setCheckingOut] = useState(false)
+  // null (nunca eligió) significa "paga los dos", así que arranca todo marcado.
+  const [charges, setCharges] = useState({
+    paysEntry: initialPlan.paysEntry ?? true,
+    paysAthleteFee: initialPlan.paysAthleteFee ?? true,
+  })
 
   const {
     savingCount,
@@ -131,9 +138,11 @@ export function RegistrationPlanWizard({
   }, [lockedPairs])
 
   // Cuota fija que le toca a un deportista según las disciplinas que practica y
-  // el modo de cobro del evento.
+  // el modo de cobro del evento. Solo cuenta si además el club la eligió pagar.
   const athleteFeeFor = useMemo(() => {
-    const perAthlete = modalities.filter((row) => row.pricingMode === "PER_ATHLETE")
+    const perAthlete = modalities.filter(
+      (row) => row.chargesAthleteFee && charges.paysAthleteFee
+    )
     const covered = new Set(
       (validation?.issues ?? [])
         .filter((issue) => issue.code === "ATHLETE_FEE_ALREADY_PAID")
@@ -141,7 +150,7 @@ export function RegistrationPlanWizard({
     )
     const feeByDiscipline = new Map(
       (validation?.summary.byDiscipline ?? [])
-        .filter((row) => row.pricingMode === "PER_ATHLETE" && row.athleteCount > 0)
+        .filter((row) => row.chargesAthleteFee && row.athleteCount > 0)
         .map((row) => [
           row.discipline as string,
           row.feesAmount / Math.max(1, row.athleteCount),
@@ -158,7 +167,21 @@ export function RegistrationPlanWizard({
         covered: covered.has(athlete.id),
       }
     }
-  }, [modalities, validation])
+  }, [modalities, validation, charges])
+
+  // El evento ofrece elección solo si alguna de sus pruebas cobra los dos.
+  const ofreceEleccion = useMemo(
+    () => modalities.some((row) => row.chargesEntry && row.chargesAthleteFee),
+    [modalities]
+  )
+
+  function changeCharges(next: { paysEntry: boolean; paysAthleteFee: boolean }) {
+    if (readOnly || blockedMessage) return
+    setCharges(next)
+    void enqueue((expectedRevision) =>
+      setPlanChargesAction({ planId: plan.id, expectedRevision, ...next })
+    )
+  }
 
   async function runValidation() {
     try {
@@ -515,6 +538,16 @@ export function RegistrationPlanWizard({
 
       {step === 2 ? (
         <>
+          {ofreceEleccion ? (
+            <ChargeSelectionCard
+              paysEntry={charges.paysEntry}
+              paysAthleteFee={charges.paysAthleteFee}
+              entryLabel="Inscripción por equipo"
+              athleteFeeLabel="Cuota por deportista"
+              disabled={busy || readOnly}
+              onChange={changeCharges}
+            />
+          ) : null}
           <AthleteBoard
             athletePage={athletePage}
             roster={roster}

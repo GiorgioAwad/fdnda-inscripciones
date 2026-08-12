@@ -1,4 +1,4 @@
-import type { AgeRuleModeValue, PricingModeValue } from "@/lib/event-pricing"
+import type { AgeRuleModeValue } from "@/lib/event-pricing"
 import type { PlanValidationResult } from "@/lib/plan-validation"
 
 export type PlanStatus = "DRAFT" | "AWAITING_PAYMENT" | "PAID" | "ABANDONED"
@@ -43,8 +43,9 @@ export interface ModalityView {
   // Cambia cómo se lee la ventana de años: en MAX_AGE_ONLY birthYearFrom es un
   // tope de edad ("Sub-18 = nacidos en 2009 o después"), no un piso de rango.
   ageRuleMode: AgeRuleModeValue
-  /** PER_ATHLETE: el precio no está en la prueba sino en la cuota del evento. */
-  pricingMode: PricingModeValue
+  /** Qué cobra el evento en la disciplina de esta prueba. Pueden ser los dos. */
+  chargesEntry: boolean
+  chargesAthleteFee: boolean
 }
 
 export interface EntryView {
@@ -82,6 +83,9 @@ export interface PlanView {
   roster: AthleteView[]
   entries: EntryView[]
   activeOrder: { id: string; status: string } | null
+  /** Conceptos que el club eligió pagar. null = lo que diga el evento. */
+  paysEntry: boolean | null
+  paysAthleteFee: boolean | null
 }
 
 export interface AthletePageView {

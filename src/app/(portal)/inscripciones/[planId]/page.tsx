@@ -157,6 +157,8 @@ export default async function RegistrationPlanPage({
     activeOrder: plan.orders[0]
       ? { id: plan.orders[0].id, status: plan.orders[0].status }
       : null,
+    paysEntry: plan.paysEntry,
+    paysAthleteFee: plan.paysAthleteFee,
   }
 
   const athletePageView: AthletePageView = {
@@ -182,7 +184,8 @@ export default async function RegistrationPlanPage({
       price: Number(modality.price),
       capacity: modality.capacity,
       ageRuleMode: config.ageRuleMode,
-      pricingMode: config.pricingMode,
+      chargesEntry: config.chargesEntry,
+      chargesAthleteFee: config.chargesAthleteFee,
     }
   })
   const lockedEntryViews: LockedEntryView[] = lockedEntries.map((entry) => ({

@@ -145,7 +145,7 @@ export function TeamFormationPanel({
         </label>
         <p className="mt-2 text-xs text-fdnda-muted">
           {ruleLabel(modality)}
-          {modality.pricingMode === "PER_ENTRY"
+          {modality.chargesEntry
             ? ` · ${formatMoney(modality.price)} por formación`
             : " · incluida en la cuota por deportista"}
           {modality.upgradeYear ? ` · admite nacidos en ${modality.upgradeYear}` : ""}

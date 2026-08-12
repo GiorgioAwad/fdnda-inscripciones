@@ -156,7 +156,7 @@ export function AthleteEntryCard({
                         </span>
                         <span className="block text-xs text-fdnda-muted">
                           {disciplineLabel(modality.discipline)}
-                          {modality.pricingMode === "PER_ENTRY"
+                          {modality.chargesEntry
                             ? ` · ${formatMoney(modality.price)}`
                             : " · incluida en la cuota"}
                         </span>

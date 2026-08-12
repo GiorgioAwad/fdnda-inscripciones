@@ -76,9 +76,11 @@ export function ReviewPanel({
                     <span className="font-semibold text-fdnda-ink">
                       {disciplineLabel(row.discipline)}
                       <span className="ml-2 text-xs font-normal text-fdnda-muted">
-                        {row.pricingMode === "PER_ATHLETE"
-                          ? `${row.athleteCount} deportista(s) × cuota fija · ${row.entryCount} prueba(s) incluidas`
-                          : `${row.entryCount} formación(es) · ${row.athleteCount} deportista(s)`}
+                        {row.chargesEntry && row.chargesAthleteFee
+                          ? `${row.entryCount} formación(es) · ${row.athleteCount} deportista(s) × cuota fija`
+                          : row.chargesAthleteFee
+                            ? `${row.athleteCount} deportista(s) × cuota fija · ${row.entryCount} prueba(s) incluidas`
+                            : `${row.entryCount} formación(es) · ${row.athleteCount} deportista(s)`}
                       </span>
                     </span>
                     <strong className="text-fdnda-navy">{formatMoney(row.subtotal)}</strong>
