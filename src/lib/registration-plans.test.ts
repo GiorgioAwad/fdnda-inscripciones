@@ -511,5 +511,6 @@ describe("elección de conceptos de cobro", () => {
       code: "REVISION_CONFLICT",
       currentRevision: 4,
     })
+    expect(database.tx.registrationPlan.update).not.toHaveBeenCalled()
   })
 })
