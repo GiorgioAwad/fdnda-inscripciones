@@ -15,6 +15,7 @@ import type { LockedEntryView, PlanView, SerializableValidation } from "../types
 export function ReviewPanel({
   validation,
   plan,
+  charges,
   lockedEntries,
   checkingOut,
   blocked,
@@ -24,6 +25,8 @@ export function ReviewPanel({
 }: {
   validation: SerializableValidation | null
   plan: PlanView
+  /** Elección vigente del club (estado vivo del wizard, no `plan.paysEntry/paysAthleteFee`). */
+  charges: { paysEntry: boolean; paysAthleteFee: boolean }
   lockedEntries: LockedEntryView[]
   checkingOut: boolean
   blocked: boolean
@@ -68,24 +71,36 @@ export function ReviewPanel({
                 </h3>
               </div>
               <ul className="divide-y divide-fdnda-border">
-                {validation.summary.byDiscipline.map((row) => (
-                  <li
-                    key={row.discipline}
-                    className="flex flex-wrap items-baseline justify-between gap-2 px-5 py-3 text-sm"
-                  >
-                    <span className="font-semibold text-fdnda-ink">
-                      {disciplineLabel(row.discipline)}
-                      <span className="ml-2 text-xs font-normal text-fdnda-muted">
-                        {row.chargesEntry && row.chargesAthleteFee
-                          ? `${row.entryCount} formación(es) · ${row.athleteCount} deportista(s) × cuota fija`
-                          : row.chargesAthleteFee
-                            ? `${row.athleteCount} deportista(s) × cuota fija · ${row.entryCount} prueba(s) incluidas`
-                            : `${row.entryCount} formación(es) · ${row.athleteCount} deportista(s)`}
+                {validation.summary.byDiscipline.map((row) => {
+                  // Lo que realmente se cobra es configuración del evento Y
+                  // elección del club: la misma condición que usa el motor de
+                  // precios (computePlanPricing). Ramificar solo por
+                  // row.chargesEntry/chargesAthleteFee (config del evento) o
+                  // solo por los importes puede afirmar un cobro que el club
+                  // ya destildó, o negar uno real cuando el precio da 0.
+                  const cobraFormacion = row.chargesEntry && charges.paysEntry
+                  const cobraCuota = row.chargesAthleteFee && charges.paysAthleteFee
+                  return (
+                    <li
+                      key={row.discipline}
+                      className="flex flex-wrap items-baseline justify-between gap-2 px-5 py-3 text-sm"
+                    >
+                      <span className="font-semibold text-fdnda-ink">
+                        {disciplineLabel(row.discipline)}
+                        <span className="ml-2 text-xs font-normal text-fdnda-muted">
+                          {cobraFormacion && cobraCuota
+                            ? `${row.entryCount} formación(es) · ${row.athleteCount} deportista(s) × cuota fija`
+                            : cobraCuota
+                              ? `${row.athleteCount} deportista(s) × cuota fija · ${row.entryCount} prueba(s) sin cobro aparte`
+                              : cobraFormacion
+                                ? `${row.entryCount} formación(es) · ${row.athleteCount} deportista(s)`
+                                : `${row.entryCount} prueba(s) · ${row.athleteCount} deportista(s) · sin cobro en esta disciplina`}
+                        </span>
                       </span>
-                    </span>
-                    <strong className="text-fdnda-navy">{formatMoney(row.subtotal)}</strong>
-                  </li>
-                ))}
+                      <strong className="text-fdnda-navy">{formatMoney(row.subtotal)}</strong>
+                    </li>
+                  )
+                })}
               </ul>
               {validation.summary.coveredAthleteFees > 0 ? (
                 <p className="border-t border-fdnda-border bg-fdnda-success-soft px-5 py-2.5 text-xs font-semibold text-fdnda-success">

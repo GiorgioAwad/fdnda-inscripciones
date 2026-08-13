@@ -98,6 +98,14 @@ export function RegistrationPlanWizard({
   )
   const [checkingOut, setCheckingOut] = useState(false)
   // null (nunca eligió) significa "paga los dos", así que arranca todo marcado.
+  // OJO: `charges` es la fuente viva de la elección del club durante toda la
+  // sesión del wizard. `initialPlan.paysEntry`/`paysAthleteFee` solo siembran
+  // este estado en el primer render: `plan` (el estado de más arriba) nunca se
+  // vuelve a sincronizar con lo que el club elige, porque `onApplied` sólo
+  // mergea `id`/`revision`/`status` y `changeCharges` escribe en `charges`, no
+  // en `plan`. Cualquier componente que necesite saber qué está pagando el
+  // club AHORA (por ejemplo ReviewPanel) tiene que recibir `charges`, nunca
+  // `plan.paysEntry`/`plan.paysAthleteFee`.
   const [charges, setCharges] = useState({
     paysEntry: initialPlan.paysEntry ?? true,
     paysAthleteFee: initialPlan.paysAthleteFee ?? true,
@@ -607,6 +615,7 @@ export function RegistrationPlanWizard({
           <ReviewPanel
             validation={validation}
             plan={plan}
+            charges={charges}
             lockedEntries={lockedEntries}
             checkingOut={checkingOut}
             blocked={Boolean(blockedMessage)}
