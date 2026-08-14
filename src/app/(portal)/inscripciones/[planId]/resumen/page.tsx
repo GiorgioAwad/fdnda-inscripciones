@@ -111,6 +111,22 @@ export default async function PrintablePlanSummary({
   const sheetDisciplines = [
     ...new Set(plan.registrations.map((entry) => entry.modality.discipline)),
   ]
+  // Cuánto se cobra REALMENTE por cada formación no congelada (sin orden
+  // todavía). `modality.price` es el precio de lista, no lo que se cobra: si
+  // hay validación (planilla DRAFT) se lee `chargedEntry` de su desglose por
+  // disciplina, que ya trae la elección del club aplicada. Sin validación
+  // (planilla sin orden ni validación vigente, caso raro) no hay con qué
+  // saber mejor y se usa el precio de lista, igual que antes — pero la misma
+  // función alimenta el total Y cada línea, así que como mínimo cuadran entre
+  // sí.
+  const chargedEntryByDiscipline = new Map(
+    validation?.summary.byDiscipline.map((row) => [row.discipline, row.chargedEntry]) ??
+      []
+  )
+  const chargedEntryPrice = (entry: (typeof plan.registrations)[number]) => {
+    const chargedEntry = chargedEntryByDiscipline.get(entry.modality.discipline) ?? true
+    return chargedEntry ? Number(entry.modality.price) : 0
+  }
   const frozenSummary = currentFrozen.length > 0
     ? {
         rosterAthleteCount: frozenAthletes.size || plan.athletes.length,
@@ -124,7 +140,7 @@ export default async function PrintablePlanSummary({
         registeredAthleteCount: liveRegisteredAthletes.size,
         entryCount: plan.registrations.length,
         totalAmount: plan.registrations.reduce(
-          (total, entry) => total + Number(entry.modality.price),
+          (total, entry) => total + chargedEntryPrice(entry),
           0
         ),
       }
@@ -174,7 +190,7 @@ export default async function PrintablePlanSummary({
                 <FrozenItemCard key={item.id} index={index} item={item} />
               )) : plan.registrations.map((entry, index) => (
                 <Card key={entry.id} className="p-4 break-inside-avoid">
-                  <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-bold uppercase tracking-wide text-fdnda-turquoise-deep">{disciplineLabel(entry.modality.discipline)}</p><h3 className="font-bold text-fdnda-navy">{index + 1}. {entry.modality.name}{entry.modality.category ? ` · ${entry.modality.category}` : ""}</h3></div><strong>{formatMoney(entry.modality.price)}</strong></div>
+                  <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-bold uppercase tracking-wide text-fdnda-turquoise-deep">{disciplineLabel(entry.modality.discipline)}</p><h3 className="font-bold text-fdnda-navy">{index + 1}. {entry.modality.name}{entry.modality.category ? ` · ${entry.modality.category}` : ""}</h3></div><strong>{formatMoney(chargedEntryPrice(entry))}</strong></div>
                   <p className="mt-2 text-sm text-fdnda-ink">{entry.athletes.map((row) => `${row.athlete.lastNames}, ${row.athlete.firstNames}${row.isReserve ? " (reserva)" : ""}`).join(" · ") || "Formación incompleta"}</p>
                 </Card>
               ))}
