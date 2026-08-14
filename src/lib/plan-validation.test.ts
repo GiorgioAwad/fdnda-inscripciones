@@ -376,6 +376,10 @@ describe("validación autoritativa de planillas", () => {
           discipline: "ARTISTIC_SWIMMING",
           chargesEntry: true,
           chargesAthleteFee: false,
+          // Un solo concepto: nunca ofreció elegir, así que lo efectivamente
+          // cobrado coincide con lo que cobra el evento.
+          chargedEntry: true,
+          chargedAthleteFee: false,
           entryCount: 1,
           athleteCount: 2,
           entriesAmount: 350,

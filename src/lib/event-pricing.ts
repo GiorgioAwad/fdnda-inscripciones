@@ -143,6 +143,14 @@ export interface DisciplinePricingSummary {
   // Qué cobra el evento en esta disciplina. Los dos pueden ser ciertos.
   chargesEntry: boolean
   chargesAthleteFee: boolean
+  // Qué se cobra EFECTIVAMENTE en esta planilla: la config del evento con la
+  // elección del club ya aplicada (solo donde el evento ofrece elegir, es
+  // decir donde cobra los dos conceptos a la vez). plan-validation.ts,
+  // review-panel.tsx y registration-plan-wizard.tsx tienen que LEER estos dos
+  // campos en vez de recalcular el AND por su cuenta: esa duplicación fue el
+  // origen del bug de "la elección apaga disciplinas que nunca la ofrecieron".
+  chargedEntry: boolean
+  chargedAthleteFee: boolean
   entryCount: number
   /** Deportistas distintos con al menos una formación en la disciplina. */
   athleteCount: number
@@ -199,15 +207,42 @@ export type CoverageLookup = (input: {
 }) => Promise<CoveredAthleteFee[]>
 
 /**
+ * Aplica la elección del club (paysEntry/paysAthleteFee) a lo que cobra el
+ * evento en UNA disciplina. Es la única formulación del AND en todo el motor:
+ * el resto de `computePlanPricing` la usa en vez de repetirla.
+ *
+ * `paysEntry`/`paysAthleteFee` son un par por PLANILLA, no por disciplina, pero
+ * la elección solo tiene sentido donde el evento ofrece elegir: cuando esa
+ * disciplina cobra los DOS conceptos a la vez. Si cobra uno solo, ese cobro es
+ * incondicional -la elección de la planilla pudo pensarse para otra disciplina
+ * que sí ofrece elegir- y nunca lo apaga.
+ */
+function appliedCharges(
+  config: Pick<EffectiveDisciplineConfig, "chargesEntry" | "chargesAthleteFee">,
+  paysEntry: boolean,
+  paysAthleteFee: boolean
+): { chargeEntry: boolean; chargeFee: boolean } {
+  const ofreceEleccion = config.chargesEntry && config.chargesAthleteFee
+  return {
+    chargeEntry: config.chargesEntry && (!ofreceEleccion || paysEntry),
+    chargeFee: config.chargesAthleteFee && (!ofreceEleccion || paysAthleteFee),
+  }
+}
+
+/**
  * Importe de una planilla, con el desglose que consumen la validación, el
  * checkout y el resumen. Es la única fuente del total: nadie más suma precios.
  *
  * Cada disciplina puede cobrar por formación, por deportista, o los dos a la
  * vez (polo). Si el evento no cobra un concepto, la formación (o la cuota) vale
  * 0. La elección del club (paysEntry/paysAthleteFee) puede apagar un concepto
- * que el evento sí cobra, pero nunca prender uno que el evento no cobra. La
- * cuota por deportista además se omite si ese deportista ya la pagó en otra
- * orden del mismo evento (planilla suplementaria).
+ * que el evento sí cobra, pero nunca prender uno que el evento no cobra -y
+ * solo puede apagarlo en la disciplina que ofrece elegir (ver
+ * `appliedCharges`): una disciplina que cobra un solo concepto lo sigue
+ * cobrando aunque la planilla tenga esa bandera en `false`, porque esa
+ * bandera pudo apagarse pensando en otra disciplina. La cuota por deportista
+ * además se omite si ese deportista ya la pagó en otra orden del mismo evento
+ * (planilla suplementaria).
  */
 export async function computePlanPricing(
   lookupCoverage: CoverageLookup,
@@ -230,8 +265,7 @@ export async function computePlanPricing(
 
   for (const registration of plan.registrations) {
     const config = disciplineConfigFor(configs, registration.modality.discipline)
-    const chargeEntry = config.chargesEntry && paysEntry
-    const chargeFee = config.chargesAthleteFee && paysAthleteFee
+    const { chargeEntry, chargeFee } = appliedCharges(config, paysEntry, paysAthleteFee)
     if (chargeFee && !isPricingConfigurationValid(config)) {
       misconfigured.add(config.discipline)
     }
@@ -302,12 +336,15 @@ export async function computePlanPricing(
   const byDiscipline = new Map<DisciplineValue, DisciplinePricingSummary>()
   for (const line of lines) {
     const config = disciplineConfigFor(configs, line.discipline)
+    const applied = appliedCharges(config, paysEntry, paysAthleteFee)
     const summary =
       byDiscipline.get(line.discipline) ??
       ({
         discipline: line.discipline,
         chargesEntry: config.chargesEntry,
         chargesAthleteFee: config.chargesAthleteFee,
+        chargedEntry: applied.chargeEntry,
+        chargedAthleteFee: applied.chargeFee,
         entryCount: 0,
         athleteCount: 0,
         entriesAmount: 0,
@@ -329,7 +366,8 @@ export async function computePlanPricing(
   // Deportistas distintos también en las disciplinas que no emiten línea de cuota.
   for (const registration of plan.registrations) {
     const config = disciplineConfigFor(configs, registration.modality.discipline)
-    if (config.chargesAthleteFee && paysAthleteFee) continue
+    const { chargeFee } = appliedCharges(config, paysEntry, paysAthleteFee)
+    if (chargeFee) continue
     const summary = byDiscipline.get(config.discipline)
     if (!summary) continue
     summary.athleteCount = countDistinctAthletes(plan, config.discipline, configs)

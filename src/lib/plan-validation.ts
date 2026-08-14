@@ -805,18 +805,20 @@ export async function validateRegistrationPlanInTransaction(
     }
   }
 
-  // Un concepto sigue en pie si el evento lo cobra y el club no lo apago.
-  // `null` no es `false`: una planilla que nunca toco la eleccion paga todo.
+  // Un concepto sigue en pie si el evento lo cobra y -en la disciplina que
+  // ofrece elegir- el club no lo apago. El motor (computePlanPricing) ya
+  // resolvio eso disciplina por disciplina en chargedEntry/chargedAthleteFee:
+  // se lee de ahi en vez de volver a calcular el AND con
+  // plan.paysEntry/paysAthleteFee, que es lo que hacia que esta guarda
+  // apagara disciplinas que nunca ofrecieron elegir (ver event-pricing.ts).
   //
-  // La pregunta NO es "el evento ofrecia elegir" sino "queda algo cobrandose":
-  // en un evento multidisciplina los dos conceptos pueden vivir en disciplinas
-  // distintas, y en uno de un solo concepto apagar esa unica bandera tambien
-  // dejaria la planilla en cero. La server action recibe booleanos del cliente,
-  // asi que esta es la unica guarda real.
+  // Con la eleccion acotada a la disciplina que la ofrece, esta guarda solo
+  // se dispara cuando ALGUNA disciplina de la planilla cobra los dos
+  // conceptos a la vez y el club apago los dos: una disciplina de un solo
+  // concepto nunca puede quedar en cero por esta via, porque nunca hubo
+  // eleccion que apagarle.
   const cobraAlgo = pricing.byDiscipline.some(
-    (row) =>
-      (row.chargesEntry && plan.paysEntry !== false) ||
-      (row.chargesAthleteFee && plan.paysAthleteFee !== false)
+    (row) => row.chargedEntry || row.chargedAthleteFee
   )
   if (!cobraAlgo && plan.registrations.length > 0) {
     issues.push(

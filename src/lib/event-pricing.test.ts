@@ -470,3 +470,68 @@ describe("computePlanPricing · polo cobra los dos conceptos", () => {
     expect(pricing.misconfiguredDisciplines).toEqual([])
   })
 })
+
+// Hallazgo 1 (CRITICAL): paysEntry/paysAthleteFee son un par por PLANILLA,
+// pero solo tienen que aplicarse en la disciplina que ofrece elegir -la que
+// cobra los DOS conceptos a la vez-. Antes se multiplicaban contra la config
+// de CADA disciplina de la planilla, así que en un evento multidisciplina
+// apagar el plantel pensando en polo también apagaba (a $0) formaciones de
+// disciplinas que cobran un solo concepto y nunca ofrecieron elegir.
+describe("computePlanPricing · la elección del club solo apaga la disciplina que ofrece elegir", () => {
+  const ARTISTIC_SOLO_ENTRY: EventDisciplineConfigLike = {
+    discipline: "ARTISTIC_SWIMMING",
+    chargesEntry: true,
+    chargesAthleteFee: false,
+    athleteFee: null,
+    ageRuleMode: "RANGE",
+  }
+
+  it("multidisciplina: apagar el plantel pensando en polo no apaga la formación de artística", async () => {
+    const pricing = await computePlanPricing(
+      NO_COVERAGE,
+      planCon({ paysEntry: false }, [
+        entry("r1", "WATER_POLO", "500.00", [["a1", ANA], ["a2", LUZ]]),
+        entry("r2", "ARTISTIC_SWIMMING", "150.00", [["a3", ANA]]),
+      ]),
+      [...POLO_AMBOS, ARTISTIC_SOLO_ENTRY]
+    )
+
+    const polo = pricing.byDiscipline.find((d) => d.discipline === "WATER_POLO")!
+    const artistic = pricing.byDiscipline.find(
+      (d) => d.discipline === "ARTISTIC_SWIMMING"
+    )!
+
+    // Polo sí ofrecía elegir (cobra los dos): el club apagó el plantel y su
+    // formación va a 0, la cuota por deportista sigue en pie.
+    expect(polo.chargedEntry).toBe(false)
+    expect(polo.chargedAthleteFee).toBe(true)
+    const poloEntry = pricing.lines.find(
+      (l) => l.kind === "ENTRY" && l.discipline === "WATER_POLO"
+    )!
+    expect(poloEntry.amount.isZero()).toBe(true)
+
+    // Artística cobra un solo concepto: nunca ofreció elegir, así que
+    // paysEntry=false (pensado para polo) no la toca.
+    expect(artistic.chargedEntry).toBe(true)
+    const artisticEntry = pricing.lines.find(
+      (l) => l.kind === "ENTRY" && l.discipline === "ARTISTIC_SWIMMING"
+    )!
+    expect(artisticEntry.amount.toString()).toBe("150")
+
+    // 2 cuotas de polo (60 c/u) + la formación de artística.
+    expect(pricing.total.toString()).toBe("270")
+  })
+
+  it("evento de un solo concepto: apagar esa única bandera no lo apaga, porque nunca ofreció elegir", async () => {
+    const pricing = await computePlanPricing(
+      NO_COVERAGE,
+      planCon({ paysAthleteFee: false }, [
+        entry("r1", "DIVING", "60.00", [["a1", ANA]]),
+      ]),
+      DIVING_FLAT
+    )
+
+    expect(pricing.total.toString()).toBe("80")
+    expect(pricing.byDiscipline[0].chargedAthleteFee).toBe(true)
+  })
+})

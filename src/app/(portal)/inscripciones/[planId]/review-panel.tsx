@@ -15,7 +15,6 @@ import type { LockedEntryView, PlanView, SerializableValidation } from "../types
 export function ReviewPanel({
   validation,
   plan,
-  charges,
   lockedEntries,
   checkingOut,
   blocked,
@@ -25,8 +24,6 @@ export function ReviewPanel({
 }: {
   validation: SerializableValidation | null
   plan: PlanView
-  /** Elección vigente del club (estado vivo del wizard, no `plan.paysEntry/paysAthleteFee`). */
-  charges: { paysEntry: boolean; paysAthleteFee: boolean }
   lockedEntries: LockedEntryView[]
   checkingOut: boolean
   blocked: boolean
@@ -72,14 +69,14 @@ export function ReviewPanel({
               </div>
               <ul className="divide-y divide-fdnda-border">
                 {validation.summary.byDiscipline.map((row) => {
-                  // Lo que realmente se cobra es configuración del evento Y
-                  // elección del club: la misma condición que usa el motor de
-                  // precios (computePlanPricing). Ramificar solo por
-                  // row.chargesEntry/chargesAthleteFee (config del evento) o
-                  // solo por los importes puede afirmar un cobro que el club
-                  // ya destildó, o negar uno real cuando el precio da 0.
-                  const cobraFormacion = row.chargesEntry && charges.paysEntry
-                  const cobraCuota = row.chargesAthleteFee && charges.paysAthleteFee
+                  // Lo que realmente se cobra ya lo resolvió el motor de
+                  // precios (computePlanPricing) disciplina por disciplina:
+                  // se lee de chargedEntry/chargedAthleteFee en vez de volver
+                  // a cruzar row.chargesEntry/chargesAthleteFee (config del
+                  // evento) contra `charges` (elección del club), porque esa
+                  // elección solo aplica donde la disciplina ofrece elegir.
+                  const cobraFormacion = row.chargedEntry
+                  const cobraCuota = row.chargedAthleteFee
                   return (
                     <li
                       key={row.discipline}

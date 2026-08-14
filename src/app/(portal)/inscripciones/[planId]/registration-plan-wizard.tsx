@@ -146,11 +146,21 @@ export function RegistrationPlanWizard({
   }, [lockedPairs])
 
   // Cuota fija que le toca a un deportista según las disciplinas que practica y
-  // el modo de cobro del evento. Solo cuenta si además el club la eligió pagar.
+  // el modo de cobro del evento. Solo cuenta si además el club la eligió pagar
+  // -y esa elección solo aplica donde la disciplina ofrece elegir (cobra los
+  // DOS conceptos a la vez): misma regla que aplica el motor de precios en
+  // `appliedCharges` (event-pricing.ts). No se puede leer esto de
+  // `validation.summary.byDiscipline` como hacen plan-validation.ts y
+  // ReviewPanel: acá `validation` está en null casi siempre, porque
+  // `goToStep` la limpia al entrar a este paso y sólo se recalcula al llegar
+  // a la revisión.
   const athleteFeeFor = useMemo(() => {
-    const perAthlete = modalities.filter(
-      (row) => row.chargesAthleteFee && charges.paysAthleteFee
-    )
+    const perAthlete = modalities.filter((row) => {
+      const ofreceEleccionAqui = row.chargesEntry && row.chargesAthleteFee
+      return (
+        row.chargesAthleteFee && (!ofreceEleccionAqui || charges.paysAthleteFee)
+      )
+    })
     const covered = new Set(
       (validation?.issues ?? [])
         .filter((issue) => issue.code === "ATHLETE_FEE_ALREADY_PAID")
@@ -615,7 +625,6 @@ export function RegistrationPlanWizard({
           <ReviewPanel
             validation={validation}
             plan={plan}
-            charges={charges}
             lockedEntries={lockedEntries}
             checkingOut={checkingOut}
             blocked={Boolean(blockedMessage)}
