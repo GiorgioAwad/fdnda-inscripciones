@@ -228,25 +228,54 @@ evento y `/eventos/[slug]/resumen` lleva a su resumen vigente.
 
 ### Cómo cobra y cómo mide edades cada disciplina
 
-`EventDisciplineConfig` guarda, por evento y disciplina, el modo de cobro y la
-regla de edad. **Ausencia de fila = `PER_ENTRY` + `RANGE`**, que es el
-comportamiento histórico: por eso los eventos anteriores a esta tabla no
-cambiaron de precio ni de elegibilidad y no hubo que hacer backfill.
+`EventDisciplineConfig` guarda, por evento y disciplina, qué cobra y la regla de
+edad. **Ausencia de fila = cobra por formación y no cobra cuota, con regla de
+edad `RANGE`**, que es el comportamiento histórico: por eso los eventos
+anteriores a esta tabla no cambiaron de precio ni de elegibilidad y no hubo que
+hacer backfill.
 
-| Modo de cobro | Qué significa |
+El cobro son **dos conceptos independientes**, que pueden estar prendidos a la
+vez:
+
+| Concepto | Qué cobra |
 |---|---|
-| `PER_ENTRY` | El precio vive en cada prueba y se cobra una vez **por formación** (artística, polo). |
-| `PER_ATHLETE` | **Cuota fija por deportista** para toda la disciplina en el evento, sin importar cuántas pruebas haga (clavados). Las formaciones se registran con importe 0. |
+| `chargesEntry` | El precio de cada prueba, una vez **por formación** (natación artística). |
+| `chargesAthleteFee` | **Cuota fija por deportista** para toda la disciplina en el evento, sin importar cuántas pruebas haga (clavados). Requiere `athleteFee` no nulo y `> 0`. Las formaciones se registran con importe 0. |
 
-Con `PER_ATHLETE`, cada cuota cobrada se materializa como una fila
+Polo acuático tiene los dos prendidos a la vez: cobra la inscripción del plantel
+Y una cuota por jugador. Cuando eso pasa —la disciplina cobra los dos
+conceptos—, la planilla (`RegistrationPlan.paysEntry` / `paysAthleteFee`, ambos
+anulables; `null` = "lo que diga el evento") deja **elegir al club** cuáles paga.
+Esa elección **solo se aplica donde el evento realmente ofrece elegir**: en una
+disciplina que solo cobra uno de los dos conceptos, la config del evento manda
+sin excepción, aunque el club haya apagado esa bandera pensando en otra
+disciplina de la misma planilla multidisciplina. `computePlanPricing`
+(`lib/event-pricing.ts`) es el único lugar que decide esto; el resto de las
+capas lee `chargedEntry` / `chargedAthleteFee` (el resultado, ya con la
+elección aplicada) en el desglose por disciplina en vez de recalcularlo por su
+cuenta.
+
+Con `chargesAthleteFee`, cada cuota cobrada se materializa como una fila
 `EventAthleteFee` con único `(evento, disciplina, deportista)`. Eso es lo que
 hace que una **planilla suplementaria** con más pruebas del mismo deportista no
-vuelva a cobrarle: la orden puede quedar en **S/ 0** y se confirma sola, porque
-no hay pasarela que cobre cero y dejarla pendiente congelaría la planilla.
+vuelva a cobrarle: si la disciplina no cobra por formación (o el club eligió no
+pagar ese concepto), la orden puede quedar en **S/ 0** y se confirma sola,
+porque no hay pasarela que cobre cero y dejarla pendiente congelaría la
+planilla.
 
 Las cuotas se crean **solo en el checkout**, nunca al editar: así el autoguardado
 no cambia y no quedan filas huérfanas ocupando el único. Si el pago falla o
 expira, vuelven a `IN_CART` y el reintento las reutiliza.
+
+`EventDisciplineConfig.pricingMode` (`PER_ENTRY` / `PER_ATHLETE`) es el enum
+excluyente que este modelo de dos conceptos reemplazó: no distinguía "cobra
+ambos" de "cobra uno solo", que es justo lo que polo necesita. La columna sigue
+en la tabla y `saveEvent` la sigue escribiendo (derivada de `chargesEntry` /
+`chargesAthleteFee`) durante esta release nada más, para que una instancia
+corriendo con el código anterior —convive con la nueva durante el
+despliegue— siga leyendo el precio correcto en vez de cobrar de menos o
+autoconfirmar una orden en S/ 0. Se retira por completo, columna incluida, en
+la próxima release.
 
 | Regla de edad | Qué significa |
 |---|---|
