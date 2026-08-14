@@ -43,6 +43,7 @@ vi.mock("./prisma", () => ({ prisma: database.prisma }))
 import {
   createOrResumeRegistrationPlan,
   entryChargeNoteFor,
+  entryChargeNoteForDiscipline,
   entryChargeSuffix,
   isRetryableRegistrationPlanTransactionError,
   saveRegistrationPlanEntry,
@@ -425,6 +426,40 @@ describe("entryChargeNoteFor: por qué corresponde cada nota", () => {
   it("cuando la disciplina no cobra formación esa es la razón, aunque el club también se haya bajado", () => {
     expect(
       entryChargeNoteFor({ chargesEntry: false, paysEntry: false })
+    ).toBe("IN_ATHLETE_FEE")
+  })
+})
+
+describe("entryChargeNoteForDiscipline: la nota usa chargedEntry, no chargesEntry crudo", () => {
+  // Regresión: noteFor (dentro de checkoutRegistrationPlan) cruzaba
+  // row.chargesEntry (config del evento) contra plan.paysEntry sin la guarda
+  // de "¿esta disciplina ofrece elegir?". En una disciplina de un solo
+  // concepto (p. ej. artística: solo cobra formación) eso apagaba la nota
+  // aunque la formación se siguiera cobrando en su totalidad, congelando
+  // " | sin cargo: el club paga por deportista" al lado de un importe > 0 en
+  // el comprobante. entryChargeNoteForDiscipline arranca de chargedEntry
+  // -que ya trae la elección acotada a las disciplinas que la ofrecen- y no
+  // reproduce el bug.
+  it("disciplina de un solo concepto + club que apagó la bandera global => CHARGED, no CLUB_PAYS_PER_ATHLETE", () => {
+    // Artística: chargesEntry=true, no ofrece elegir => chargedEntry siempre
+    // true, sin importar paysEntry. El club destildó "Inscripción por
+    // equipo" (paysEntry=false) pensando en otra disciplina (polo).
+    expect(
+      entryChargeNoteForDiscipline({ chargesEntry: true, chargedEntry: true })
+    ).toBe("CHARGED")
+  })
+
+  it("disciplina que sí ofrece elegir y el club se bajó de la formación => CLUB_PAYS_PER_ATHLETE", () => {
+    // Polo: ofrece elegir, y chargedEntry ya vino en false porque el club se
+    // bajó de ese concepto ahí.
+    expect(
+      entryChargeNoteForDiscipline({ chargesEntry: true, chargedEntry: false })
+    ).toBe("CLUB_PAYS_PER_ATHLETE")
+  })
+
+  it("disciplina que no cobra formación => IN_ATHLETE_FEE, sin importar chargedEntry", () => {
+    expect(
+      entryChargeNoteForDiscipline({ chargesEntry: false, chargedEntry: false })
     ).toBe("IN_ATHLETE_FEE")
   })
 })

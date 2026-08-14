@@ -38,6 +38,35 @@ export function entryChargeNoteFor(input: {
 }
 
 /**
+ * Igual que `entryChargeNoteFor`, pero a partir del resumen por disciplina
+ * (`DisciplinePricingSummary` de event-pricing.ts) en vez de cruzar la config
+ * cruda del evento (`chargesEntry`) contra la elección cruda de la planilla
+ * (`plan.paysEntry`). Ese cruce directo no sabe si la disciplina ofrece
+ * elegir: en una disciplina de un solo concepto apaga la formación aunque el
+ * club nunca haya podido elegir ahí (el bug que esto reemplaza).
+ *
+ * `chargedEntry` ya resolvió esa guarda -está acotada a las disciplinas que
+ * cobran los dos conceptos a la vez, ver `appliedCharges` en event-pricing.ts-
+ * así que alcanza con pasarla donde antes iba `paysEntry`: cuando
+ * `chargesEntry` es cierto, `chargedEntry` solo es falso si la disciplina
+ * ofrecía elegir y el club se bajó de ese concepto, que es exactamente cuándo
+ * corresponde `CLUB_PAYS_PER_ATHLETE`.
+ *
+ * Default para una disciplina ausente del desglose: `true` en los dos campos,
+ * igual que el default histórico de `entryChargeNoteFor` (hoy no debería
+ * pasar, porque el motor emite una línea ENTRY por cada formación).
+ */
+export function entryChargeNoteForDiscipline(input: {
+  chargesEntry: boolean
+  chargedEntry: boolean
+}): EntryChargeNote {
+  return entryChargeNoteFor({
+    chargesEntry: input.chargesEntry,
+    paysEntry: input.chargedEntry,
+  })
+}
+
+/**
  * Igual que `entryChargeSuffix`, pero sin el separador `" | "`: para mostrar
  * la nota como texto suelto (badge, línea aparte) en vez de pegada al final
  * de una descripción. Reutiliza `entryChargeSuffix` para no duplicar las

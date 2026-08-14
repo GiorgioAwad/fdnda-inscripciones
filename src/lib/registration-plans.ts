@@ -16,7 +16,7 @@ import {
 import { clubMayEnterEventInTransaction } from "./club-events"
 import { disciplineLabel } from "./disciplines"
 import {
-  entryChargeNoteFor,
+  entryChargeNoteForDiscipline,
   entryChargeSuffix,
   type EntryChargeNote,
 } from "./entry-charge-note"
@@ -1473,6 +1473,7 @@ function serializableValidation(
 // importaba estos nombres desde acá.
 export {
   entryChargeNoteFor,
+  entryChargeNoteForDiscipline,
   entryChargeNoteFromDescription,
   entryChargeNoteLabel,
   entryChargeSuffix,
@@ -1817,15 +1818,23 @@ export async function checkoutRegistrationPlan(input: {
           .map((line) => [line.registrationId!, line.amount])
       )
       // Por qué la línea de una formación puede valer 0: o el evento no cobra
-      // por formación en esa disciplina, o el club eligió no pagar ese concepto.
-      const chargesEntryByDiscipline = new Map(
-        pricing.byDiscipline.map((row) => [row.discipline as string, row.chargesEntry])
+      // por formación en esa disciplina, o el club eligió no pagar ese concepto
+      // (y esa disciplina ofrece elegir: ver entryChargeNoteForDiscipline).
+      // Se lee chargedEntry -no chargesEntry- del desglose: chargesEntry solo
+      // dice lo que cobra el EVENTO, sin la elección del club ya aplicada. Cruzar
+      // esa config cruda contra plan.paysEntry directamente (como hacía esta
+      // línea antes) apaga la nota de disciplinas de un solo concepto que nunca
+      // ofrecieron elegir.
+      const disciplineSummaryByName = new Map(
+        pricing.byDiscipline.map((row) => [row.discipline as string, row])
       )
-      const noteFor = (discipline: string): EntryChargeNote =>
-        entryChargeNoteFor({
-          chargesEntry: chargesEntryByDiscipline.get(discipline) ?? true,
-          paysEntry: plan.paysEntry,
+      const noteFor = (discipline: string): EntryChargeNote => {
+        const summary = disciplineSummaryByName.get(discipline)
+        return entryChargeNoteForDiscipline({
+          chargesEntry: summary?.chargesEntry ?? true,
+          chargedEntry: summary?.chargedEntry ?? true,
         })
+      }
 
       const created = await tx.order.create({
         data: {
