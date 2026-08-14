@@ -148,12 +148,21 @@ export function RegistrationPlanWizard({
   // Cuota fija que le toca a un deportista según las disciplinas que practica y
   // el modo de cobro del evento. Solo cuenta si además el club la eligió pagar
   // -y esa elección solo aplica donde la disciplina ofrece elegir (cobra los
-  // DOS conceptos a la vez): misma regla que aplica el motor de precios en
-  // `appliedCharges` (event-pricing.ts). No se puede leer esto de
-  // `validation.summary.byDiscipline` como hacen plan-validation.ts y
-  // ReviewPanel: acá `validation` está en null casi siempre, porque
-  // `goToStep` la limpia al entrar a este paso y sólo se recalcula al llegar
-  // a la revisión.
+  // DOS conceptos a la vez).
+  //
+  // OJO, esto NO es un descuido: es la ÚNICA reformulación del AND que
+  // sobrevive fuera de `appliedCharges` (event-pricing.ts), que es la fuente
+  // de verdad. plan-validation.ts y ReviewPanel no recalculan nada -leen
+  // chargedEntry/chargedAthleteFee ya resueltos por el motor en
+  // `validation.summary.byDiscipline`- pero acá no se puede hacer lo mismo:
+  // este cálculo alimenta `AthleteBoard`, que solo se renderiza en el paso 2
+  // (armado de la planilla), y `goToStep` limpia `validation` a null cada vez
+  // que se entra a un paso que no es el 3; solo se recalcula al llegar a la
+  // revisión. Si este filtro pasara a depender de `validation.summary`, la
+  // cuota por deportista dejaría de mostrarse mientras se arma la planilla.
+  // Por eso se repite la fórmula acá con la config cruda de cada modalidad
+  // (`ModalityView.chargesEntry`/`chargesAthleteFee`) en vez de con el
+  // resultado ya aplicado.
   const athleteFeeFor = useMemo(() => {
     const perAthlete = modalities.filter((row) => {
       const ofreceEleccionAqui = row.chargesEntry && row.chargesAthleteFee

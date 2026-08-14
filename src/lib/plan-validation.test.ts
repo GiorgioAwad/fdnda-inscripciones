@@ -643,11 +643,12 @@ describe("elección de conceptos de cobro", () => {
     ).toMatchObject({ severity: "ERROR", action: "EDIT_ENTRY" })
   })
 
-  // Ojo: esto NO es "apagar un concepto que el evento no cobra" (eso no debería
-  // exigir nada, y no lo exige: ver el test de la cuota ya cubierta más abajo).
-  // Acá el evento cobra un solo concepto y el club apaga justo ese: la planilla
-  // igual queda en S/ 0, así que sí tiene que bloquear.
-  it("exige elección cuando el evento de un solo concepto apaga esa única bandera", async () => {
+  // El evento cobra un solo concepto (acá WATER_POLO con chargesAthleteFee en
+  // false): nunca hubo elección que ofrecer, así que paysEntry=false no tiene
+  // disciplina donde aplicarse. La bandera se ignora y el cobro se mantiene
+  // -distinto del caso de la cuota ya cubierta (test de abajo), que tampoco
+  // bloquea pero por otra razón.
+  it("ignora la bandera apagada cuando el evento cobra un solo concepto: no hay elección que ofrecer", async () => {
     const target = planteles(
       [{ ...POLO_AMBOS[0], chargesAthleteFee: false, athleteFee: null }],
       { paysEntry: false }
@@ -660,16 +661,22 @@ describe("elección de conceptos de cobro", () => {
       target
     )
 
-    expect(result.valid).toBe(false)
+    expect(result.valid).toBe(true)
     expect(
       result.issues.find((row) => row.code === "CHARGE_SELECTION_REQUIRED")
-    ).toMatchObject({ severity: "ERROR", action: "EDIT_ENTRY" })
+    ).toBeUndefined()
+    // El importe sigue siendo el del único concepto que cobra el evento, no
+    // cero: sin este expect el test pasaría igual si el arreglo hubiera roto
+    // el cobro en vez de preservarlo.
+    expect(result.summary.totalAmount).toBe(500)
   })
 
-  it("bloquea la planilla multidisciplina que reparte los conceptos entre disciplinas", async () => {
-    // Clavados solo cobra cuota por deportista; polo solo cobra formación. Ninguna
-    // fila de byDiscipline tiene los dos conceptos, pero apagar las dos banderas
-    // igual deja la planilla entera en S/ 0: la regla vieja se escapaba acá.
+  it("en una planilla multidisciplina, apagar banderas no toca a las disciplinas que no ofrecen elegir", async () => {
+    // Clavados solo cobra cuota por deportista; polo solo cobra formación.
+    // Ninguna fila de byDiscipline cobra los dos conceptos a la vez, así que
+    // paysEntry/paysAthleteFee no tienen disciplina donde aplicarse: las dos
+    // se siguen cobrando cada una por su cuenta y la planilla no puede llegar
+    // a cero por esta vía.
     const jugador = athlete("j-polo", { disciplines: ["WATER_POLO"] })
     const clavadista = athlete("j-diving", { disciplines: ["DIVING"] })
     const plantel = modality("m-polo-multi", {
@@ -717,10 +724,27 @@ describe("elección de conceptos de cobro", () => {
       target
     )
 
-    expect(result.valid).toBe(false)
+    expect(result.valid).toBe(true)
     expect(
       result.issues.find((row) => row.code === "CHARGE_SELECTION_REQUIRED")
-    ).toMatchObject({ severity: "ERROR", action: "EDIT_ENTRY" })
+    ).toBeUndefined()
+
+    const polo = result.summary.byDiscipline.find(
+      (row) => row.discipline === "WATER_POLO"
+    )!
+    const diving = result.summary.byDiscipline.find(
+      (row) => row.discipline === "DIVING"
+    )!
+    // La formación de polo se sigue cobrando: paysEntry=false estaba pensado
+    // para una disciplina que ofrece elegir, y polo acá no es esa disciplina.
+    expect(polo.chargedEntry).toBe(true)
+    expect(polo.entriesAmount).toBe(500)
+    // La cuota de clavados también, por la misma razón con paysAthleteFee.
+    expect(diving.chargedAthleteFee).toBe(true)
+    expect(diving.feesAmount).toBe(60)
+
+    // El total es la suma de las dos, no cero.
+    expect(result.summary.totalAmount).toBe(560)
   })
 
   it("no exige elección cuando la única cuota que cobra el evento ya está cubierta por otra orden", async () => {
