@@ -812,15 +812,22 @@ export async function validateRegistrationPlanInTransaction(
   // plan.paysEntry/paysAthleteFee, que es lo que hacia que esta guarda
   // apagara disciplinas que nunca ofrecieron elegir (ver event-pricing.ts).
   //
-  // Con la eleccion acotada a la disciplina que la ofrece, esta guarda solo
-  // se dispara cuando ALGUNA disciplina de la planilla cobra los dos
-  // conceptos a la vez y el club apago los dos: una disciplina de un solo
-  // concepto nunca puede quedar en cero por esta via, porque nunca hubo
-  // eleccion que apagarle.
-  const cobraAlgo = pricing.byDiscipline.some(
-    (row) => row.chargedEntry || row.chargedAthleteFee
+  // La guarda es POR disciplina, no global: un some() sobre todas las
+  // disciplinas dejaba pasar la planilla apenas UNA cobrara algo, aunque OTRA
+  // -que sí ofrece elegir- hubiera quedado en cero porque el club apagó los
+  // dos conceptos ahí (polo gratis con artística todavía cobrando, por
+  // ejemplo). Solo entra en esta comprobación una disciplina que cobra los
+  // dos conceptos a la vez (`chargesEntry && chargesAthleteFee`): una de un
+  // solo concepto nunca puede llegar a esta guarda en cero, porque nunca hubo
+  // elección que apagarle.
+  const disciplinesWithoutSelectedCharge = pricing.byDiscipline.filter(
+    (row) =>
+      row.chargesEntry &&
+      row.chargesAthleteFee &&
+      !row.chargedEntry &&
+      !row.chargedAthleteFee
   )
-  if (!cobraAlgo && plan.registrations.length > 0) {
+  if (disciplinesWithoutSelectedCharge.length > 0 && plan.registrations.length > 0) {
     issues.push(
       issue(
         "CHARGE_SELECTION_REQUIRED",

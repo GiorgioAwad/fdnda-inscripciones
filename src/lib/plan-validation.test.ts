@@ -747,6 +747,82 @@ describe("elección de conceptos de cobro", () => {
     expect(result.summary.totalAmount).toBe(560)
   })
 
+  it("en una planilla multidisciplina, una disciplina que ofrece elegir y queda en cero bloquea aunque otra sin elección siga cobrando", async () => {
+    // Regresión: la guarda anterior era un some() sobre TODAS las
+    // disciplinas, así que bastaba con que UNA cobrara algo para que la
+    // planilla pasara. Acá polo ofrece elegir (cobra los dos conceptos) y el
+    // club apagó los dos -queda en S/ 0, sin cuotas- pero clavados sigue
+    // cobrando su formación porque no ofrece elegir. La planilla tiene que
+    // bloquear igual: la guarda es por disciplina, no global.
+    const jugador = athlete("j-polo-block", { disciplines: ["WATER_POLO"] })
+    const clavadista = athlete("j-diving-block", { disciplines: ["DIVING"] })
+    const plantel = modality("m-polo-block", {
+      discipline: "WATER_POLO",
+      name: "Plantel",
+      minAthletes: 1,
+      maxAthletes: 14,
+      price: new Prisma.Decimal(500),
+    })
+    const prueba = modality("m-diving-block", {
+      discipline: "DIVING",
+      name: "Individual",
+      price: new Prisma.Decimal(60),
+    })
+    const target = plan({
+      roster: [jugador, clavadista],
+      registrations: [
+        registration("r-polo-block", plantel, [{ athlete: jugador }]),
+        registration("r-diving-block", prueba, [{ athlete: clavadista }]),
+      ],
+      disciplineConfigs: [
+        {
+          discipline: "WATER_POLO",
+          chargesEntry: true,
+          chargesAthleteFee: true,
+          athleteFee: "60.00",
+          ageRuleMode: "RANGE",
+        },
+        {
+          discipline: "DIVING",
+          chargesEntry: true,
+          chargesAthleteFee: false,
+          athleteFee: null,
+          ageRuleMode: "RANGE",
+        },
+      ],
+      paysEntry: false,
+      paysAthleteFee: false,
+    })
+    const { tx } = transactionMock(target)
+
+    const result = await validateRegistrationPlanInTransaction(
+      tx,
+      { planId: "plan-1", clubId: "club-1", now },
+      target
+    )
+
+    expect(result.valid).toBe(false)
+    expect(
+      result.issues.find((row) => row.code === "CHARGE_SELECTION_REQUIRED")
+    ).toMatchObject({ severity: "ERROR", action: "EDIT_ENTRY" })
+
+    const polo = result.summary.byDiscipline.find(
+      (row) => row.discipline === "WATER_POLO"
+    )!
+    const diving = result.summary.byDiscipline.find(
+      (row) => row.discipline === "DIVING"
+    )!
+    // Polo quedó en S/ 0: los dos conceptos apagados por el club ahí.
+    expect(polo.chargedEntry).toBe(false)
+    expect(polo.chargedAthleteFee).toBe(false)
+    // Clavados sigue cobrando su formación, importe incluido: no basta con
+    // que el error aparezca, el cobro de la disciplina que sí puede cobrar
+    // tiene que seguir de pie.
+    expect(diving.chargedEntry).toBe(true)
+    expect(diving.entriesAmount).toBe(60)
+    expect(result.summary.totalAmount).toBe(60)
+  })
+
   it("no exige elección cuando la única cuota que cobra el evento ya está cubierta por otra orden", async () => {
     // El concepto sigue prendido (nadie lo apagó): el total en 0 es porque ya se
     // pagó en otra orden, no porque el club haya elegido no pagar nada.
