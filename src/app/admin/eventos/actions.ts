@@ -6,6 +6,7 @@ import {
   Prisma,
   type AgeRuleMode,
   type Discipline,
+  type PricingMode,
   type SexRule,
 } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
@@ -287,6 +288,13 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         ? new Prisma.Decimal(athleteFee.toFixed(2))
         : null,
     ageRuleMode: parsed.data.ageRuleMode as AgeRuleMode,
+    // Se escribe tambien la representacion vieja mientras dure el despliegue:
+    // instancias con el codigo anterior siguen leyendo pricingMode, y una
+    // config que ellas leyeran mal cobraria de menos o auto-confirmaria una
+    // orden en cero. Esta linea se borra junto con la columna, en la Tarea 9.
+    pricingMode: (parsed.data.chargesAthleteFee && !parsed.data.chargesEntry
+      ? "PER_ATHLETE"
+      : "PER_ENTRY") as PricingMode,
   }
 
   // Cambiar cómo cobra o cómo mide las edades una disciplina que ya vendió
