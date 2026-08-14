@@ -29,6 +29,7 @@
     "db:import-foundation": "tsx scripts/import-foundation-data.ts",
     "db:audit-foundation": "tsx scripts/audit-foundation-logins.ts",
     "db:rotate-club-login": "tsx scripts/rotate-club-login.ts",
+    "db:provision-admin": "tsx scripts/provision-admin.ts",
     "db:split-aquatica": "tsx scripts/provision-aquatica-sections.ts",
     "db:studio": "prisma studio"
   },

@@ -15,10 +15,16 @@ import { Pool } from "pg"
 //   npx tsx scripts/backfill-afiliaciones.ts [--year=2026] [--club-fee=1500]
 //                                            [--athlete-fee=80]
 //                                            [--disciplines=DIVING,WATER_POLO]
+//                                            [--exclude-clubs=RABER-TRUJILLO]
 //                                            [--dry-run]
 //
 // --disciplines limita a qué disciplinas se afilia (por defecto, todas las que
 // ya tengan tarifa; si la temporada es nueva, las tres).
+//
+// --exclude-clubs deja fuera del backfill a esos clubes (por código) y a sus
+// deportistas: quedan SIN_AFILIAR. Sirve para el club que todavía no pagó —
+// darle una afiliación ACTIVE que nadie cobró le abriría las inscripciones — y
+// para dejar en staging un club con el que probar el bloqueo duro.
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) })
@@ -64,6 +70,20 @@ function disciplinesArg(): Discipline[] | undefined {
   return values as Discipline[]
 }
 
+function excludedClubCodesArg(): string[] {
+  const raw = arg("exclude-clubs")
+  if (raw === undefined) return []
+
+  return [
+    ...new Set(
+      raw
+        .split(",")
+        .map((value) => value.trim().toUpperCase())
+        .filter(Boolean)
+    ),
+  ]
+}
+
 function dateUTC(year: number, month: number, day: number): Date {
   return new Date(Date.UTC(year, month - 1, day))
 }
@@ -74,6 +94,27 @@ async function main() {
   const clubFee = numberArg("club-fee", 1500)
   const athleteFee = numberArg("athlete-fee", 80)
   const requested = disciplinesArg()
+  const excludedCodes = excludedClubCodesArg()
+
+  // Un código mal escrito afiliaría al club que se quería dejar fuera, y el
+  // error solo se vería cuando ese club pudiera inscribir. Mejor abortar.
+  if (excludedCodes.length > 0) {
+    const found = await prisma.club.findMany({
+      where: { code: { in: excludedCodes } },
+      select: { code: true, name: true },
+    })
+    const missing = excludedCodes.filter(
+      (code) => !found.some((club) => club.code === code)
+    )
+    if (missing.length > 0) {
+      throw new Error(
+        `--exclude-clubs: no existe ningún club con el código ${missing.join(", ")}.`
+      )
+    }
+    for (const club of found) {
+      console.log(`Excluido del backfill: ${club.code} · ${club.name} (y sus deportistas).`)
+    }
+  }
 
   const validFrom = dateUTC(year, 1, 1)
   const validTo = dateUTC(year, 12, 31)
@@ -147,6 +188,7 @@ async function main() {
     const clubs = await prisma.club.findMany({
       where: {
         isActive: true,
+        ...(excludedCodes.length > 0 ? { code: { notIn: excludedCodes } } : {}),
         affiliations: { none: { seasonId: season.id, discipline } },
       },
       select: { id: true },
@@ -175,6 +217,9 @@ async function main() {
       where: {
         isActive: true,
         disciplines: { has: discipline },
+        ...(excludedCodes.length > 0
+          ? { club: { code: { notIn: excludedCodes } } }
+          : {}),
         affiliations: { none: { seasonId: season.id, discipline } },
       },
       select: { id: true, clubId: true },
