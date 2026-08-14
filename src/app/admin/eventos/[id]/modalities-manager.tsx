@@ -26,6 +26,7 @@ import {
   maxAgeForBirthYear,
   type EventDisciplineConfigLike,
 } from "@/lib/event-pricing"
+import { leaguePriceBreakdown, leagueTotalMatches } from "@/lib/league"
 import { formatMoney, SEX_RULE_LABELS } from "@/lib/utils"
 import {
   bulkGenerateModalities,
@@ -49,6 +50,9 @@ export interface ModalityRow {
   minAthletes: number
   maxAthletes: number
   price: number
+  pricePerMatch: number | null
+  matchesPerTeam: number | null
+  expectedTeams: number | null
   capacity: number | null
   isActive: boolean
   totalRegistrations: number
@@ -141,6 +145,7 @@ function teamSizeLabel(min: number, max: number): string {
 
 export function ModalitiesManager({
   eventId,
+  isLeague,
   eventDisciplines,
   disciplineConfigs,
   seasonCategories,
@@ -148,6 +153,7 @@ export function ModalitiesManager({
   modalities,
 }: {
   eventId: string
+  isLeague: boolean
   eventDisciplines: string[]
   disciplineConfigs: EventDisciplineConfigLike[]
   seasonCategories: SeasonCategoryOption[]
@@ -302,7 +308,19 @@ export function ModalitiesManager({
               />
               <TableField
                 label="Precio"
-                value={<span className="num">{formatMoney(m.price)}</span>}
+                value={
+                  <span>
+                    <span className="num">{formatMoney(m.price)}</span>
+                    {m.pricePerMatch !== null && m.matchesPerTeam !== null ? (
+                      <span className="mt-0.5 block text-xs font-normal text-fdnda-muted">
+                        {leaguePriceBreakdown({
+                          pricePerMatch: m.pricePerMatch,
+                          matchesPerTeam: m.matchesPerTeam,
+                        })}
+                      </span>
+                    ) : null}
+                  </span>
+                }
               />
               <TableField
                 wide
@@ -366,7 +384,23 @@ export function ModalitiesManager({
                     ) : null}
                   </TD>
                   <TD>{teamSizeLabel(m.minAthletes, m.maxAthletes)}</TD>
-                  <TD className="text-right font-semibold">{formatMoney(m.price)}</TD>
+                  <TD className="text-right font-semibold">
+                    {formatMoney(m.price)}
+                    {m.matchesPerTeam !== null && m.pricePerMatch !== null ? (
+                      <span className="block text-xs font-normal text-fdnda-muted">
+                        {leaguePriceBreakdown({
+                          pricePerMatch: m.pricePerMatch,
+                          matchesPerTeam: m.matchesPerTeam,
+                        })}
+                        {m.expectedTeams !== null
+                          ? ` · ${leagueTotalMatches({
+                              expectedTeams: m.expectedTeams,
+                              matchesPerTeam: m.matchesPerTeam,
+                            })} partidos en la categoría`
+                          : ""}
+                      </span>
+                    ) : null}
+                  </TD>
                   <TD className="text-right">
                     <span className="font-medium text-fdnda-success">
                       {m.paidRegistrations}
@@ -597,18 +631,59 @@ export function ModalitiesManager({
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="mod-price">Precio (S/)</Label>
-              <Input
-                id="mod-price"
-                name="price"
-                type="number"
-                step="0.01"
-                min={0}
-                required
-                defaultValue={current?.price ?? ""}
-              />
-            </div>
+            {isLeague ? (
+              <>
+                <div>
+                  <Label htmlFor="mod-price-per-match">Precio por partido (S/)</Label>
+                  <Input
+                    id="mod-price-per-match"
+                    name="pricePerMatch"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    required
+                    defaultValue={current?.pricePerMatch ?? ""}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="mod-matches">Partidos por equipo</Label>
+                  <Input
+                    id="mod-matches"
+                    name="matchesPerTeam"
+                    type="number"
+                    min={1}
+                    max={40}
+                    required
+                    defaultValue={current?.matchesPerTeam ?? 4}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="mod-teams">Equipos esperados</Label>
+                  <Input
+                    id="mod-teams"
+                    name="expectedTeams"
+                    type="number"
+                    min={1}
+                    max={40}
+                    required
+                    defaultValue={current?.expectedTeams ?? 3}
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <Label htmlFor="mod-price">Precio (S/)</Label>
+                <Input
+                  id="mod-price"
+                  name="price"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  required
+                  defaultValue={current?.price ?? ""}
+                />
+              </div>
+            )}
             <div>
               <Label htmlFor="mod-capacity">Cupo (opcional)</Label>
               <Input
@@ -658,10 +733,27 @@ export function ModalitiesManager({
                 ))}
               </Select>
             </div>
-            <div>
-              <Label htmlFor="bulk-price">Precio por prueba (S/)</Label>
-              <Input id="bulk-price" name="price" type="number" step="0.01" min={0} required />
-            </div>
+            {isLeague ? (
+              <>
+                <div>
+                  <Label htmlFor="bulk-price-per-match">Precio por partido (S/)</Label>
+                  <Input id="bulk-price-per-match" name="pricePerMatch" type="number" step="0.01" min={0} required />
+                </div>
+                <div>
+                  <Label htmlFor="bulk-matches">Partidos por equipo</Label>
+                  <Input id="bulk-matches" name="matchesPerTeam" type="number" min={1} max={40} defaultValue={4} required />
+                </div>
+                <div>
+                  <Label htmlFor="bulk-teams">Equipos esperados</Label>
+                  <Input id="bulk-teams" name="expectedTeams" type="number" min={1} max={40} defaultValue={3} required />
+                </div>
+              </>
+            ) : (
+              <div>
+                <Label htmlFor="bulk-price">Precio por prueba (S/)</Label>
+                <Input id="bulk-price" name="price" type="number" step="0.01" min={0} required />
+              </div>
+            )}
           </div>
           <div>
             <Label htmlFor="bulk-names">Pruebas (una por línea)</Label>

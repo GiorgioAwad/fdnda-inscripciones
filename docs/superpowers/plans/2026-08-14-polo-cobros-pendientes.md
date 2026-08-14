@@ -99,12 +99,11 @@ después.
 ## 4. Los otros tres planes del spec
 
 El spec `docs/superpowers/specs/2026-08-12-polo-cobros-y-liga-design.md` se
-partió en cuatro planes. Solo se ejecutó el primero. Quedan:
+partió en cuatro planes. Ya se ejecutaron el cobro por conceptos y los eventos
+de liga. Quedan:
 
-- `2026-08-12-eventos-de-liga.md` — la marca "es liga" y el precio por partido.
 - `2026-08-12-polo-sin-reserva-y-plantel-de-14.md` — quitar la reserva en polo y
   subir el plantel a 14.
 - `2026-08-12-filtros-de-nomina.md` — los filtros de la nómina.
 
-Ninguno depende de los otros. El de la liga se apoya en el mismo formulario de
-evento que tocó este trabajo, así que conviene leerlo antes de retomarlo.
+Ninguno depende del otro.

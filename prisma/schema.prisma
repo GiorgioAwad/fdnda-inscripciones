@@ -339,6 +339,9 @@ model Event {
   endDate              DateTime     @db.Date
   registrationDeadline DateTime
   status               EventStatus  @default(DRAFT)
+  // Una liga cobra por partido: el precio de cada plantel sale de los partidos
+  // que ese equipo juega en la fase preliminar. Hoy solo aplica a polo.
+  isLeague             Boolean      @default(false)
   description          String?
 
   createdAt DateTime @default(now())
@@ -455,6 +458,11 @@ model EventModality {
   minAthletes              Int        @default(1)
   maxAthletes              Int        @default(1)
   price                    Decimal    @db.Decimal(10, 2)
+  // Memoria del calculo del precio en una liga. `price` ya esta multiplicado;
+  // estos campos permiten explicar el desglose y calcular el fixture.
+  pricePerMatch            Decimal?   @db.Decimal(10, 2)
+  matchesPerTeam           Int?
+  expectedTeams            Int?
   capacity                 Int?
   sortOrder                Int        @default(0)
   isActive                 Boolean    @default(true)

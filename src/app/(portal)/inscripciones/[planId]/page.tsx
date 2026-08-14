@@ -182,6 +182,9 @@ export default async function RegistrationPlanPage({
       minAthletes: modality.minAthletes,
       maxAthletes: modality.maxAthletes,
       price: Number(modality.price),
+      pricePerMatch:
+        modality.pricePerMatch === null ? null : Number(modality.pricePerMatch),
+      matchesPerTeam: modality.matchesPerTeam,
       capacity: modality.capacity,
       ageRuleMode: config.ageRuleMode,
       chargesEntry: config.chargesEntry,

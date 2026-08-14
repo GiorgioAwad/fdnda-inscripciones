@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { disciplineLabel } from "@/lib/disciplines"
 import { isAthleteEligible, validateEntryComposition } from "@/lib/eligibility"
+import { leaguePriceBreakdown } from "@/lib/league"
 import { formatMoney, SEX_LABELS, SEX_RULE_LABELS } from "@/lib/utils"
 import type { AthleteView, EntryView, ModalityView } from "../types"
 
@@ -150,6 +151,16 @@ export function TeamFormationPanel({
             : " · incluida en la cuota por deportista"}
           {modality.upgradeYear ? ` · admite nacidos en ${modality.upgradeYear}` : ""}
         </p>
+        {modality.chargesEntry &&
+        modality.pricePerMatch !== null &&
+        modality.matchesPerTeam !== null ? (
+          <p className="mt-1 text-xs font-semibold text-fdnda-navy">
+            {leaguePriceBreakdown({
+              pricePerMatch: modality.pricePerMatch,
+              matchesPerTeam: modality.matchesPerTeam,
+            })}
+          </p>
+        ) : null}
         {!readOnly ? (
           <Button size="sm" className="mt-3" onClick={onStartNew} disabled={saving}>
             <Plus className="h-4 w-4" /> Nueva formación

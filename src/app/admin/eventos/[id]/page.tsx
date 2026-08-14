@@ -81,6 +81,7 @@ export default async function EventoDetailPage({
                 {disciplineLabel(value)}
               </Badge>
             ))}
+            {event.isLeague ? <Badge variant="accent">Liga</Badge> : null}
             <span className="font-medium">
               {formatDateOnly(event.startDate)} – {formatDateOnly(event.endDate)}
             </span>
@@ -120,6 +121,7 @@ export default async function EventoDetailPage({
               seasonId: event.seasonId ?? "",
               chargesEntry: primaryConfig.chargesEntry,
               chargesAthleteFee: primaryConfig.chargesAthleteFee,
+              isLeague: event.isLeague,
               athleteFee: primaryConfig.athleteFee ?? "",
               ageRuleMode: primaryConfig.ageRuleMode,
               hasLockedEntries,
@@ -140,6 +142,7 @@ export default async function EventoDetailPage({
 
       <ModalitiesManager
         eventId={event.id}
+        isLeague={event.isLeague}
         eventDisciplines={event.disciplines}
         disciplineConfigs={event.disciplineConfigs.map((config) => ({
           discipline: config.discipline,
@@ -171,6 +174,9 @@ export default async function EventoDetailPage({
           minAthletes: m.minAthletes,
           maxAthletes: m.maxAthletes,
           price: Number(m.price),
+          pricePerMatch: m.pricePerMatch === null ? null : Number(m.pricePerMatch),
+          matchesPerTeam: m.matchesPerTeam,
+          expectedTeams: m.expectedTeams,
           capacity: m.capacity,
           isActive: m.isActive,
           totalRegistrations: m._count.registrations,

@@ -39,6 +39,9 @@ export interface ModalityView {
   minAthletes: number
   maxAthletes: number
   price: number
+  /** Desglose de liga; nulos en una prueba con precio directo. */
+  pricePerMatch: number | null
+  matchesPerTeam: number | null
   capacity: number | null
   // Cambia cómo se lee la ventana de años: en MAX_AGE_ONLY birthYearFrom es un
   // tope de edad ("Sub-18 = nacidos en 2009 o después"), no un piso de rango.

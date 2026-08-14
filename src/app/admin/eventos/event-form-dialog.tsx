@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/dialog"
 import { DISCIPLINE_VALUES, DISCIPLINES, type DisciplineValue } from "@/lib/disciplines"
 import { DISCIPLINE_PRESETS } from "@/lib/event-presets"
 import type { AgeRuleModeValue } from "@/lib/event-pricing"
+import { leagueTotalMatches } from "@/lib/league"
 import { saveEvent } from "./actions"
 
 export interface EventFormData {
@@ -25,6 +26,7 @@ export interface EventFormData {
   seasonId: string
   chargesEntry: boolean
   chargesAthleteFee: boolean
+  isLeague: boolean
   athleteFee: string
   ageRuleMode: AgeRuleModeValue
   /** true si el evento ya vendió inscripciones: la configuración se congela. */
@@ -85,6 +87,9 @@ export function EventFormFields({
   const [chargesAthleteFee, setChargesAthleteFee] = useState(
     event?.chargesAthleteFee ?? preset?.defaultChargesAthleteFee ?? false
   )
+  const [isLeague, setIsLeague] = useState(event?.isLeague ?? false)
+  const [matchesPerTeam, setMatchesPerTeam] = useState("4")
+  const [expectedTeams, setExpectedTeams] = useState("3")
   const [ageRuleMode, setAgeRuleMode] = useState<AgeRuleModeValue>(
     event?.ageRuleMode ?? "RANGE"
   )
@@ -104,6 +109,7 @@ export function EventFormFields({
     const next = DISCIPLINE_PRESETS[value]
     setChargesEntry(next.defaultChargesEntry)
     setChargesAthleteFee(next.defaultChargesAthleteFee)
+    setIsLeague(false)
     setAgeRuleMode(next.defaultAgeRuleMode)
     setSelectedModalities(next.modalities.map((modality) => modality.name))
     const categoryId = nextCategoryId.current
@@ -336,6 +342,25 @@ export function EventFormFields({
                 </p>
               ) : null}
             </fieldset>
+
+            {discipline === "WATER_POLO" ? (
+              <label className="flex items-start gap-2.5 rounded-control border border-fdnda-border bg-white px-3 py-2.5 text-sm">
+                <input
+                  type="checkbox"
+                  name="isLeague"
+                  checked={isLeague}
+                  onChange={(event) => setIsLeague(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-fdnda-turquoise-deep"
+                />
+                <span>
+                  <span className="font-medium text-fdnda-ink">Es una liga</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-fdnda-muted">
+                    El precio de cada plantel sale de los partidos que juega en
+                    la fase preliminar.
+                  </span>
+                </span>
+              </label>
+            ) : null}
 
             {chargesAthleteFee ? (
               <div>
@@ -587,7 +612,9 @@ export function EventFormFields({
 
                     {chargesEntry ? (
                       <div>
-                        <Label htmlFor="ev-preset-price">Precio por prueba (S/)</Label>
+                        <Label htmlFor="ev-preset-price">
+                          {isLeague ? "Precio por partido (S/)" : "Precio por prueba (S/)"}
+                        </Label>
                         <Input
                           id="ev-preset-price"
                           name="presetPrice"
@@ -597,6 +624,46 @@ export function EventFormFields({
                           required
                           placeholder="60.00"
                         />
+                      </div>
+                    ) : null}
+
+                    {isLeague ? (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <Label htmlFor="ev-matches">Partidos por equipo</Label>
+                          <Input
+                            id="ev-matches"
+                            name="presetMatchesPerTeam"
+                            type="number"
+                            min={1}
+                            max={40}
+                            required
+                            value={matchesPerTeam}
+                            onChange={(event) => setMatchesPerTeam(event.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="ev-teams">Equipos esperados</Label>
+                          <Input
+                            id="ev-teams"
+                            name="presetExpectedTeams"
+                            type="number"
+                            min={1}
+                            max={40}
+                            required
+                            value={expectedTeams}
+                            onChange={(event) => setExpectedTeams(event.target.value)}
+                          />
+                        </div>
+                        <p className="text-xs leading-5 text-fdnda-muted sm:col-span-2">
+                          Cada equipo paga {Number(matchesPerTeam) || 0} partidos. La
+                          categoría tendrá{" "}
+                          {leagueTotalMatches({
+                            expectedTeams: Number(expectedTeams) || 0,
+                            matchesPerTeam: Number(matchesPerTeam) || 0,
+                          })}{" "}
+                          partidos en total.
+                        </p>
                       </div>
                     ) : null}
                   </>

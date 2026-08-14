@@ -19,6 +19,7 @@ import {
   isAgeRuleConfigurationValid,
   isPricingConfigurationValid,
 } from "@/lib/event-pricing"
+import { leagueEntryPrice } from "@/lib/league"
 import { slugify } from "@/lib/utils"
 
 // Tope por lote del generador: evita que una matriz enorme (pruebas × categorías
@@ -124,6 +125,7 @@ const eventSchema = z.object({
   }),
   chargesEntry: z.boolean(),
   chargesAthleteFee: z.boolean(),
+  isLeague: z.boolean(),
   athleteFee: z.string().optional(),
   ageRuleMode: z.enum(["RANGE", "MAX_AGE_ONLY"]),
   venue: z.string().trim().max(120).optional(),
@@ -136,6 +138,8 @@ const eventSchema = z.object({
   presetModalities: z.array(z.string()).optional(),
   presetCategoriesText: z.string().optional(),
   presetPrice: z.string().optional(),
+  presetMatchesPerTeam: z.string().optional(),
+  presetExpectedTeams: z.string().optional(),
 })
 
 export async function saveEvent(formData: FormData): Promise<ActionResult> {
@@ -148,6 +152,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     discipline: formData.get("discipline"),
     chargesEntry: formData.get("chargesEntry") === "on",
     chargesAthleteFee: formData.get("chargesAthleteFee") === "on",
+    isLeague: formData.get("isLeague") === "on",
     athleteFee: String(formData.get("athleteFee") ?? ""),
     ageRuleMode: String(formData.get("ageRuleMode") ?? "RANGE"),
     venue: String(formData.get("venue") ?? ""),
@@ -159,6 +164,8 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     presetModalities: formData.getAll("presetModalities").map(String),
     presetCategoriesText: String(formData.get("presetCategoriesText") ?? ""),
     presetPrice: String(formData.get("presetPrice") ?? ""),
+    presetMatchesPerTeam: String(formData.get("presetMatchesPerTeam") ?? ""),
+    presetExpectedTeams: String(formData.get("presetExpectedTeams") ?? ""),
   })
 
   if (!parsed.success) {
@@ -183,6 +190,12 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     return {
       success: false,
       error: "La cuota por deportista debe ser mayor que cero.",
+    }
+  }
+  if (parsed.data.isLeague && discipline !== "WATER_POLO") {
+    return {
+      success: false,
+      error: "Solo un evento de polo acuático puede ser una liga.",
     }
   }
 
@@ -220,6 +233,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         select: {
           seasonId: true,
           disciplines: true,
+          isLeague: true,
           modalities: {
             select: {
               discipline: true,
@@ -261,6 +275,13 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
           "La disciplina no puede cambiar porque el evento ya tiene inscripciones en una orden.",
       }
     }
+    if (hasLockedEntries && existing.isLeague !== parsed.data.isLeague) {
+      return {
+        success: false,
+        error:
+          "El formato de liga no puede cambiar porque el evento ya tiene inscripciones en una orden.",
+      }
+    }
   }
 
   // Los eventos legados multidisciplina conservan su arreglo: reducirlos a una
@@ -277,6 +298,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     startDate,
     endDate,
     registrationDeadline,
+    isLeague: parsed.data.isLeague,
     description: parsed.data.description || null,
   }
 
@@ -360,13 +382,40 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       })
       if (!categories.ok) return { success: false, error: categories.error }
 
-      // Si el evento no cobra por formación, las pruebas nacen en 0.
-      const price = parsed.data.chargesEntry
+      // En una liga el admin escribe el precio por partido; la prueba se guarda
+      // con el precio final que paga cada equipo.
+      const unitPrice = parsed.data.chargesEntry
         ? parseFee(parsed.data.presetPrice)
         : 0
-      if (price === "invalid" || price === null) {
+      if (unitPrice === "invalid" || unitPrice === null) {
         return { success: false, error: "Indica el precio de las pruebas." }
       }
+
+      const matchesPerTeam = parsed.data.isLeague
+        ? Number(parsed.data.presetMatchesPerTeam)
+        : null
+      const expectedTeams = parsed.data.isLeague
+        ? Number(parsed.data.presetExpectedTeams)
+        : null
+      if (
+        parsed.data.isLeague &&
+        (!Number.isInteger(matchesPerTeam) ||
+          matchesPerTeam! < 1 ||
+          matchesPerTeam! > 40 ||
+          !Number.isInteger(expectedTeams) ||
+          expectedTeams! < 1 ||
+          expectedTeams! > 40)
+      ) {
+        return {
+          success: false,
+          error:
+            "Indica cuántos equipos y cuántos partidos por equipo tiene la fase preliminar.",
+        }
+      }
+
+      const price = parsed.data.isLeague
+        ? leagueEntryPrice({ pricePerMatch: unitPrice, matchesPerTeam: matchesPerTeam! })
+        : unitPrice
 
       modalityRows = buildModalityRows({
         discipline,
@@ -385,6 +434,14 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         allowsCategoryUpgrade: false,
         startSortOrder: 0,
       })
+      if (parsed.data.isLeague) {
+        modalityRows = modalityRows.map((row) => ({
+          ...row,
+          pricePerMatch: new Prisma.Decimal(unitPrice.toFixed(2)),
+          matchesPerTeam,
+          expectedTeams,
+        }))
+      }
       if (modalityRows.length > MAX_BULK_MODALITIES) {
         return {
           success: false,
@@ -440,6 +497,30 @@ export async function setEventStatus(
     }
     if (event.modalities.length === 0) {
       return { success: false, error: "Agrega al menos una prueba activa antes de abrir." }
+    }
+
+    const badLeagueModality = event.isLeague
+      ? event.modalities.find(
+          (modality) =>
+            modality.pricePerMatch === null ||
+            modality.matchesPerTeam === null ||
+            modality.matchesPerTeam < 1 ||
+            modality.matchesPerTeam > 40 ||
+            modality.expectedTeams === null ||
+            modality.expectedTeams < 1 ||
+            modality.expectedTeams > 40 ||
+            Number(modality.price) !==
+              leagueEntryPrice({
+                pricePerMatch: Number(modality.pricePerMatch),
+                matchesPerTeam: modality.matchesPerTeam,
+              })
+        )
+      : null
+    if (badLeagueModality) {
+      return {
+        success: false,
+        error: `Completa el precio por partido y el fixture de «${badLeagueModality.name}» antes de abrir.`,
+      }
     }
 
     // Una disciplina que cobra cuota fija sin monto no puede vender nada.
@@ -535,6 +616,9 @@ const modalitySchema = z.object({
   minAthletes: z.coerce.number().int().min(1).max(20),
   maxAthletes: z.coerce.number().int().min(1).max(20),
   price: z.coerce.number().min(0).max(100000),
+  pricePerMatch: z.string().optional(),
+  matchesPerTeam: z.string().optional(),
+  expectedTeams: z.string().optional(),
   capacity: z.string().optional(),
 })
 
@@ -562,6 +646,9 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     minAthletes: formData.get("minAthletes"),
     maxAthletes: formData.get("maxAthletes"),
     price: formData.get("price"),
+    pricePerMatch: String(formData.get("pricePerMatch") ?? ""),
+    matchesPerTeam: String(formData.get("matchesPerTeam") ?? ""),
+    expectedTeams: String(formData.get("expectedTeams") ?? ""),
     capacity: String(formData.get("capacity") ?? ""),
   })
 
@@ -661,6 +748,41 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     return { success: false, error: "Cupo inválido." }
   }
 
+  let price = parsed.data.price
+  let leagueFields: {
+    pricePerMatch: Prisma.Decimal | null
+    matchesPerTeam: number | null
+    expectedTeams: number | null
+  } = { pricePerMatch: null, matchesPerTeam: null, expectedTeams: null }
+
+  if (event.isLeague) {
+    const pricePerMatch = parseFee(parsed.data.pricePerMatch)
+    const matchesPerTeam = Number(parsed.data.matchesPerTeam)
+    const expectedTeams = Number(parsed.data.expectedTeams)
+    if (
+      pricePerMatch === "invalid" ||
+      pricePerMatch === null ||
+      !Number.isInteger(matchesPerTeam) ||
+      matchesPerTeam < 1 ||
+      matchesPerTeam > 40 ||
+      !Number.isInteger(expectedTeams) ||
+      expectedTeams < 1 ||
+      expectedTeams > 40
+    ) {
+      return {
+        success: false,
+        error:
+          "Indica el precio por partido, los partidos por equipo y los equipos esperados.",
+      }
+    }
+    price = leagueEntryPrice({ pricePerMatch, matchesPerTeam })
+    leagueFields = {
+      pricePerMatch: new Prisma.Decimal(pricePerMatch.toFixed(2)),
+      matchesPerTeam,
+      expectedTeams,
+    }
+  }
+
   const data = {
     eventId: parsed.data.eventId,
     discipline: parsed.data.discipline as Discipline,
@@ -673,7 +795,8 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     categoryUpgradeBirthYear,
     minAthletes: parsed.data.minAthletes,
     maxAthletes: parsed.data.maxAthletes,
-    price: new Prisma.Decimal(parsed.data.price.toFixed(2)),
+    price: new Prisma.Decimal(price.toFixed(2)),
+    ...leagueFields,
     capacity,
   }
 
@@ -750,6 +873,9 @@ const bulkSchema = z.object({
   minAthletes: z.coerce.number().int().min(1).max(20),
   maxAthletes: z.coerce.number().int().min(1).max(20),
   price: z.coerce.number().min(0).max(100000),
+  pricePerMatch: z.string().optional(),
+  matchesPerTeam: z.string().optional(),
+  expectedTeams: z.string().optional(),
 })
 
 export interface BulkResult extends ActionResult {
@@ -772,6 +898,9 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
     minAthletes: formData.get("minAthletes"),
     maxAthletes: formData.get("maxAthletes"),
     price: formData.get("price"),
+    pricePerMatch: String(formData.get("pricePerMatch") ?? ""),
+    matchesPerTeam: String(formData.get("matchesPerTeam") ?? ""),
+    expectedTeams: String(formData.get("expectedTeams") ?? ""),
   })
 
   if (!parsed.success) {
@@ -808,6 +937,40 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
     return {
       success: false,
       error: "Asigna una temporada al evento antes de generar sus pruebas.",
+    }
+  }
+
+  let generatedPrice = parsed.data.price
+  let leagueFields: {
+    pricePerMatch: Prisma.Decimal | null
+    matchesPerTeam: number | null
+    expectedTeams: number | null
+  } = { pricePerMatch: null, matchesPerTeam: null, expectedTeams: null }
+  if (event.isLeague) {
+    const pricePerMatch = parseFee(parsed.data.pricePerMatch)
+    const matchesPerTeam = Number(parsed.data.matchesPerTeam)
+    const expectedTeams = Number(parsed.data.expectedTeams)
+    if (
+      pricePerMatch === "invalid" ||
+      pricePerMatch === null ||
+      !Number.isInteger(matchesPerTeam) ||
+      matchesPerTeam < 1 ||
+      matchesPerTeam > 40 ||
+      !Number.isInteger(expectedTeams) ||
+      expectedTeams < 1 ||
+      expectedTeams > 40
+    ) {
+      return {
+        success: false,
+        error:
+          "Indica el precio por partido, los partidos por equipo y los equipos esperados.",
+      }
+    }
+    generatedPrice = leagueEntryPrice({ pricePerMatch, matchesPerTeam })
+    leagueFields = {
+      pricePerMatch: new Prisma.Decimal(pricePerMatch.toFixed(2)),
+      matchesPerTeam,
+      expectedTeams,
     }
   }
 
@@ -865,10 +1028,10 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
       minAthletes: parsed.data.minAthletes,
       maxAthletes: parsed.data.maxAthletes,
     }),
-    price: parsed.data.price,
+    price: generatedPrice,
     allowsCategoryUpgrade: parsed.data.allowsCategoryUpgrade,
     startSortOrder: (last?.sortOrder ?? -1) + 1,
-  }).map((row) => ({ ...row, eventId: event.id }))
+  }).map((row) => ({ ...row, eventId: event.id, ...leagueFields }))
 
   if (rows.length === 0) {
     return { success: false, error: "La combinación no genera ninguna prueba." }

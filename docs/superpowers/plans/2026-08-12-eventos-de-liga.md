@@ -4,6 +4,9 @@
 
 **Goal:** Marcar un evento como liga y que el precio de cada plantel salga de los partidos que ese equipo juega en la fase preliminar, en vez de escribirse a mano.
 
+**Estado (2026-08-14):** Implementado. La integración final también cubre el
+generador masivo y bloquea la apertura de una liga con pruebas incompletas.
+
 **Architecture:** El motor de precios **no se toca**. En un evento de liga, cada prueba guarda `pricePerMatch`, `matchesPerTeam` y `expectedTeams`, y al guardarla el servidor escribe `price = pricePerMatch × matchesPerTeam`. El sistema sigue cobrando "una formación a S/ 1 200" como siempre; los tres campos son la memoria del cálculo, y sirven para mostrarle al club el desglose y para calcular el fixture.
 
 **Tech Stack:** Next.js (App Router, server actions), Prisma 7 + PostgreSQL (Neon), Zod, Vitest, Tailwind.
