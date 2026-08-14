@@ -1,5 +1,6 @@
 import { CalendarDays, MapPin, Users } from "lucide-react"
 import { disciplineStyle } from "@/lib/disciplines"
+import { entryChargeNoteLabel } from "@/lib/entry-charge-note"
 import type { OrderSummaryView as OrderSummary } from "@/lib/order-summary"
 import { formatDateOnly, formatMoney, SEX_RULE_LABELS } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -170,6 +171,11 @@ export function OrderSummaryView({
                                 ) : null}
                               </span>
                             ))}
+                          {entry.note !== "CHARGED" ? (
+                            <span className="block text-xs italic text-fdnda-muted">
+                              {entryChargeNoteLabel(entry.note)}
+                            </span>
+                          ) : null}
                         </span>
                         <span className="num text-fdnda-muted">
                           {formatMoney(entry.amount)}

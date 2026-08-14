@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header"
 import { PrintSheetFooter, PrintSheetHeader } from "@/components/print-sheet"
 import { getCurrentUser } from "@/lib/auth"
 import { disciplineLabel } from "@/lib/disciplines"
+import { entryChargeNoteLabel } from "@/lib/entry-charge-note"
 import { prisma } from "@/lib/prisma"
 import { getRegistrationPlan } from "@/lib/registration-plans"
 import { registrationOrderItemView } from "@/lib/registration-snapshots"
@@ -262,6 +263,11 @@ function FrozenItemCard({
                   )
                   .join(" · ")}
               </p>
+              {item.note && item.note !== "CHARGED" ? (
+                <p className="mt-1 text-xs italic text-fdnda-muted">
+                  {entryChargeNoteLabel(item.note)}
+                </p>
+              ) : null}
             </>
           ) : (
             <p className="text-sm text-fdnda-ink">{item.description}</p>

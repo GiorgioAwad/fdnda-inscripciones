@@ -15,6 +15,11 @@ import {
 } from "./orders"
 import { clubMayEnterEventInTransaction } from "./club-events"
 import { disciplineLabel } from "./disciplines"
+import {
+  entryChargeNoteFor,
+  entryChargeSuffix,
+  type EntryChargeNote,
+} from "./entry-charge-note"
 import { shortCode } from "./utils"
 
 const MAX_ROSTER_ATHLETES = 2_000
@@ -1461,35 +1466,18 @@ function serializableValidation(
   }
 }
 
-export type EntryChargeNote = "CHARGED" | "IN_ATHLETE_FEE" | "CLUB_PAYS_PER_ATHLETE"
-
-/**
- * Por qué una formación aparece en S/ 0 en el comprobante. Sin esta nota la
- * línea parecería decir que la prueba fue gratis.
- */
-export function entryChargeSuffix(note: EntryChargeNote): string {
-  if (note === "IN_ATHLETE_FEE") return " | incluida en la cuota por deportista"
-  if (note === "CLUB_PAYS_PER_ATHLETE") return " | sin cargo: el club paga por deportista"
-  return ""
-}
-
-/**
- * Por que una formacion aparece en S/ 0. El orden importa: si la disciplina no
- * cobra por formacion, ESA es la razon real y gana sobre la eleccion del club,
- * aunque el club tambien se haya bajado del concepto.
- *
- * `chargesEntry` en `undefined` (disciplina ausente del desglose) se trata como
- * `true`: es el comportamiento historico y hoy no puede pasar, porque el motor
- * emite una linea ENTRY por cada formacion.
- */
-export function entryChargeNoteFor(input: {
-  chargesEntry: boolean
-  paysEntry: boolean | null
-}): EntryChargeNote {
-  if (!input.chargesEntry) return "IN_ATHLETE_FEE"
-  if (input.paysEntry === false) return "CLUB_PAYS_PER_ATHLETE"
-  return "CHARGED"
-}
+// El criterio de por qué una formación vale S/ 0 vive en un módulo aparte, sin
+// Prisma, para que registration-snapshots.ts y order-summary.ts (que arman
+// comprobantes desde snapshots y se prueban sin base) puedan leerlo sin
+// arrastrar este archivo entero. Se reexporta para no romper a quien ya
+// importaba estos nombres desde acá.
+export {
+  entryChargeNoteFor,
+  entryChargeNoteFromDescription,
+  entryChargeNoteLabel,
+  entryChargeSuffix,
+  type EntryChargeNote,
+} from "./entry-charge-note"
 
 function buildRegistrationDescription(
   plan: RegistrationPlanForValidation,

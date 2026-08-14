@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { entryChargeSuffix } from "./entry-charge-note"
 import {
   parseRegistrationItemSnapshot,
   registrationOrderItemView,
@@ -106,6 +107,52 @@ describe("snapshot de inscripción", () => {
       description: "Ítem legado",
       unitPrice: 80,
       snapshot: null,
+      note: null,
+    })
+  })
+
+  // La nota de por qué una formación vale S/ 0 no vive en el snapshot JSON
+  // (no guarda chargesEntry/paysEntry): se relee del sufijo que
+  // buildRegistrationDescription grabó en `description` al crear la orden.
+  describe("nota de por qué una formación vale S/ 0", () => {
+    it("lee IN_ATHLETE_FEE del sufijo congelado en la descripción", () => {
+      const view = registrationOrderItemView({
+        description: `Nacional 2026 | Clavados — Trampolín 3m | Ana Pérez${entryChargeSuffix("IN_ATHLETE_FEE")}`,
+        unitPrice: "0.00",
+        registrationSnapshot: snapshot,
+      })
+
+      expect(view.note).toBe("IN_ATHLETE_FEE")
+    })
+
+    it("lee CLUB_PAYS_PER_ATHLETE del sufijo congelado en la descripción", () => {
+      const view = registrationOrderItemView({
+        description: `Nacional 2026 | Polo — Plantel | Ana Pérez${entryChargeSuffix("CLUB_PAYS_PER_ATHLETE")}`,
+        unitPrice: "0.00",
+        registrationSnapshot: snapshot,
+      })
+
+      expect(view.note).toBe("CLUB_PAYS_PER_ATHLETE")
+    })
+
+    it("una descripción sin sufijo se lee como CHARGED, aunque el importe sea 0", () => {
+      const view = registrationOrderItemView({
+        description: "Nacional 2026 | Natación artística — Dueto libre | Ana Pérez",
+        unitPrice: "0.00",
+        registrationSnapshot: snapshot,
+      })
+
+      expect(view.note).toBe("CHARGED")
+    })
+
+    it("es null cuando no hay snapshot legible: no hay de dónde leerla", () => {
+      const view = registrationOrderItemView({
+        description: "Ítem legado",
+        unitPrice: "80.00",
+        registrationSnapshot: { version: 99 },
+      })
+
+      expect(view.note).toBeNull()
     })
   })
 

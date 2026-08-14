@@ -1,6 +1,10 @@
 import { disciplineLabel, sortDisciplines } from "./disciplines"
 import { competesUpACategory } from "./eligibility"
 import {
+  entryChargeNoteFromDescription,
+  type EntryChargeNote,
+} from "./entry-charge-note"
+import {
   parseAthleteFeeSnapshot,
   parseRegistrationItemSnapshot,
   type AthleteFeeSnapshot,
@@ -38,6 +42,13 @@ export interface SummaryEntry {
   sexRule: string
   amount: number
   athletes: SummaryEntryAthlete[]
+  /**
+   * Por qué la formación vale S/ 0, releída del sufijo que
+   * `buildRegistrationDescription` grabó en `description` al crear la orden
+   * (ver `entryChargeNoteFromDescription`). Siempre presente: toda entry sale
+   * de un snapshot v1 válido.
+   */
+  note: EntryChargeNote
 }
 
 /**
@@ -280,6 +291,7 @@ export function buildOrderSummary(
       athletes: snapshot.registration.athletes.map((athlete) =>
         athleteOf(snapshot, athlete)
       ),
+      note: entryChargeNoteFromDescription(item.description),
     })
     bucket.subtotal += itemAmount
     const seen = athletesByDiscipline.get(snapshot.modality.discipline)!

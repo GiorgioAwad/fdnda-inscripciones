@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { entryChargeSuffix } from "./entry-charge-note"
 import { buildOrderSummary } from "./order-summary"
 
 const EVENT = {
@@ -36,6 +37,7 @@ function entryItem(overrides: {
   name?: string
   category?: string | null
   unitPrice?: unknown
+  description?: string
   athletes?: ReturnType<typeof athlete>[]
   allowsCategoryUpgrade?: boolean
   categoryUpgradeBirthYear?: number | null
@@ -44,7 +46,7 @@ function entryItem(overrides: {
 }) {
   return {
     id: overrides.id,
-    description: "descripción legada",
+    description: overrides.description ?? "descripción legada",
     unitPrice: overrides.unitPrice ?? "150.00",
     registrationSnapshot: {
       version: 1,
@@ -270,5 +272,46 @@ describe("buildOrderSummary", () => {
     expect(summary.event).toBeNull()
     expect(summary.clubName).toBeNull()
     expect(summary.disciplines).toEqual([])
+  })
+
+  // La nota de por qué una formación vale S/ 0 no vive en el snapshot JSON
+  // (no guarda chargesEntry/paysEntry): se relee del sufijo que
+  // buildRegistrationDescription grabó en `description` al crear la orden.
+  describe("nota de por qué una formación vale S/ 0", () => {
+    it("lee IN_ATHLETE_FEE del sufijo congelado en la descripción", () => {
+      const summary = buildOrderSummary([
+        entryItem({
+          id: "i1",
+          discipline: "DIVING",
+          unitPrice: "0.00",
+          description: `Nacional 2026 | Clavados — Trampolín 3m | Ana Pérez${entryChargeSuffix("IN_ATHLETE_FEE")}`,
+        }),
+      ])
+
+      expect(summary.disciplines[0].rosters[0].entries[0].note).toBe(
+        "IN_ATHLETE_FEE"
+      )
+    })
+
+    it("lee CLUB_PAYS_PER_ATHLETE del sufijo congelado en la descripción", () => {
+      const summary = buildOrderSummary([
+        entryItem({
+          id: "i1",
+          discipline: "WATER_POLO",
+          unitPrice: "0.00",
+          description: `Nacional 2026 | Polo acuático — Plantel | Ana Pérez${entryChargeSuffix("CLUB_PAYS_PER_ATHLETE")}`,
+        }),
+      ])
+
+      expect(summary.disciplines[0].rosters[0].entries[0].note).toBe(
+        "CLUB_PAYS_PER_ATHLETE"
+      )
+    })
+
+    it("una descripción sin sufijo se lee como CHARGED", () => {
+      const summary = buildOrderSummary([entryItem({ id: "i1" })])
+
+      expect(summary.disciplines[0].rosters[0].entries[0].note).toBe("CHARGED")
+    })
   })
 })

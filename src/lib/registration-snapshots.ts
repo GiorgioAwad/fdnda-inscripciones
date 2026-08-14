@@ -1,4 +1,8 @@
 import { disciplineLabel } from "./disciplines"
+import {
+  entryChargeNoteFromDescription,
+  type EntryChargeNote,
+} from "./entry-charge-note"
 import { toAmount } from "./utils"
 
 export interface RegistrationItemSnapshot {
@@ -428,6 +432,13 @@ export interface RegistrationOrderItemView {
   description: string
   unitPrice: number
   snapshot: RegistrationItemSnapshot | null
+  /**
+   * Por qué la formación vale S/ 0, releída del sufijo que
+   * `buildRegistrationDescription` grabó en `description` al crear la orden
+   * (ver `entryChargeNoteFromDescription`). `null` cuando no hay snapshot
+   * legible: sin él no hay de dónde leer la nota.
+   */
+  note: EntryChargeNote | null
 }
 
 export function registrationOrderItemView(item: {
@@ -441,6 +452,7 @@ export function registrationOrderItemView(item: {
       description: item.description,
       unitPrice: toAmount(item.unitPrice),
       snapshot: null,
+      note: null,
     }
   }
 
@@ -468,5 +480,6 @@ export function registrationOrderItemView(item: {
     // reportes y en la constancia de pago.
     unitPrice: toAmount(item.unitPrice),
     snapshot,
+    note: entryChargeNoteFromDescription(item.description),
   }
 }
