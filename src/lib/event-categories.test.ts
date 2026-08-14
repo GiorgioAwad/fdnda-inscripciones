@@ -89,7 +89,21 @@ describe("categorías Sub-N", () => {
     expect(parseCategorySpecs("", SUB_N)).toMatchObject({ ok: false })
   })
 
-  it("rechaza una línea sin edad legible", () => {
+  it("admite una categoría Open explícita sin límite de edad", () => {
+    expect(parseCategorySpecs("Open|OPEN", SUB_N)).toEqual({
+      ok: true,
+      categories: [
+        {
+          label: "Open",
+          birthYearFrom: null,
+          birthYearTo: null,
+          maxAgeYears: null,
+        },
+      ],
+    })
+  })
+
+  it("rechaza una línea sin edad ni marca Open", () => {
     expect(parseCategorySpecs("Categoría abierta", SUB_N)).toMatchObject({
       ok: false,
     })

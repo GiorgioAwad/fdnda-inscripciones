@@ -19,7 +19,11 @@ import {
   isAgeRuleConfigurationValid,
   isPricingConfigurationValid,
 } from "@/lib/event-pricing"
-import { leagueEntryPrice } from "@/lib/league"
+import {
+  leagueEntryPrice,
+  parseLeagueTeamCounts,
+  type LeagueCategoryPlan,
+} from "@/lib/league"
 import { slugify } from "@/lib/utils"
 
 // Tope por lote del generador: evita que una matriz enorme (pruebas × categorías
@@ -62,16 +66,21 @@ function buildModalityRows(input: {
     maxAthletes: number
   }
   price: number
+  leaguePlanFor?: (
+    categoryIndex: number,
+    sexRule: SexRule
+  ) => LeagueCategoryPlan
   allowsCategoryUpgrade: boolean
   startSortOrder: number
 }): Prisma.EventModalityCreateManyEventInput[] {
   const rows: Prisma.EventModalityCreateManyEventInput[] = []
   let sortOrder = input.startSortOrder
 
-  for (const category of input.categories) {
+  for (const [categoryIndex, category] of input.categories.entries()) {
     for (const name of input.names) {
       const variant = input.variantsFor(name)
       for (const sexRule of variant.sexRules) {
+        const leaguePlan = input.leaguePlanFor?.(categoryIndex, sexRule)
         const label = [category.label, SEX_SUFFIX[sexRule]].filter(Boolean).join(" — ")
         // Sin tope de año no hay categoría inferior que pueda subir: la más alta
         // del lote se genera sin el permiso.
@@ -87,7 +96,18 @@ function buildModalityRows(input: {
           categoryUpgradeBirthYear: upgrades ? category.birthYearTo! + 1 : null,
           minAthletes: variant.minAthletes,
           maxAthletes: variant.maxAthletes,
-          price: new Prisma.Decimal(input.price.toFixed(2)),
+          price: new Prisma.Decimal(
+            (leaguePlan ? leagueEntryPrice(leaguePlan) : input.price).toFixed(2)
+          ),
+          ...(leaguePlan
+            ? {
+                pricePerMatch: new Prisma.Decimal(
+                  leaguePlan.pricePerMatch.toFixed(2)
+                ),
+                matchesPerTeam: leaguePlan.matchesPerTeam,
+                expectedTeams: leaguePlan.expectedTeams,
+              }
+            : {}),
           sortOrder: sortOrder++,
         })
       }
@@ -139,7 +159,7 @@ const eventSchema = z.object({
   presetCategoriesText: z.string().optional(),
   presetPrice: z.string().optional(),
   presetMatchesPerTeam: z.string().optional(),
-  presetExpectedTeams: z.string().optional(),
+  presetLeagueTeamCounts: z.string().optional(),
 })
 
 export async function saveEvent(formData: FormData): Promise<ActionResult> {
@@ -165,7 +185,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     presetCategoriesText: String(formData.get("presetCategoriesText") ?? ""),
     presetPrice: String(formData.get("presetPrice") ?? ""),
     presetMatchesPerTeam: String(formData.get("presetMatchesPerTeam") ?? ""),
-    presetExpectedTeams: String(formData.get("presetExpectedTeams") ?? ""),
+    presetLeagueTeamCounts: String(formData.get("presetLeagueTeamCounts") ?? ""),
   })
 
   if (!parsed.success) {
@@ -394,17 +414,16 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       const matchesPerTeam = parsed.data.isLeague
         ? Number(parsed.data.presetMatchesPerTeam)
         : null
-      const expectedTeams = parsed.data.isLeague
-        ? Number(parsed.data.presetExpectedTeams)
+      const leagueTeamCounts = parsed.data.isLeague
+        ? parseLeagueTeamCounts(parsed.data.presetLeagueTeamCounts ?? "")
         : null
       if (
         parsed.data.isLeague &&
         (!Number.isInteger(matchesPerTeam) ||
           matchesPerTeam! < 1 ||
           matchesPerTeam! > 40 ||
-          !Number.isInteger(expectedTeams) ||
-          expectedTeams! < 1 ||
-          expectedTeams! > 40)
+          leagueTeamCounts === null ||
+          leagueTeamCounts.length !== categories.categories.length)
       ) {
         return {
           success: false,
@@ -431,17 +450,21 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
           }
         },
         price,
+        ...(parsed.data.isLeague && leagueTeamCounts
+          ? {
+              leaguePlanFor: (categoryIndex: number, sexRule: SexRule) => ({
+                pricePerMatch: unitPrice,
+                matchesPerTeam: matchesPerTeam!,
+                expectedTeams:
+                  leagueTeamCounts[categoryIndex][
+                    sexRule === "FEMALE" ? "FEMALE" : "MALE"
+                  ],
+              }),
+            }
+          : {}),
         allowsCategoryUpgrade: false,
         startSortOrder: 0,
       })
-      if (parsed.data.isLeague) {
-        modalityRows = modalityRows.map((row) => ({
-          ...row,
-          pricePerMatch: new Prisma.Decimal(unitPrice.toFixed(2)),
-          matchesPerTeam,
-          expectedTeams,
-        }))
-      }
       if (modalityRows.length > MAX_BULK_MODALITIES) {
         return {
           success: false,
@@ -537,8 +560,8 @@ export async function setEventStatus(
       }
     }
 
-    // En «Sub-N» la prueba solo puede tener piso de año: un tope superior
-    // dejaría fuera justamente a los más jóvenes que sí pueden subir.
+    // En «Sub-N» la prueba solo puede tener piso de año, o quedar sin ambos
+    // límites cuando es Open. Un tope superior excluiría a los más jóvenes.
     const badAgeRule = event.modalities.find(
       (modality) =>
         !isAgeRuleConfigurationValid(
@@ -549,7 +572,7 @@ export async function setEventStatus(
     if (badAgeRule) {
       return {
         success: false,
-        error: `«${badAgeRule.name}» usa categorías Sub-N: define el año 'desde' y deja vacío el 'hasta'.`,
+        error: `«${badAgeRule.name}» usa categorías Sub-N/Open: deja vacío el año 'hasta'.`,
       }
     }
 
@@ -702,8 +725,8 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     }
   }
 
-  // «Sub-N»: solo tope de edad. birthYearFrom es el piso y birthYearTo debe
-  // quedar vacío, para que un sub-13 pueda jugar sub-18 y no al revés.
+  // «Sub-N»: birthYearFrom es el piso y birthYearTo queda vacío. En Open
+  // ambos quedan vacíos para admitir cualquier edad.
   const disciplineConfig = disciplineConfigFor(
     event.disciplineConfigs,
     parsed.data.discipline
@@ -714,7 +737,7 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     return {
       success: false,
       error:
-        "Esta disciplina usa categorías Sub-N: indica el año de nacimiento 'desde' y deja vacío el 'hasta'.",
+        "Esta disciplina usa categorías Sub-N/Open: deja vacío el año de nacimiento 'hasta'.",
     }
   }
 

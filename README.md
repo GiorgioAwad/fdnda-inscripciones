@@ -280,13 +280,13 @@ la próxima release.
 | Regla de edad | Qué significa |
 |---|---|
 | `RANGE` | Ventana cerrada `birthYearFrom..birthYearTo`, ambos opcionales. |
-| `MAX_AGE_ONLY` | Categorías **«Sub-N»**: solo tope de edad. `birthYearFrom` es obligatorio y `birthYearTo` **debe ser null**. |
+| `MAX_AGE_ONLY` | Categorías **«Sub-N» u Open**: `birthYearTo` siempre es `null`; `birthYearFrom` expresa el tope Sub-N y también es `null` en Open. |
 
 Ojo con la semántica de Sub-N: «Sub-18 en la temporada 2026» es
 `birthYearFrom = 2009`, `birthYearTo = null`, es decir *nacidos en 2009 o
 después*. Por eso un jugador sub-13 (2014) entra a sub-18, pero un sub-18 (2009)
-nunca baja a sub-13 (`birthYearFrom = 2014`). Anular el campo contrario dejaría
-entrar a un adulto de 25 años.
+nunca baja a sub-13 (`birthYearFrom = 2014`). Una categoría Open anula ambos
+campos de forma explícita y admite cualquier edad.
 
 ### Sube de categoría (natación artística)
 

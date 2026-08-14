@@ -534,11 +534,9 @@ export function ModalitiesManager({
             </datalist>
           </div>
           {formAgeRuleMode === "MAX_AGE_ONLY" ? (
-            // «Sub-N»: la prueba solo tiene tope de edad. Se pide la N y se
-            // guarda como piso de año de nacimiento, con «hasta» vacío, para
-            // que un sub-13 pueda jugar sub-18 y nunca al revés.
+            // «Sub-N» usa solo tope de edad. Vacío representa Open.
             <div>
-              <Label htmlFor="mod-maxAge">Categoría Sub-N (edad máxima)</Label>
+              <Label htmlFor="mod-maxAge">Edad máxima Sub-N (opcional)</Label>
               <Input
                 id="mod-maxAge"
                 type="number"
@@ -558,7 +556,7 @@ export function ModalitiesManager({
                 {computedBirthYearFrom
                   ? `Admite a los nacidos en ${computedBirthYearFrom} o después (temporada ${seasonYear}). Los de categorías menores también entran.`
                   : seasonYear
-                    ? "Indica la edad máxima; se convertirá al año de nacimiento de la temporada."
+                    ? "Indica la edad máxima, o déjala vacía para una categoría Open."
                     : "Asigna una temporada al evento para calcular el año de nacimiento."}
               </p>
             </div>
@@ -795,7 +793,7 @@ export function ModalitiesManager({
           <div>
             <Label htmlFor="bulk-categories">
               {bulkConfig.ageRuleMode === "MAX_AGE_ONLY"
-                ? "Categorías Sub-N (una por línea)"
+                ? "Categorías Sub-N/Open (una por línea)"
                 : "Categorías (una por línea: Nombre|añoDesde|añoHasta)"}
             </Label>
             <Textarea
@@ -805,13 +803,13 @@ export function ModalitiesManager({
               required={bulkConfig.ageRuleMode === "MAX_AGE_ONLY"}
               placeholder={
                 bulkConfig.ageRuleMode === "MAX_AGE_ONLY"
-                  ? "Sub 13\nSub 16\nSub 18"
+                  ? "Sub 13\nSub 16\nOpen|OPEN"
                   : "Categoría D|2015|2017\nCategoría C|2013|2014\nCategoría B|2011|2012"
               }
             />
             <p className="mt-1 text-xs text-fdnda-muted">
               {bulkConfig.ageRuleMode === "MAX_AGE_ONLY"
-                ? `Solo edad máxima: «Sub 18» admite a los nacidos en ${seasonYear ? birthYearForMaxAge(seasonYear, 18) : "…"} o después, así que un sub-13 también entra.`
+                ? `Solo edad máxima: «Sub 18» admite a los nacidos en ${seasonYear ? birthYearForMaxAge(seasonYear, 18) : "…"} o después. Usa «Open|OPEN» para no limitar la edad.`
                 : "Los años son opcionales («Juvenil» sin años = sin restricción). Vacío = una sola versión sin categoría."}
             </p>
           </div>

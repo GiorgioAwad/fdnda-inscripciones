@@ -86,9 +86,20 @@ function parseMaxAgeCategories(
 ): CategoryParseResult {
   const categories: CategorySpec[] = []
   for (const line of lines) {
-    const label = line.split("|")[0]?.trim() ?? ""
+    const [label = "", ageText = ""] = line
+      .split("|")
+      .map((part) => part.trim())
     if (!label) {
       return { ok: false, error: `Línea de categoría inválida: "${line}"` }
+    }
+    if (ageText.toUpperCase() === "OPEN") {
+      categories.push({
+        label,
+        birthYearFrom: null,
+        birthYearTo: null,
+        maxAgeYears: null,
+      })
+      continue
     }
     const maxAge = parseMaxAge(line)
     if (maxAge === null) {

@@ -516,9 +516,8 @@ export async function validateRegistrationPlanInTransaction(
       )
     }
 
-    // «Sub-N» exige piso de año y ningún tope. Si el admin cambió la regla de la
-    // disciplina después de crear la prueba, el rango quedó incoherente y la
-    // elegibilidad dejaría fuera a quienes sí pueden subir de categoría.
+    // «Sub-N» admite piso de año sin tope; Open no lleva ninguno. Un rango
+    // cerrado quedaría incoherente con ambas reglas.
     if (
       !isAgeRuleConfigurationValid(
         modality,
@@ -528,7 +527,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "AGE_RULE_INVALID",
-          `${modalityName(modality)} usa categorías Sub-N pero su rango de años no lo refleja. Avisa a la federación.`,
+          `${modalityName(modality)} usa categorías Sub-N/Open pero su rango de años no lo refleja. Avisa a la federación.`,
           "CONTACT_FEDERATION",
           { modalityId: modality.id, registrationId: registration.id }
         )

@@ -9,6 +9,37 @@ export interface LeagueCategoryPlan {
   expectedTeams: number
 }
 
+export interface LeagueTeamCountsBySex {
+  FEMALE: number
+  MALE: number
+}
+
+/**
+ * Lee la configuracion enviada por el formulario para cada categoria. Se
+ * valida otra vez en el servidor porque los campos ocultos tambien se pueden
+ * manipular desde el navegador.
+ */
+export function parseLeagueTeamCounts(value: string): LeagueTeamCountsBySex[] | null {
+  try {
+    const rows: unknown = JSON.parse(value)
+    if (!Array.isArray(rows)) return null
+    const valid = rows.every(
+      (row) =>
+        typeof row === "object" &&
+        row !== null &&
+        Number.isInteger((row as LeagueTeamCountsBySex).FEMALE) &&
+        (row as LeagueTeamCountsBySex).FEMALE >= 1 &&
+        (row as LeagueTeamCountsBySex).FEMALE <= 40 &&
+        Number.isInteger((row as LeagueTeamCountsBySex).MALE) &&
+        (row as LeagueTeamCountsBySex).MALE >= 1 &&
+        (row as LeagueTeamCountsBySex).MALE <= 40
+    )
+    return valid ? (rows as LeagueTeamCountsBySex[]) : null
+  } catch {
+    return null
+  }
+}
+
 /** Lo que paga un equipo por la fase preliminar. */
 export function leagueEntryPrice(
   input: Pick<LeagueCategoryPlan, "pricePerMatch" | "matchesPerTeam">

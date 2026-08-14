@@ -136,13 +136,13 @@ describe("regla de edad Sub-N", () => {
     ).toBe(false)
   })
 
-  it("MAX_AGE_ONLY rechaza una prueba sin piso: dejaría entrar a cualquier edad", () => {
+  it("MAX_AGE_ONLY admite una prueba Open sin límite de edad", () => {
     expect(
       isAgeRuleConfigurationValid(
         { birthYearFrom: null, birthYearTo: null },
         maxAgeOnly
       )
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it("RANGE no impone nada", () => {

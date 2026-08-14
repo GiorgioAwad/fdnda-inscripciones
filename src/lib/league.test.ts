@@ -4,6 +4,7 @@ import {
   leagueEntryPrice,
   leaguePriceBreakdown,
   leagueTotalMatches,
+  parseLeagueTeamCounts,
 } from "./league"
 
 describe("leagueEntryPrice", () => {
@@ -49,5 +50,32 @@ describe("leaguePriceBreakdown", () => {
     expect(leaguePriceBreakdown({ pricePerMatch: 300, matchesPerTeam: 1 })).toMatch(
       /^1 partido × /
     )
+  })
+})
+
+describe("parseLeagueTeamCounts", () => {
+  it("conserva los equipos por categoria y sexo de la Liga de Lima", () => {
+    const counts = parseLeagueTeamCounts(
+      JSON.stringify([
+        { FEMALE: 3, MALE: 4 },
+        { FEMALE: 3, MALE: 3 },
+      ])
+    )
+
+    expect(counts).toEqual([
+      { FEMALE: 3, MALE: 4 },
+      { FEMALE: 3, MALE: 3 },
+    ])
+    expect(
+      counts?.flatMap((row) => [
+        leagueTotalMatches({ expectedTeams: row.FEMALE, matchesPerTeam: 4 }),
+        leagueTotalMatches({ expectedTeams: row.MALE, matchesPerTeam: 4 }),
+      ])
+    ).toEqual([6, 8, 6, 6])
+  })
+
+  it("rechaza cantidades manipuladas fuera del rango permitido", () => {
+    expect(parseLeagueTeamCounts('[{"FEMALE":3,"MALE":0}]')).toBeNull()
+    expect(parseLeagueTeamCounts("no es json")).toBeNull()
   })
 })

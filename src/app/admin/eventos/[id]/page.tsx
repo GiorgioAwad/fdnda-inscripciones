@@ -94,7 +94,7 @@ export default async function EventoDetailPage({
                 ? "Cuota fija por deportista"
                 : "Precio por formación"}
             {primaryConfig.ageRuleMode === "MAX_AGE_ONLY"
-              ? " · categorías Sub-N (solo edad máxima)"
+              ? " · categorías Sub-N/Open"
               : ""}
           </p>
           <p className="mt-2 text-xs font-bold text-fdnda-red-deep">

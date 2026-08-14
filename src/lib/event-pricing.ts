@@ -93,17 +93,16 @@ export function isPricingConfigurationValid(
 }
 
 /**
- * En MAX_AGE_ONLY ("Sub-N") la prueba solo tiene tope de edad: admite a los
- * nacidos en birthYearFrom o después. Por eso birthYearFrom es obligatorio y
- * birthYearTo debe ser null — así un sub-13 entra a sub-18, pero un sub-18
- * nunca baja a sub-13.
+ * En MAX_AGE_ONLY ("Sub-N") una prueba tiene solo tope de edad, o es Open sin
+ * límite. Nunca admite un rango cerrado: así un sub-13 entra a sub-18, un
+ * sub-18 nunca baja a sub-13 y Open admite a todos.
  */
 export function isAgeRuleConfigurationValid(
   modality: { birthYearFrom: number | null; birthYearTo: number | null },
   config: Pick<EffectiveDisciplineConfig, "ageRuleMode">
 ): boolean {
   if (config.ageRuleMode !== "MAX_AGE_ONLY") return true
-  return modality.birthYearFrom !== null && modality.birthYearTo === null
+  return modality.birthYearTo === null
 }
 
 /**

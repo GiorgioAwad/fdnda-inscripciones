@@ -46,6 +46,9 @@ interface CategoryDraft {
   birthYearFrom: string
   birthYearTo: string
   maxAgeYears: string
+  isOpen: boolean
+  expectedFemaleTeams: string
+  expectedMaleTeams: string
 }
 
 function emptyCategory(id: number): CategoryDraft {
@@ -55,6 +58,9 @@ function emptyCategory(id: number): CategoryDraft {
     birthYearFrom: "",
     birthYearTo: "",
     maxAgeYears: "",
+    isOpen: false,
+    expectedFemaleTeams: "3",
+    expectedMaleTeams: "3",
   }
 }
 
@@ -89,7 +95,6 @@ export function EventFormFields({
   )
   const [isLeague, setIsLeague] = useState(event?.isLeague ?? false)
   const [matchesPerTeam, setMatchesPerTeam] = useState("4")
-  const [expectedTeams, setExpectedTeams] = useState("3")
   const [ageRuleMode, setAgeRuleMode] = useState<AgeRuleModeValue>(
     event?.ageRuleMode ?? "RANGE"
   )
@@ -119,12 +124,22 @@ export function EventFormFields({
 
   function updateCategory(
     id: number,
-    field: Exclude<keyof CategoryDraft, "id">,
+    field: Exclude<keyof CategoryDraft, "id" | "isOpen">,
     value: string
   ) {
     setCategoryRows((current) =>
       current.map((category) =>
         category.id === id ? { ...category, [field]: value } : category
+      )
+    )
+  }
+
+  function setCategoryOpen(id: number, isOpen: boolean) {
+    setCategoryRows((current) =>
+      current.map((category) =>
+        category.id === id
+          ? { ...category, isOpen, maxAgeYears: isOpen ? "" : category.maxAgeYears }
+          : category
       )
     )
   }
@@ -143,10 +158,18 @@ export function EventFormFields({
     .filter((category) => category.label.trim())
     .map((category) =>
       ageRuleMode === "MAX_AGE_ONLY"
-        ? `${category.label.trim()}|${category.maxAgeYears}`
+        ? `${category.label.trim()}|${category.isOpen ? "OPEN" : category.maxAgeYears}`
         : `${category.label.trim()}|${category.birthYearFrom}|${category.birthYearTo}`
     )
     .join("\n")
+  const leagueTeamCountsText = JSON.stringify(
+    categoryRows
+      .filter((category) => category.label.trim())
+      .map((category) => ({
+        FEMALE: Number(category.expectedFemaleTeams),
+        MALE: Number(category.expectedMaleTeams),
+      }))
+  )
 
   const configLocked = event?.hasLockedEntries ?? false
 
@@ -393,11 +416,11 @@ export function EventFormFields({
                 onChange={(e) => setAgeRuleMode(e.target.value as AgeRuleModeValue)}
               >
                 <option value="RANGE">Rango de años de nacimiento (desde–hasta)</option>
-                <option value="MAX_AGE_ONLY">Categorías «Sub-N» (solo edad máxima)</option>
+                <option value="MAX_AGE_ONLY">Categorías «Sub-N» u Open</option>
               </Select>
               <p className="mt-1 text-xs leading-5 text-fdnda-muted">
                 {ageRuleMode === "MAX_AGE_ONLY"
-                  ? "Sub-18 admite a los nacidos en ese año o después: un sub-13 puede jugar sub-18, pero un sub-18 nunca baja a sub-13."
+                  ? "Sub-18 admite a los nacidos en ese año o después; Open no tiene límite de edad."
                   : preset.categoryHint}
               </p>
             </div>
@@ -474,6 +497,13 @@ export function EventFormFields({
                         name="presetCategoriesText"
                         value={categoriesText}
                       />
+                      {isLeague ? (
+                        <input
+                          type="hidden"
+                          name="presetLeagueTeamCounts"
+                          value={leagueTeamCountsText}
+                        />
+                      ) : null}
 
                       <div className="mt-3 space-y-3">
                         {categoryRows.map((category, index) => (
@@ -546,9 +576,21 @@ export function EventFormFields({
                                         event.target.value
                                       )
                                     }
-                                    placeholder="16"
-                                    required
+                                    placeholder={category.isOpen ? "Sin límite" : "15"}
+                                    disabled={category.isOpen}
+                                    required={!category.isOpen}
                                   />
+                                  <label className="mt-2 flex items-center gap-2 text-xs font-medium text-fdnda-muted">
+                                    <input
+                                      type="checkbox"
+                                      checked={category.isOpen}
+                                      onChange={(event) =>
+                                        setCategoryOpen(category.id, event.target.checked)
+                                      }
+                                      className="h-4 w-4 accent-fdnda-turquoise-deep"
+                                    />
+                                    Categoría Open, sin límite de edad
+                                  </label>
                                 </div>
                               ) : (
                                 <>
@@ -605,6 +647,70 @@ export function EventFormFields({
                                 </>
                               )}
                             </div>
+                            {isLeague ? (
+                              <div className="mt-3 grid gap-3 border-t border-fdnda-border pt-3 sm:grid-cols-2">
+                                <div>
+                                  <Label
+                                    htmlFor={`ev-category-female-teams-${category.id}`}
+                                  >
+                                    Equipos esperados · Femenino
+                                  </Label>
+                                  <Input
+                                    id={`ev-category-female-teams-${category.id}`}
+                                    type="number"
+                                    min={1}
+                                    max={40}
+                                    value={category.expectedFemaleTeams}
+                                    onChange={(event) =>
+                                      updateCategory(
+                                        category.id,
+                                        "expectedFemaleTeams",
+                                        event.target.value
+                                      )
+                                    }
+                                    required
+                                  />
+                                  <p className="mt-1 text-xs text-fdnda-muted">
+                                    {leagueTotalMatches({
+                                      expectedTeams:
+                                        Number(category.expectedFemaleTeams) || 0,
+                                      matchesPerTeam: Number(matchesPerTeam) || 0,
+                                    })}{" "}
+                                    partidos preliminares
+                                  </p>
+                                </div>
+                                <div>
+                                  <Label
+                                    htmlFor={`ev-category-male-teams-${category.id}`}
+                                  >
+                                    Equipos esperados · Masculino
+                                  </Label>
+                                  <Input
+                                    id={`ev-category-male-teams-${category.id}`}
+                                    type="number"
+                                    min={1}
+                                    max={40}
+                                    value={category.expectedMaleTeams}
+                                    onChange={(event) =>
+                                      updateCategory(
+                                        category.id,
+                                        "expectedMaleTeams",
+                                        event.target.value
+                                      )
+                                    }
+                                    required
+                                  />
+                                  <p className="mt-1 text-xs text-fdnda-muted">
+                                    {leagueTotalMatches({
+                                      expectedTeams:
+                                        Number(category.expectedMaleTeams) || 0,
+                                      matchesPerTeam: Number(matchesPerTeam) || 0,
+                                    })}{" "}
+                                    partidos preliminares
+                                  </p>
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                         ))}
                       </div>
@@ -628,7 +734,7 @@ export function EventFormFields({
                     ) : null}
 
                     {isLeague ? (
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
                         <div>
                           <Label htmlFor="ev-matches">Partidos por equipo</Label>
                           <Input
@@ -642,27 +748,10 @@ export function EventFormFields({
                             onChange={(event) => setMatchesPerTeam(event.target.value)}
                           />
                         </div>
-                        <div>
-                          <Label htmlFor="ev-teams">Equipos esperados</Label>
-                          <Input
-                            id="ev-teams"
-                            name="presetExpectedTeams"
-                            type="number"
-                            min={1}
-                            max={40}
-                            required
-                            value={expectedTeams}
-                            onChange={(event) => setExpectedTeams(event.target.value)}
-                          />
-                        </div>
-                        <p className="text-xs leading-5 text-fdnda-muted sm:col-span-2">
-                          Cada equipo paga {Number(matchesPerTeam) || 0} partidos. La
-                          categoría tendrá{" "}
-                          {leagueTotalMatches({
-                            expectedTeams: Number(expectedTeams) || 0,
-                            matchesPerTeam: Number(matchesPerTeam) || 0,
-                          })}{" "}
-                          partidos en total.
+                        <p className="mt-1 text-xs leading-5 text-fdnda-muted">
+                          Cada plantel paga solo sus {Number(matchesPerTeam) || 0}{" "}
+                          partidos de la fase preliminar. La cantidad total de
+                          partidos se calcula arriba para cada categoría y sexo.
                         </p>
                       </div>
                     ) : null}
