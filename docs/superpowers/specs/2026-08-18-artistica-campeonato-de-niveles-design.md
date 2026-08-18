@@ -288,11 +288,21 @@ Esa última fila es el rendimiento de la decisión de la sección 1.
 - `levelCategoryPreset` con otro año corre todas las categorías en bloque.
 - `parseLevelCategories` rechaza niveles desconocidos, años fuera de rango,
   `from > to` y JSON que no es un arreglo.
-- `buildModalityRows` con `maleBirthYearFrom` da a `MALE` y `MIXED` el rango
-  extendido y a `FEMALE` el propio.
+- `buildModalityRows` con `maleBirthYearFrom` da a `MALE`, `MIXED` y `ANY` el
+  rango extendido y a `FEMALE` el propio.
 - `buildModalityRows` sin `maleBirthYearFrom` genera exactamente lo de hoy.
-- `saveEvent` rechaza niveles en una disciplina que no es artística, y rechaza
-  el cambio de formato cuando el evento ya vendió inscripciones.
+- `levelCategoriesToSpecs` antepone el nombre del nivel y respeta el orden en
+  que compiten.
+
+`buildModalityRows` hoy vive dentro de `actions.ts`, que lleva `"use server"` y
+por lo tanto solo puede exportar funciones `async`: mientras siga ahí no se
+puede testear. Sale a `src/lib/modality-rows.ts` como paso previo, con tests de
+caracterización que fijan el comportamiento actual antes de tocarlo.
+
+Las dos guardas de `saveEvent` —solo artística puede marcarlo, y no cambia con
+inscripciones vendidas— **no llevan test unitario**: son una server action que
+toca la base y `npm test` corre sin base de datos. Se verifican a mano y ese
+paso queda escrito en el plan, no librado a la memoria de quien implemente.
 
 ---
 
