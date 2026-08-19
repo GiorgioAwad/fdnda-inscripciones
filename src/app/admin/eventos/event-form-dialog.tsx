@@ -11,6 +11,12 @@ import { DISCIPLINE_VALUES, DISCIPLINES, type DisciplineValue } from "@/lib/disc
 import { DISCIPLINE_PRESETS } from "@/lib/event-presets"
 import type { AgeRuleModeValue } from "@/lib/event-pricing"
 import { leagueTotalMatches } from "@/lib/league"
+import {
+  ARTISTIC_LEVEL_LABELS,
+  ARTISTIC_LEVEL_VALUES,
+  levelCategoryPreset,
+  type LevelCategoryDraft,
+} from "@/lib/artistic-levels"
 import { saveEvent } from "./actions"
 
 export interface EventFormData {
@@ -27,6 +33,7 @@ export interface EventFormData {
   chargesEntry: boolean
   chargesAthleteFee: boolean
   isLeague: boolean
+  isLevelChampionship: boolean
   athleteFee: string
   ageRuleMode: AgeRuleModeValue
   /** true si el evento ya vendió inscripciones: la configuración se congela. */
@@ -94,6 +101,22 @@ export function EventFormFields({
     event?.chargesAthleteFee ?? preset?.defaultChargesAthleteFee ?? false
   )
   const [isLeague, setIsLeague] = useState(event?.isLeague ?? false)
+  const [isLevelChampionship, setIsLevelChampionship] = useState(
+    event?.isLevelChampionship ?? false
+  )
+  const [seasonId, setSeasonId] = useState(
+    event?.seasonId || seasons.find((season) => season.isCurrent)?.id || ""
+  )
+  const [levelRows, setLevelRows] = useState<LevelCategoryDraft[]>([])
+  const seasonYear = seasons.find((season) => season.id === seasonId)?.year ?? null
+
+  // Las bases publican las categorías por edad; el año de la temporada las
+  // convierte en años de nacimiento. Es un punto de partida editable: si las
+  // bases cambian, el admin corrige sin esperar un despliegue.
+  function loadLevelPreset(year: number | null) {
+    setLevelRows(year === null ? [] : levelCategoryPreset(year))
+  }
+
   const [matchesPerTeam, setMatchesPerTeam] = useState("4")
   const [ageRuleMode, setAgeRuleMode] = useState<AgeRuleModeValue>(
     event?.ageRuleMode ?? "RANGE"
@@ -115,6 +138,8 @@ export function EventFormFields({
     setChargesEntry(next.defaultChargesEntry)
     setChargesAthleteFee(next.defaultChargesAthleteFee)
     setIsLeague(false)
+    setIsLevelChampionship(false)
+    setLevelRows([])
     setAgeRuleMode(next.defaultAgeRuleMode)
     setSelectedModalities(next.modalities.map((modality) => modality.name))
     const categoryId = nextCategoryId.current
@@ -131,6 +156,23 @@ export function EventFormFields({
       current.map((category) =>
         category.id === id ? { ...category, [field]: value } : category
       )
+    )
+  }
+
+  function updateLevelRow(
+    index: number,
+    field: "label" | "from" | "to" | "maleFrom",
+    value: string
+  ) {
+    setLevelRows((current) =>
+      current.map((row, i) => {
+        if (i !== index) return row
+        if (field === "label") return { ...row, label: value }
+        // Campo vacío = sin tope de ese lado, que es como las bases expresan
+        // «2018 o más» y «2011 o antes».
+        const year = value.trim() === "" ? null : Number(value)
+        return { ...row, [field]: year }
+      })
     )
   }
 
@@ -238,9 +280,12 @@ export function EventFormFields({
           id="ev-season"
           name="seasonId"
           required
-          defaultValue={
-            event?.seasonId || seasons.find((season) => season.isCurrent)?.id || ""
-          }
+          value={seasonId}
+          onChange={(e) => {
+            setSeasonId(e.target.value)
+            const year = seasons.find((season) => season.id === e.target.value)?.year
+            if (isLevelChampionship) loadLevelPreset(year ?? null)
+          }}
         >
           <option value="" disabled>
             Selecciona una temporada
@@ -385,6 +430,30 @@ export function EventFormFields({
               </label>
             ) : null}
 
+            {discipline === "ARTISTIC_SWIMMING" ? (
+              <label className="flex items-start gap-2.5 rounded-control border border-fdnda-border bg-white px-3 py-2.5 text-sm">
+                <input
+                  type="checkbox"
+                  name="isLevelChampionship"
+                  checked={isLevelChampionship}
+                  onChange={(e) => {
+                    setIsLevelChampionship(e.target.checked)
+                    loadLevelPreset(e.target.checked ? seasonYear : null)
+                  }}
+                  className="mt-0.5 h-4 w-4 accent-fdnda-turquoise-deep"
+                />
+                <span>
+                  <span className="font-medium text-fdnda-ink">
+                    Es un campeonato de niveles
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-5 text-fdnda-muted">
+                    Básico, intermedio y avanzado compiten con categorías por
+                    edad propias. Se cargan las de las bases y puedes editarlas.
+                  </span>
+                </span>
+              </label>
+            ) : null}
+
             {chargesAthleteFee ? (
               <div>
                 <Label htmlFor="ev-athlete-fee">Cuota por deportista (S/)</Label>
@@ -472,248 +541,384 @@ export function EventFormFields({
                 {selectedModalities.length > 0 ? (
                   <>
                     <div>
-                      <div className="flex flex-wrap items-end justify-between gap-2">
-                        <div>
-                          <Label className="mb-0">Categorías</Label>
-                          <p className="mt-1 text-xs leading-5 text-fdnda-muted">
-                            {ageRuleMode === "MAX_AGE_ONLY"
-                              ? "Agrega cada grupo e indica su edad máxima."
-                              : "Agrega cada grupo y su rango inclusivo de años de nacimiento."}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={addCategory}
-                        >
-                          <Plus className="h-4 w-4" aria-hidden="true" />
-                          Agregar categoría
-                        </Button>
-                      </div>
-
-                      <input
-                        type="hidden"
-                        name="presetCategoriesText"
-                        value={categoriesText}
-                      />
-                      {isLeague ? (
-                        <input
-                          type="hidden"
-                          name="presetLeagueTeamCounts"
-                          value={leagueTeamCountsText}
-                        />
-                      ) : null}
-
-                      <div className="mt-3 space-y-3">
-                        {categoryRows.map((category, index) => (
-                          <div
-                            key={category.id}
-                            className="rounded-control border border-fdnda-border bg-white p-3"
-                          >
-                            <div className="mb-2 flex items-center justify-between gap-3">
-                              <p className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
-                                Categoría {index + 1}
-                              </p>
-                              {categoryRows.length > 1 ? (
-                                <button
-                                  type="button"
-                                  onClick={() => removeCategory(category.id)}
-                                  className="inline-flex h-9 w-9 items-center justify-center rounded-control text-fdnda-red-deep transition-colors hover:bg-fdnda-red-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-red/30"
-                                  aria-label={`Quitar categoría ${index + 1}`}
-                                >
-                                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                                </button>
-                              ) : null}
-                            </div>
+                      {isLevelChampionship ? (
+                        <>
+                          <input
+                            type="hidden"
+                            name="presetLevelCategories"
+                            value={JSON.stringify(levelRows)}
+                          />
+                          {ARTISTIC_LEVEL_VALUES.map((level) => (
                             <div
-                              className={`grid gap-3 ${
-                                ageRuleMode === "MAX_AGE_ONLY"
-                                  ? "sm:grid-cols-[minmax(12rem,1.35fr)_minmax(10rem,1fr)]"
-                                  : "sm:grid-cols-[minmax(12rem,1.35fr)_repeat(2,minmax(8rem,1fr))]"
-                              }`}
+                              key={level}
+                              className="rounded-control border border-fdnda-border bg-white p-3"
                             >
-                              <div>
-                                <Label
-                                  htmlFor={`ev-category-label-${category.id}`}
-                                  className="whitespace-nowrap"
+                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
+                                  {ARTISTIC_LEVEL_LABELS[level]}
+                                </p>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    setLevelRows((current) => [
+                                      ...current,
+                                      {
+                                        level,
+                                        label: "",
+                                        from: null,
+                                        to: null,
+                                        maleFrom: null,
+                                      },
+                                    ])
+                                  }
                                 >
-                                  Nombre del grupo
-                                </Label>
-                                <Input
-                                  id={`ev-category-label-${category.id}`}
-                                  value={category.label}
-                                  onChange={(event) =>
-                                    updateCategory(category.id, "label", event.target.value)
-                                  }
-                                  placeholder={
-                                    ageRuleMode === "MAX_AGE_ONLY" ? "Sub 16" : "Grupo D"
-                                  }
-                                  maxLength={80}
-                                  required
-                                />
+                                  <Plus className="h-4 w-4" aria-hidden="true" />
+                                  Agregar categoría
+                                </Button>
                               </div>
-
-                              {ageRuleMode === "MAX_AGE_ONLY" ? (
-                                <div>
-                                  <Label
-                                    htmlFor={`ev-category-age-${category.id}`}
-                                    className="whitespace-nowrap"
-                                  >
-                                    Edad máxima
-                                  </Label>
-                                  <Input
-                                    id={`ev-category-age-${category.id}`}
-                                    type="number"
-                                    inputMode="numeric"
-                                    min={1}
-                                    max={99}
-                                    value={category.maxAgeYears}
-                                    onChange={(event) =>
-                                      updateCategory(
-                                        category.id,
-                                        "maxAgeYears",
-                                        event.target.value
-                                      )
-                                    }
-                                    placeholder={category.isOpen ? "Sin límite" : "15"}
-                                    disabled={category.isOpen}
-                                    required={!category.isOpen}
-                                  />
-                                  <label className="mt-2 flex items-center gap-2 text-xs font-medium text-fdnda-muted">
-                                    <input
-                                      type="checkbox"
-                                      checked={category.isOpen}
-                                      onChange={(event) =>
-                                        setCategoryOpen(category.id, event.target.checked)
-                                      }
-                                      className="h-4 w-4 accent-fdnda-turquoise-deep"
-                                    />
-                                    Categoría Open, sin límite de edad
-                                  </label>
-                                </div>
-                              ) : (
-                                <>
-                                  <div>
-                                    <Label
-                                      htmlFor={`ev-category-from-${category.id}`}
-                                      className="whitespace-nowrap"
+                              {levelRows.filter((row) => row.level === level).length ===
+                              0 ? (
+                                <p className="text-xs text-fdnda-muted">
+                                  Sin categorías: este nivel no genera pruebas.
+                                </p>
+                              ) : null}
+                              <div className="space-y-2">
+                                {levelRows.map((row, index) =>
+                                  row.level !== level ? null : (
+                                    <div
+                                      key={index}
+                                      className="grid items-end gap-2 sm:grid-cols-[minmax(9rem,1.4fr)_repeat(3,minmax(6rem,1fr))_auto]"
                                     >
-                                      Nacidos desde
-                                    </Label>
-                                    <Input
-                                      id={`ev-category-from-${category.id}`}
-                                      type="number"
-                                      inputMode="numeric"
-                                      min={1950}
-                                      max={category.birthYearTo || 2050}
-                                      value={category.birthYearFrom}
-                                      onChange={(event) =>
-                                        updateCategory(
-                                          category.id,
-                                          "birthYearFrom",
-                                          event.target.value
-                                        )
-                                      }
-                                      placeholder="2015"
-                                      required
-                                    />
-                                  </div>
-                                  <div>
-                                    <Label
-                                      htmlFor={`ev-category-to-${category.id}`}
-                                      className="whitespace-nowrap"
-                                    >
-                                      Nacidos hasta
-                                    </Label>
-                                    <Input
-                                      id={`ev-category-to-${category.id}`}
-                                      type="number"
-                                      inputMode="numeric"
-                                      min={category.birthYearFrom || 1950}
-                                      max={2050}
-                                      value={category.birthYearTo}
-                                      onChange={(event) =>
-                                        updateCategory(
-                                          category.id,
-                                          "birthYearTo",
-                                          event.target.value
-                                        )
-                                      }
-                                      placeholder="2017"
-                                      required
-                                    />
-                                  </div>
-                                </>
-                              )}
+                                      <div>
+                                        <Label htmlFor={`lv-label-${index}`}>
+                                          Categoría
+                                        </Label>
+                                        <Input
+                                          id={`lv-label-${index}`}
+                                          value={row.label}
+                                          onChange={(e) =>
+                                            updateLevelRow(index, "label", e.target.value)
+                                          }
+                                          maxLength={80}
+                                          required
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label htmlFor={`lv-from-${index}`}>Desde</Label>
+                                        <Input
+                                          id={`lv-from-${index}`}
+                                          type="number"
+                                          inputMode="numeric"
+                                          min={1950}
+                                          max={2050}
+                                          value={row.from ?? ""}
+                                          onChange={(e) =>
+                                            updateLevelRow(index, "from", e.target.value)
+                                          }
+                                          placeholder="Sin tope"
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label htmlFor={`lv-to-${index}`}>Hasta</Label>
+                                        <Input
+                                          id={`lv-to-${index}`}
+                                          type="number"
+                                          inputMode="numeric"
+                                          min={1950}
+                                          max={2050}
+                                          value={row.to ?? ""}
+                                          onChange={(e) =>
+                                            updateLevelRow(index, "to", e.target.value)
+                                          }
+                                          placeholder="Sin tope"
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label htmlFor={`lv-male-${index}`}>
+                                          Varones desde
+                                        </Label>
+                                        <Input
+                                          id={`lv-male-${index}`}
+                                          type="number"
+                                          inputMode="numeric"
+                                          min={1950}
+                                          max={2050}
+                                          value={row.maleFrom ?? ""}
+                                          onChange={(e) =>
+                                            updateLevelRow(index, "maleFrom", e.target.value)
+                                          }
+                                          placeholder="Igual"
+                                        />
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setLevelRows((current) =>
+                                            current.filter((_, i) => i !== index)
+                                          )
+                                        }
+                                        className="inline-flex h-9 w-9 items-center justify-center rounded-control text-fdnda-red-deep transition-colors hover:bg-fdnda-red-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-red/30"
+                                        aria-label={`Quitar ${row.label || "categoría"}`}
+                                      >
+                                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                      </button>
+                                    </div>
+                                  )
+                                )}
+                              </div>
                             </div>
-                            {isLeague ? (
-                              <div className="mt-3 grid gap-3 border-t border-fdnda-border pt-3 sm:grid-cols-2">
-                                <div>
-                                  <Label
-                                    htmlFor={`ev-category-female-teams-${category.id}`}
-                                  >
-                                    Equipos esperados · Femenino
-                                  </Label>
-                                  <Input
-                                    id={`ev-category-female-teams-${category.id}`}
-                                    type="number"
-                                    min={1}
-                                    max={40}
-                                    value={category.expectedFemaleTeams}
-                                    onChange={(event) =>
-                                      updateCategory(
-                                        category.id,
-                                        "expectedFemaleTeams",
-                                        event.target.value
-                                      )
-                                    }
-                                    required
-                                  />
-                                  <p className="mt-1 text-xs text-fdnda-muted">
-                                    {leagueTotalMatches({
-                                      expectedTeams:
-                                        Number(category.expectedFemaleTeams) || 0,
-                                      matchesPerTeam: Number(matchesPerTeam) || 0,
-                                    })}{" "}
-                                    partidos preliminares
-                                  </p>
-                                </div>
-                                <div>
-                                  <Label
-                                    htmlFor={`ev-category-male-teams-${category.id}`}
-                                  >
-                                    Equipos esperados · Masculino
-                                  </Label>
-                                  <Input
-                                    id={`ev-category-male-teams-${category.id}`}
-                                    type="number"
-                                    min={1}
-                                    max={40}
-                                    value={category.expectedMaleTeams}
-                                    onChange={(event) =>
-                                      updateCategory(
-                                        category.id,
-                                        "expectedMaleTeams",
-                                        event.target.value
-                                      )
-                                    }
-                                    required
-                                  />
-                                  <p className="mt-1 text-xs text-fdnda-muted">
-                                    {leagueTotalMatches({
-                                      expectedTeams:
-                                        Number(category.expectedMaleTeams) || 0,
-                                      matchesPerTeam: Number(matchesPerTeam) || 0,
-                                    })}{" "}
-                                    partidos preliminares
-                                  </p>
-                                </div>
-                              </div>
-                            ) : null}
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex flex-wrap items-end justify-between gap-2">
+                            <div>
+                              <Label className="mb-0">Categorías</Label>
+                              <p className="mt-1 text-xs leading-5 text-fdnda-muted">
+                                {ageRuleMode === "MAX_AGE_ONLY"
+                                  ? "Agrega cada grupo e indica su edad máxima."
+                                  : "Agrega cada grupo y su rango inclusivo de años de nacimiento."}
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={addCategory}
+                            >
+                              <Plus className="h-4 w-4" aria-hidden="true" />
+                              Agregar categoría
+                            </Button>
                           </div>
-                        ))}
-                      </div>
+
+                          {isLevelChampionship ? null : (
+                            <input
+                              type="hidden"
+                              name="presetCategoriesText"
+                              value={categoriesText}
+                            />
+                          )}
+                          {isLeague ? (
+                            <input
+                              type="hidden"
+                              name="presetLeagueTeamCounts"
+                              value={leagueTeamCountsText}
+                            />
+                          ) : null}
+
+                          <div className="mt-3 space-y-3">
+                            {categoryRows.map((category, index) => (
+                              <div
+                                key={category.id}
+                                className="rounded-control border border-fdnda-border bg-white p-3"
+                              >
+                                <div className="mb-2 flex items-center justify-between gap-3">
+                                  <p className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
+                                    Categoría {index + 1}
+                                  </p>
+                                  {categoryRows.length > 1 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => removeCategory(category.id)}
+                                      className="inline-flex h-9 w-9 items-center justify-center rounded-control text-fdnda-red-deep transition-colors hover:bg-fdnda-red-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-red/30"
+                                      aria-label={`Quitar categoría ${index + 1}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                    </button>
+                                  ) : null}
+                                </div>
+                                <div
+                                  className={`grid gap-3 ${
+                                    ageRuleMode === "MAX_AGE_ONLY"
+                                      ? "sm:grid-cols-[minmax(12rem,1.35fr)_minmax(10rem,1fr)]"
+                                      : "sm:grid-cols-[minmax(12rem,1.35fr)_repeat(2,minmax(8rem,1fr))]"
+                                  }`}
+                                >
+                                  <div>
+                                    <Label
+                                      htmlFor={`ev-category-label-${category.id}`}
+                                      className="whitespace-nowrap"
+                                    >
+                                      Nombre del grupo
+                                    </Label>
+                                    <Input
+                                      id={`ev-category-label-${category.id}`}
+                                      value={category.label}
+                                      onChange={(event) =>
+                                        updateCategory(category.id, "label", event.target.value)
+                                      }
+                                      placeholder={
+                                        ageRuleMode === "MAX_AGE_ONLY" ? "Sub 16" : "Grupo D"
+                                      }
+                                      maxLength={80}
+                                      required
+                                    />
+                                  </div>
+
+                                  {ageRuleMode === "MAX_AGE_ONLY" ? (
+                                    <div>
+                                      <Label
+                                        htmlFor={`ev-category-age-${category.id}`}
+                                        className="whitespace-nowrap"
+                                      >
+                                        Edad máxima
+                                      </Label>
+                                      <Input
+                                        id={`ev-category-age-${category.id}`}
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={1}
+                                        max={99}
+                                        value={category.maxAgeYears}
+                                        onChange={(event) =>
+                                          updateCategory(
+                                            category.id,
+                                            "maxAgeYears",
+                                            event.target.value
+                                          )
+                                        }
+                                        placeholder={category.isOpen ? "Sin límite" : "15"}
+                                        disabled={category.isOpen}
+                                        required={!category.isOpen}
+                                      />
+                                      <label className="mt-2 flex items-center gap-2 text-xs font-medium text-fdnda-muted">
+                                        <input
+                                          type="checkbox"
+                                          checked={category.isOpen}
+                                          onChange={(event) =>
+                                            setCategoryOpen(category.id, event.target.checked)
+                                          }
+                                          className="h-4 w-4 accent-fdnda-turquoise-deep"
+                                        />
+                                        Categoría Open, sin límite de edad
+                                      </label>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div>
+                                        <Label
+                                          htmlFor={`ev-category-from-${category.id}`}
+                                          className="whitespace-nowrap"
+                                        >
+                                          Nacidos desde
+                                        </Label>
+                                        <Input
+                                          id={`ev-category-from-${category.id}`}
+                                          type="number"
+                                          inputMode="numeric"
+                                          min={1950}
+                                          max={category.birthYearTo || 2050}
+                                          value={category.birthYearFrom}
+                                          onChange={(event) =>
+                                            updateCategory(
+                                              category.id,
+                                              "birthYearFrom",
+                                              event.target.value
+                                            )
+                                          }
+                                          placeholder="2015"
+                                          required
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label
+                                          htmlFor={`ev-category-to-${category.id}`}
+                                          className="whitespace-nowrap"
+                                        >
+                                          Nacidos hasta
+                                        </Label>
+                                        <Input
+                                          id={`ev-category-to-${category.id}`}
+                                          type="number"
+                                          inputMode="numeric"
+                                          min={category.birthYearFrom || 1950}
+                                          max={2050}
+                                          value={category.birthYearTo}
+                                          onChange={(event) =>
+                                            updateCategory(
+                                              category.id,
+                                              "birthYearTo",
+                                              event.target.value
+                                            )
+                                          }
+                                          placeholder="2017"
+                                          required
+                                        />
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                                {isLeague ? (
+                                  <div className="mt-3 grid gap-3 border-t border-fdnda-border pt-3 sm:grid-cols-2">
+                                    <div>
+                                      <Label
+                                        htmlFor={`ev-category-female-teams-${category.id}`}
+                                      >
+                                        Equipos esperados · Femenino
+                                      </Label>
+                                      <Input
+                                        id={`ev-category-female-teams-${category.id}`}
+                                        type="number"
+                                        min={1}
+                                        max={40}
+                                        value={category.expectedFemaleTeams}
+                                        onChange={(event) =>
+                                          updateCategory(
+                                            category.id,
+                                            "expectedFemaleTeams",
+                                            event.target.value
+                                          )
+                                        }
+                                        required
+                                      />
+                                      <p className="mt-1 text-xs text-fdnda-muted">
+                                        {leagueTotalMatches({
+                                          expectedTeams:
+                                            Number(category.expectedFemaleTeams) || 0,
+                                          matchesPerTeam: Number(matchesPerTeam) || 0,
+                                        })}{" "}
+                                        partidos preliminares
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <Label
+                                        htmlFor={`ev-category-male-teams-${category.id}`}
+                                      >
+                                        Equipos esperados · Masculino
+                                      </Label>
+                                      <Input
+                                        id={`ev-category-male-teams-${category.id}`}
+                                        type="number"
+                                        min={1}
+                                        max={40}
+                                        value={category.expectedMaleTeams}
+                                        onChange={(event) =>
+                                          updateCategory(
+                                            category.id,
+                                            "expectedMaleTeams",
+                                            event.target.value
+                                          )
+                                        }
+                                        required
+                                      />
+                                      <p className="mt-1 text-xs text-fdnda-muted">
+                                        {leagueTotalMatches({
+                                          expectedTeams:
+                                            Number(category.expectedMaleTeams) || 0,
+                                          matchesPerTeam: Number(matchesPerTeam) || 0,
+                                        })}{" "}
+                                        partidos preliminares
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {chargesEntry ? (

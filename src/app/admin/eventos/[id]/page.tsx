@@ -122,6 +122,7 @@ export default async function EventoDetailPage({
               chargesEntry: primaryConfig.chargesEntry,
               chargesAthleteFee: primaryConfig.chargesAthleteFee,
               isLeague: event.isLeague,
+              isLevelChampionship: event.isLevelChampionship,
               athleteFee: primaryConfig.athleteFee ?? "",
               ageRuleMode: primaryConfig.ageRuleMode,
               hasLockedEntries,
