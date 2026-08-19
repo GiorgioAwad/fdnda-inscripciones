@@ -306,7 +306,7 @@ pestañas equivalentes de `/afiliacion`.
 Un evento de artística puede marcarse como **campeonato de niveles**: básico,
 intermedio y avanzado compiten el mismo día con categorías por edad propias.
 
-- `Event.isLevelChampionship` es la bandera, gemela de `isLeague`.
+- `Event.isLevelChampionship` es la bandera, como `isLeague` que marca los eventos de liga de polo acuático: una bandera por formato de competencia, cada una acotada a su disciplina.
 - `EventModality.level` guarda el nivel de cada prueba. Un CHECK lo limita a
   artística.
 - El nivel viaja **además** dentro de `category` («Básico — Infantil A —
