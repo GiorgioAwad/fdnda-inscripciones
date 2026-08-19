@@ -55,6 +55,7 @@ function modality(id: string, overrides: Partial<Modality> = {}): Modality {
     discipline: "ARTISTIC_SWIMMING",
     name: `Prueba ${id}`,
     category: "Juvenil",
+    level: null,
     sexRule: "ANY",
     birthYearFrom: null,
     birthYearTo: null,

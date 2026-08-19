@@ -109,6 +109,15 @@ enum AgeRuleMode {
   MAX_AGE_ONLY
 }
 
+// Nivel técnico dentro de un campeonato de niveles de natación artística. Los
+// tres compiten el mismo día con categorías por edad propias. Null = la prueba
+// no pertenece a un campeonato de niveles, que es el caso de todo lo demás.
+enum ArtisticLevel {
+  BASICO
+  INTERMEDIO
+  AVANZADO
+}
+
 // ==================== AUTH ====================
 
 model User {
@@ -342,6 +351,9 @@ model Event {
   // Una liga cobra por partido: el precio de cada plantel sale de los partidos
   // que ese equipo juega en la fase preliminar. Hoy solo aplica a polo.
   isLeague             Boolean      @default(false)
+  // Un campeonato de niveles separa a los deportistas en básico, intermedio y
+  // avanzado, cada uno con sus categorías. Hoy solo aplica a artística.
+  isLevelChampionship  Boolean      @default(false)
   description          String?
 
   createdAt DateTime @default(now())
@@ -442,6 +454,11 @@ model EventModality {
   discipline               Discipline
   name                     String
   category                 String?
+  // Nivel técnico de la prueba en un campeonato de niveles. El nivel también
+  // viaja dentro de `category` («Básico — Infantil A — Damas») para que la
+  // descripción de la orden distinga dos pruebas homónimas de niveles
+  // distintos; esta columna es la que permite agrupar y filtrar.
+  level                    ArtisticLevel?
   sexRule                  SexRule    @default(ANY)
   // Eligibility window by birth YEAR (inclusive). Null = no limit on that side.
   birthYearFrom            Int?
