@@ -179,6 +179,28 @@ aunque las pruebas de artística no lo usen hoy.
 `birthYearTo` nunca se desdobla: en las bases el año extra de los varones
 siempre está del lado viejo del rango.
 
+### Limitación conocida: el dueto mixto admite a una dama de más
+
+`maleBirthYearFrom` ensancha **el rango de la prueba**, no el de un sexo dentro
+de ella: la prueba sigue teniendo un solo `birthYearFrom`, y
+`athleteEligibilityError` (`src/lib/eligibility.ts`) compara el año de
+nacimiento sin mirar el sexo del deportista. Consecuencia concreta: en un dueto
+`MIXED` de Juvenil, el rango arranca en el año del varón, así que también entra
+una **dama** de ese año, que según las bases no debería competir en esa
+categoría.
+
+Alcance: solo pruebas `MIXED` y `ANY` de artística con `maleBirthYearFrom`, o
+sea Juvenil y Junior de un campeonato de niveles. Todas las demás disciplinas
+pasan `null` y no cambian en nada.
+
+Por qué no se arregla acá: la solución correcta son rangos por sexo, y eso es un
+cambio de modelo. Habría que desdoblar la columna (`maleBirthYearTo` además de
+`maleBirthYearFrom`, o una tabla de rangos por sexo), pasarle el sexo a
+`athleteEligibilityError` para que elija el rango, y rehacer las etiquetas de
+años que hoy se arman con un solo par en la planilla, el resumen y los reportes.
+Queda fuera del alcance de este diseño. Mientras tanto es un caso acotado y
+visible: lo atrapan el club al armar el dueto y la federación al revisar.
+
 ---
 
 ## 4 · El transporte del formulario

@@ -51,6 +51,23 @@ export function buildModalityRows(
         // Damas usan el rango de la categoría; el resto admite además al varón
         // del año extra que dan las bases. MIXED lleva un varón, y ANY admite a
         // cualquiera, así que ninguno puede ser más estrecho que MALE.
+        //
+        // LIMITACIÓN CONOCIDA, documentada porque acá se cobra: la prueba
+        // guarda UN solo par de años, no uno por sexo, y athleteEligibilityError
+        // (lib/eligibility.ts) compara el año de nacimiento sin mirar el sexo.
+        // O sea que en un dueto MIXED la ventana ensanchada para el varón deja
+        // entrar también a una DAMA del año extra, que según las bases no
+        // debería competir ahí. Solo pasa en pruebas MIXED (y ANY) de artística
+        // con maleBirthYearFrom, es decir Juvenil y Junior de un campeonato de
+        // niveles; el resto de las disciplinas pasa null y no cambia en nada.
+        //
+        // Se dejó así a propósito: la alternativa —rangos por sexo— obliga a
+        // desdoblar la columna (maleBirthYearFrom/maleBirthYearTo o una tabla
+        // de rangos por sexo), a que athleteEligibilityError reciba el sexo y
+        // elija el rango, y a rehacer las etiquetas de años en la planilla, el
+        // resumen y los reportes. Eso es un cambio de modelo, no un ajuste, y
+        // quedó fuera del alcance del campeonato de niveles. Mientras tanto lo
+        // atrapa el club al armar el dueto y la federación al revisar.
         const birthYearFrom =
           sexRule === "FEMALE"
             ? category.birthYearFrom

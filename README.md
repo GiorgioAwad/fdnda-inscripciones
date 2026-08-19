@@ -319,7 +319,21 @@ intermedio y avanzado compiten el mismo día con categorías por edad propias.
   diciembre. No uses `birthYearForMaxAge`: ese `+1` es del «Sub-N» de polo.
 - Juvenil y Junior admiten un año más en varones. Lo lleva
   `CategorySpec.maleBirthYearFrom`, que `buildModalityRows` aplica a las
-  variantes MALE, MIXED y ANY.
+  variantes MALE, MIXED y ANY. En el generador masivo se escribe como cuarto
+  campo de la línea de categoría: `Juvenil|2011|2013|2010` son damas desde 2011
+  y varones desde 2010. Sin ese campo la categoría se genera igual que siempre.
+
+**Limitación conocida en duetos mixtos.** Una prueba guarda un solo rango de
+años, no uno por sexo, y `athleteEligibilityError` compara el año de nacimiento
+sin mirar el sexo. Por eso, en una prueba **MIXED** (o ANY) con el año extra de
+varones, la ventana ensanchada deja entrar también a una **dama** de ese año,
+que según las bases no debería competir ahí. Afecta solo a las pruebas mixtas de
+artística de Juvenil y Junior en un campeonato de niveles; ninguna otra
+disciplina pasa `maleBirthYearFrom`. Se dejó así porque arreglarlo bien exige
+rangos por sexo: desdoblar la columna, pasarle el sexo a
+`athleteEligibilityError` y rehacer las etiquetas de años en planilla, resumen y
+reportes. Mientras tanto la atrapan el club al armar el dueto y la federación al
+revisar la inscripción.
 
 Las categorías precargadas son un punto de partida editable: si la federación
 cambia las bases, el admin corrige en el formulario sin esperar un despliegue.

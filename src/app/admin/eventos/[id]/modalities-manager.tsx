@@ -864,7 +864,7 @@ export function ModalitiesManager({
             <p className="mt-1 text-xs text-fdnda-muted">
               {bulkConfig.ageRuleMode === "MAX_AGE_ONLY"
                 ? `Solo edad máxima: «Sub 18» admite a los nacidos en ${seasonYear ? birthYearForMaxAge(seasonYear, 18) : "…"} o después. Usa «Open|OPEN» para no limitar la edad.`
-                : "Los años son opcionales («Juvenil» sin años = sin restricción). Vacío = una sola versión sin categoría."}
+                : "Los años son opcionales («Juvenil» sin años = sin restricción). Vacío = una sola versión sin categoría. Un cuarto campo opcional da a los varones un año más: «Juvenil|2011|2013|2010» admite damas desde 2011 y varones desde 2010, como piden las bases de artística en Juvenil y Junior."}
             </p>
           </div>
           {isLevelChampionship && bulkDiscipline === "ARTISTIC_SWIMMING" ? (
