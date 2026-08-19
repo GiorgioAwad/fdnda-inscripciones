@@ -693,13 +693,11 @@ export function EventFormFields({
                             </Button>
                           </div>
 
-                          {isLevelChampionship ? null : (
-                            <input
-                              type="hidden"
-                              name="presetCategoriesText"
-                              value={categoriesText}
-                            />
-                          )}
+                          <input
+                            type="hidden"
+                            name="presetCategoriesText"
+                            value={categoriesText}
+                          />
                           {isLeague ? (
                             <input
                               type="hidden"

@@ -349,12 +349,6 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     )
     let modalityRows: Prisma.EventModalityCreateManyEventInput[] = []
     if (chosen.length > 0) {
-      const categories = parseCategorySpecs(parsed.data.presetCategoriesText ?? "", {
-        ageRuleMode: parsed.data.ageRuleMode,
-        seasonYear: season.year,
-      })
-      if (!categories.ok) return { success: false, error: categories.error }
-
       // En una liga el admin escribe el precio por partido; la prueba se guarda
       // con el precio final que paga cada equipo.
       const unitPrice = parsed.data.chargesEntry
@@ -364,31 +358,11 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         return { success: false, error: "Indica el precio de las pruebas." }
       }
 
-      const matchesPerTeam = parsed.data.isLeague
-        ? Number(parsed.data.presetMatchesPerTeam)
-        : null
-      const leagueTeamCounts = parsed.data.isLeague
-        ? parseLeagueTeamCounts(parsed.data.presetLeagueTeamCounts ?? "")
-        : null
-      if (
-        parsed.data.isLeague &&
-        (!Number.isInteger(matchesPerTeam) ||
-          matchesPerTeam! < 1 ||
-          matchesPerTeam! > 40 ||
-          leagueTeamCounts === null ||
-          leagueTeamCounts.length !== categories.categories.length)
-      ) {
-        return {
-          success: false,
-          error:
-            "Indica cuántos equipos y cuántos partidos por equipo tiene la fase preliminar.",
-        }
-      }
-
-      const price = parsed.data.isLeague
-        ? leagueEntryPrice({ pricePerMatch: unitPrice, matchesPerTeam: matchesPerTeam! })
-        : unitPrice
-
+      // Los dos caminos leen las categorías de campos distintos, así que cada
+      // uno interpreta el suyo: el de niveles manda `presetLevelCategories` y
+      // no manda `presetCategoriesText`. Leerlo igual haría fallar el guardado
+      // con «Esta disciplina exige categorías Sub-N» en un formulario que ni
+      // siquiera muestra ese campo.
       if (parsed.data.isLevelChampionship) {
         // `|| "[]"` y no `?? "[]"`: el safeParse convierte un campo ausente en
         // cadena vacía, no en undefined, y JSON.parse("") revienta.
@@ -421,7 +395,10 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
                 maxAthletes: modality.maxAthletes,
               }
             },
-            price,
+            // Un campeonato de niveles es de artística y una liga es de polo:
+            // nunca coinciden, así que acá el precio es el que escribió el
+            // admin, sin el cálculo por partidos.
+            price: unitPrice,
             allowsCategoryUpgrade: false,
             startSortOrder: modalityRows.length,
           })
@@ -430,6 +407,40 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
           )
         }
       } else {
+        const categories = parseCategorySpecs(parsed.data.presetCategoriesText ?? "", {
+          ageRuleMode: parsed.data.ageRuleMode,
+          seasonYear: season.year,
+        })
+        if (!categories.ok) return { success: false, error: categories.error }
+
+        const matchesPerTeam = parsed.data.isLeague
+          ? Number(parsed.data.presetMatchesPerTeam)
+          : null
+        const leagueTeamCounts = parsed.data.isLeague
+          ? parseLeagueTeamCounts(parsed.data.presetLeagueTeamCounts ?? "")
+          : null
+        if (
+          parsed.data.isLeague &&
+          (!Number.isInteger(matchesPerTeam) ||
+            matchesPerTeam! < 1 ||
+            matchesPerTeam! > 40 ||
+            leagueTeamCounts === null ||
+            leagueTeamCounts.length !== categories.categories.length)
+        ) {
+          return {
+            success: false,
+            error:
+              "Indica cuántos equipos y cuántos partidos por equipo tiene la fase preliminar.",
+          }
+        }
+
+        const price = parsed.data.isLeague
+          ? leagueEntryPrice({
+              pricePerMatch: unitPrice,
+              matchesPerTeam: matchesPerTeam!,
+            })
+          : unitPrice
+
         modalityRows = buildModalityRows({
           discipline,
           names: chosen.map((modality) => modality.name),
