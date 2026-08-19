@@ -12,18 +12,15 @@ import {
 import { prisma } from "@/lib/prisma"
 import { requireAdmin } from "@/lib/auth"
 import { DISCIPLINE_VALUES, disciplineLabel } from "@/lib/disciplines"
-import { parseCategorySpecs, type CategorySpec } from "@/lib/event-categories"
+import { parseCategorySpecs } from "@/lib/event-categories"
 import { DISCIPLINE_PRESETS } from "@/lib/event-presets"
 import {
   disciplineConfigFor,
   isAgeRuleConfigurationValid,
   isPricingConfigurationValid,
 } from "@/lib/event-pricing"
-import {
-  leagueEntryPrice,
-  parseLeagueTeamCounts,
-  type LeagueCategoryPlan,
-} from "@/lib/league"
+import { leagueEntryPrice, parseLeagueTeamCounts } from "@/lib/league"
+import { buildModalityRows } from "@/lib/modality-rows"
 import { slugify } from "@/lib/utils"
 
 // Tope por lote del generador: evita que una matriz enorme (pruebas × categorías
@@ -42,79 +39,6 @@ function parseFee(value: string | undefined): number | null | "invalid" {
   const amount = Number(text)
   if (!Number.isFinite(amount) || amount < 0 || amount > 100_000) return "invalid"
   return amount
-}
-
-const SEX_SUFFIX: Record<string, string> = {
-  MALE: "Varones",
-  FEMALE: "Damas",
-  MIXED: "Mixto",
-  ANY: "",
-}
-
-/**
- * Matriz pruebas × categorías × sexos. La comparten el generador masivo y la
- * creación de eventos, para que las pruebas nacidas en cualquiera de los dos
- * caminos queden idénticas.
- */
-function buildModalityRows(input: {
-  discipline: Discipline
-  names: string[]
-  categories: CategorySpec[]
-  variantsFor: (name: string) => {
-    sexRules: SexRule[]
-    minAthletes: number
-    maxAthletes: number
-  }
-  price: number
-  leaguePlanFor?: (
-    categoryIndex: number,
-    sexRule: SexRule
-  ) => LeagueCategoryPlan
-  allowsCategoryUpgrade: boolean
-  startSortOrder: number
-}): Prisma.EventModalityCreateManyEventInput[] {
-  const rows: Prisma.EventModalityCreateManyEventInput[] = []
-  let sortOrder = input.startSortOrder
-
-  for (const [categoryIndex, category] of input.categories.entries()) {
-    for (const name of input.names) {
-      const variant = input.variantsFor(name)
-      for (const sexRule of variant.sexRules) {
-        const leaguePlan = input.leaguePlanFor?.(categoryIndex, sexRule)
-        const label = [category.label, SEX_SUFFIX[sexRule]].filter(Boolean).join(" — ")
-        // Sin tope de año no hay categoría inferior que pueda subir: la más alta
-        // del lote se genera sin el permiso.
-        const upgrades = input.allowsCategoryUpgrade && category.birthYearTo !== null
-        rows.push({
-          discipline: input.discipline,
-          name,
-          category: label || null,
-          sexRule,
-          birthYearFrom: category.birthYearFrom,
-          birthYearTo: category.birthYearTo,
-          allowsCategoryUpgrade: upgrades,
-          categoryUpgradeBirthYear: upgrades ? category.birthYearTo! + 1 : null,
-          minAthletes: variant.minAthletes,
-          maxAthletes: variant.maxAthletes,
-          price: new Prisma.Decimal(
-            (leaguePlan ? leagueEntryPrice(leaguePlan) : input.price).toFixed(2)
-          ),
-          ...(leaguePlan
-            ? {
-                pricePerMatch: new Prisma.Decimal(
-                  leaguePlan.pricePerMatch.toFixed(2)
-                ),
-                matchesPerTeam: leaguePlan.matchesPerTeam,
-                expectedTeams: leaguePlan.expectedTeams,
-              }
-            : {}),
-          sortOrder: sortOrder++,
-        })
-      }
-    }
-  }
-
-  return rows
 }
 
 function parseDateOnly(value: string): Date | null {
