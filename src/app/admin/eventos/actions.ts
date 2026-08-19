@@ -631,6 +631,8 @@ const modalitySchema = z.object({
   birthYearFrom: z.string().optional(),
   birthYearTo: z.string().optional(),
   allowsCategoryUpgrade: z.boolean(),
+  /** Nivel del campeonato de niveles de artística. Vacío = sin nivel. */
+  level: z.string().optional(),
   minAthletes: z.coerce.number().int().min(1).max(20),
   maxAthletes: z.coerce.number().int().min(1).max(20),
   price: z.coerce.number().min(0).max(100000),
@@ -661,6 +663,7 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     birthYearFrom: String(formData.get("birthYearFrom") ?? ""),
     birthYearTo: String(formData.get("birthYearTo") ?? ""),
     allowsCategoryUpgrade: formData.get("allowsCategoryUpgrade") === "on",
+    level: String(formData.get("level") ?? ""),
     minAthletes: formData.get("minAthletes"),
     maxAthletes: formData.get("maxAthletes"),
     price: formData.get("price"),
@@ -717,6 +720,26 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     return {
       success: false,
       error: "«Sube de categoría» solo aplica a natación artística.",
+    }
+  }
+  // Las mismas tres guardas del generador masivo: el selector solo se dibuja
+  // cuando corresponde, pero el campo se manipula igual desde el navegador.
+  const level = parsed.data.level?.trim() ? parsed.data.level.trim() : null
+  if (level !== null) {
+    if (!isArtisticLevel(level)) {
+      return { success: false, error: "Nivel inválido." }
+    }
+    if (parsed.data.discipline !== "ARTISTIC_SWIMMING") {
+      return {
+        success: false,
+        error: "El nivel solo aplica a natación artística.",
+      }
+    }
+    if (!event.isLevelChampionship) {
+      return {
+        success: false,
+        error: "Este evento no es un campeonato de niveles.",
+      }
     }
   }
 
@@ -801,11 +824,23 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     }
   }
 
+  // El nivel se guarda dos veces a propósito: en la columna y dentro de
+  // `category`, porque la descripción de la orden se arma con `category` (ver
+  // lib/registration-snapshots.ts) y sin él dos pruebas homónimas de niveles
+  // distintos saldrían idénticas en el comprobante que paga el club.
+  // withLevelPrefix quita el prefijo antes de ponerlo, así que reenviar la
+  // categoría que ya lo trae no lo duplica y cambiar de nivel lo reemplaza.
+  // Sin nivel se guarda lo que escribió el admin, tal cual: una prueba de
+  // cualquier otro evento no puede perder texto al pasar por acá.
+  const typedCategory = parsed.data.category?.trim() || null
+  const category = level === null ? typedCategory : withLevelPrefix(level, typedCategory)
+
   const data = {
     eventId: parsed.data.eventId,
     discipline: parsed.data.discipline as Discipline,
     name: parsed.data.name,
-    category: parsed.data.category || null,
+    category,
+    level,
     sexRule: parsed.data.sexRule as SexRule,
     birthYearFrom,
     birthYearTo,

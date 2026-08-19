@@ -541,13 +541,42 @@ export function ModalitiesManager({
               defaultValue={current?.name}
             />
           </div>
+          {isLevelChampionship && formDiscipline === "ARTISTIC_SWIMMING" ? (
+            <div>
+              <Label htmlFor="mod-level">Nivel</Label>
+              <Select
+                id="mod-level"
+                name="level"
+                defaultValue={current?.level ?? ""}
+              >
+                <option value="">Sin nivel</option>
+                {ARTISTIC_LEVEL_VALUES.map((level) => (
+                  <option key={level} value={level}>
+                    {ARTISTIC_LEVEL_LABELS[level]}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs leading-5 text-fdnda-muted">
+                El nombre del nivel se antepone a la categoría al guardar, para
+                que el comprobante distinga dos pruebas homónimas de niveles
+                distintos. Escribe la categoría sin él.
+              </p>
+            </div>
+          ) : null}
           <div>
             <Label htmlFor="mod-category">Categoría (opcional)</Label>
             <Input
               id="mod-category"
               name="category"
               placeholder="Categoría B — Damas / Juvenil"
-              defaultValue={current?.category}
+              // Una prueba con nivel se edita sin el prefijo: lo pone el
+              // servidor a partir del selector de arriba. Sin nivel se muestra
+              // la categoría tal cual está guardada.
+              defaultValue={
+                (current?.level
+                  ? (stripLevelPrefix(current.category) ?? "")
+                  : current?.category) ?? ""
+              }
               list="season-category-options"
             />
             <datalist id="season-category-options">
