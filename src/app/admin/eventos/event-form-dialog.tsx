@@ -367,6 +367,33 @@ export function EventFormFields({
         />
       </div>
 
+      {/* Un fieldset deshabilitado deshabilita todo lo que tiene dentro, y un
+          control deshabilitado no se envía. Sin estos espejos, editar un evento
+          con inscripciones pagadas mandaba la configuración vacía y fallaba con
+          «El evento debe cobrar al menos un concepto» — un error viejo, anterior
+          al campeonato de niveles, que además dejaba inalcanzable la guarda de
+          «el formato no puede cambiar». Van FUERA del fieldset, igual que el
+          espejo de `discipline`: adentro quedarían deshabilitados también. Los
+          valores son los que el evento ya tiene, porque con inscripciones
+          pagadas no pueden cambiar, solo confirmarse. Las casillas se envían
+          como «on» solo cuando están marcadas, que es lo que hace un checkbox. */}
+      {discipline && preset && configLocked ? (
+        <>
+          {chargesEntry ? (
+            <input type="hidden" name="chargesEntry" value="on" />
+          ) : null}
+          {chargesAthleteFee ? (
+            <input type="hidden" name="chargesAthleteFee" value="on" />
+          ) : null}
+          {isLeague ? <input type="hidden" name="isLeague" value="on" /> : null}
+          {isLevelChampionship ? (
+            <input type="hidden" name="isLevelChampionship" value="on" />
+          ) : null}
+          <input type="hidden" name="ageRuleMode" value={ageRuleMode} />
+          <input type="hidden" name="athleteFee" value={event?.athleteFee ?? ""} />
+        </>
+      ) : null}
+
       {/* 3 · Configuración propia de la disciplina elegida. */}
       {discipline && preset ? (
         <fieldset
