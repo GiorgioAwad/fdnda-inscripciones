@@ -122,6 +122,7 @@ export default async function EventoDetailPage({
               chargesEntry: primaryConfig.chargesEntry,
               chargesAthleteFee: primaryConfig.chargesAthleteFee,
               isLeague: event.isLeague,
+              isLevelChampionship: event.isLevelChampionship,
               athleteFee: primaryConfig.athleteFee ?? "",
               ageRuleMode: primaryConfig.ageRuleMode,
               hasLockedEntries,
@@ -143,6 +144,7 @@ export default async function EventoDetailPage({
       <ModalitiesManager
         eventId={event.id}
         isLeague={event.isLeague}
+        isLevelChampionship={event.isLevelChampionship}
         eventDisciplines={event.disciplines}
         disciplineConfigs={event.disciplineConfigs.map((config) => ({
           discipline: config.discipline,
@@ -166,6 +168,7 @@ export default async function EventoDetailPage({
           disciplineLabel: disciplineLabel(m.discipline),
           name: m.name,
           category: m.category ?? "",
+          level: m.level,
           sexRule: m.sexRule,
           birthYearFrom: m.birthYearFrom,
           birthYearTo: m.birthYearTo,

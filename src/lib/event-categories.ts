@@ -6,6 +6,12 @@ import { birthYearForMaxAge, type AgeRuleModeValue } from "./event-pricing"
 //   RANGE         "Juvenil|2010|2012"  → ventana cerrada de años de nacimiento
 //   MAX_AGE_ONLY  "Sub 13"             → solo tope de edad
 //
+// En RANGE hay un cuarto campo opcional: "Juvenil|2011|2013|2010" significa
+// "y los varones desde 2010". Existe porque las bases de natación artística
+// dan a los varones un año más en Juvenil y Junior, y el generador masivo es
+// el camino para nivelar un evento que ya existe. Ausente = null = mismo rango
+// para todos, que es el caso de todas las demás disciplinas.
+//
 // En MAX_AGE_ONLY el resultado tiene birthYearTo = null a propósito: "Sub 18"
 // admite a los nacidos en ese año o después, así que un sub-13 puede jugar
 // sub-18 pero un sub-18 nunca baja a sub-13.
@@ -16,6 +22,12 @@ export interface CategorySpec {
   birthYearTo: number | null
   /** Solo en MAX_AGE_ONLY: la N de "Sub-N", para poder re-renderizar la etiqueta. */
   maxAgeYears: number | null
+  /**
+   * Solo en natación artística: el 'desde' que aplica a varones cuando las
+   * bases les dan un año más que a damas (Juvenil, Junior). null = mismo rango
+   * para todos, que es el caso de todas las demás disciplinas.
+   */
+  maleBirthYearFrom: number | null
 }
 
 export type CategoryParseResult =
@@ -55,26 +67,39 @@ function parseMaxAge(line: string): number | null {
 function parseRangeCategories(lines: string[]): CategoryParseResult {
   const categories: CategorySpec[] = []
   for (const line of lines) {
-    const [label, fromText, toText] = line.split("|").map((part) => part?.trim() ?? "")
+    const [label, fromText, toText, maleFromText] = line
+      .split("|")
+      .map((part) => part?.trim() ?? "")
     if (!label) {
       return { ok: false, error: `Línea de categoría inválida: "${line}"` }
     }
     const from = parseYear(fromText)
     const to = parseYear(toText)
-    if (from === "invalid" || to === "invalid") {
+    const maleFrom = parseYear(maleFromText)
+    if (from === "invalid" || to === "invalid" || maleFrom === "invalid") {
       return {
         ok: false,
-        error: `Años inválidos en la categoría "${label}" (formato: Nombre|2013|2014).`,
+        error: `Años inválidos en la categoría "${label}" (formato: Nombre|2013|2014, y opcionalmente |2012 para varones).`,
       }
     }
     if (from !== null && to !== null && from > to) {
       return { ok: false, error: `En "${label}" el año 'desde' es mayor que 'hasta'.` }
+    }
+    // El año extra de los varones siempre está del lado viejo del rango, así
+    // que nunca puede ser posterior al 'hasta'. Mismo control que
+    // parseLevelCategories hace sobre el campo equivalente del formulario.
+    if (maleFrom !== null && to !== null && maleFrom > to) {
+      return {
+        ok: false,
+        error: `En "${label}" el año 'desde' de varones es mayor que 'hasta'.`,
+      }
     }
     categories.push({
       label,
       birthYearFrom: from,
       birthYearTo: to,
       maxAgeYears: null,
+      maleBirthYearFrom: maleFrom,
     })
   }
   return { ok: true, categories }
@@ -98,6 +123,7 @@ function parseMaxAgeCategories(
         birthYearFrom: null,
         birthYearTo: null,
         maxAgeYears: null,
+        maleBirthYearFrom: null,
       })
       continue
     }
@@ -114,6 +140,7 @@ function parseMaxAgeCategories(
       // Sin tope superior: por eso un sub-13 entra a sub-18.
       birthYearTo: null,
       maxAgeYears: maxAge,
+      maleBirthYearFrom: null,
     })
   }
   return { ok: true, categories }
@@ -146,7 +173,7 @@ export function parseCategorySpecs(
     return {
       ok: true,
       categories: [
-        { label: null, birthYearFrom: null, birthYearTo: null, maxAgeYears: null },
+        { label: null, birthYearFrom: null, birthYearTo: null, maxAgeYears: null, maleBirthYearFrom: null },
       ],
     }
   }

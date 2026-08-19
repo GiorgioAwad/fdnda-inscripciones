@@ -19,6 +19,11 @@ import {
   THead,
   TR,
 } from "@/components/ui/table"
+import {
+  ARTISTIC_LEVEL_LABELS,
+  ARTISTIC_LEVEL_VALUES,
+  stripLevelPrefix,
+} from "@/lib/artistic-levels"
 import { DISCIPLINE_VALUES, DISCIPLINES } from "@/lib/disciplines"
 import {
   birthYearForMaxAge,
@@ -42,6 +47,8 @@ export interface ModalityRow {
   disciplineLabel: string
   name: string
   category: string
+  /** Nivel del campeonato de niveles de artística. null fuera de ese formato. */
+  level: string | null
   sexRule: string
   birthYearFrom: number | null
   birthYearTo: number | null
@@ -146,6 +153,7 @@ function teamSizeLabel(min: number, max: number): string {
 export function ModalitiesManager({
   eventId,
   isLeague,
+  isLevelChampionship,
   eventDisciplines,
   disciplineConfigs,
   seasonCategories,
@@ -154,6 +162,7 @@ export function ModalitiesManager({
 }: {
   eventId: string
   isLeague: boolean
+  isLevelChampionship: boolean
   eventDisciplines: string[]
   disciplineConfigs: EventDisciplineConfigLike[]
   seasonCategories: SeasonCategoryOption[]
@@ -251,11 +260,27 @@ export function ModalitiesManager({
               lanes={[m.discipline]}
               className={!m.isActive ? "opacity-60" : undefined}
               title={m.name}
-              subtitle={m.category || undefined}
+              // El nivel ya viaja en la insignia de al lado: repetirlo en el
+              // subtítulo daba «Básico» dos veces en la misma tarjeta. En la
+              // tabla de escritorio, que no tiene columna de nivel, la
+              // categoría se muestra completa para que la fila no quede
+              // ambigua.
+              subtitle={
+                (m.level ? stripLevelPrefix(m.category) : m.category) || undefined
+              }
               badges={
-                <Badge variant={m.isActive ? "success" : "neutral"}>
-                  {m.isActive ? "Activa" : "Inactiva"}
-                </Badge>
+                <>
+                  {m.level ? (
+                    <Badge variant="neutral">
+                      {ARTISTIC_LEVEL_LABELS[
+                        m.level as keyof typeof ARTISTIC_LEVEL_LABELS
+                      ]}
+                    </Badge>
+                  ) : null}
+                  <Badge variant={m.isActive ? "success" : "neutral"}>
+                    {m.isActive ? "Activa" : "Inactiva"}
+                  </Badge>
+                </>
               }
               actions={
                 <>
@@ -516,13 +541,42 @@ export function ModalitiesManager({
               defaultValue={current?.name}
             />
           </div>
+          {isLevelChampionship && formDiscipline === "ARTISTIC_SWIMMING" ? (
+            <div>
+              <Label htmlFor="mod-level">Nivel</Label>
+              <Select
+                id="mod-level"
+                name="level"
+                defaultValue={current?.level ?? ""}
+              >
+                <option value="">Sin nivel</option>
+                {ARTISTIC_LEVEL_VALUES.map((level) => (
+                  <option key={level} value={level}>
+                    {ARTISTIC_LEVEL_LABELS[level]}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs leading-5 text-fdnda-muted">
+                El nombre del nivel se antepone a la categoría al guardar, para
+                que el comprobante distinga dos pruebas homónimas de niveles
+                distintos. Escribe la categoría sin él.
+              </p>
+            </div>
+          ) : null}
           <div>
             <Label htmlFor="mod-category">Categoría (opcional)</Label>
             <Input
               id="mod-category"
               name="category"
               placeholder="Categoría B — Damas / Juvenil"
-              defaultValue={current?.category}
+              // Una prueba con nivel se edita sin el prefijo: lo pone el
+              // servidor a partir del selector de arriba. Sin nivel se muestra
+              // la categoría tal cual está guardada.
+              defaultValue={
+                (current?.level
+                  ? (stripLevelPrefix(current.category) ?? "")
+                  : current?.category) ?? ""
+              }
               list="season-category-options"
             />
             <datalist id="season-category-options">
@@ -810,9 +864,26 @@ export function ModalitiesManager({
             <p className="mt-1 text-xs text-fdnda-muted">
               {bulkConfig.ageRuleMode === "MAX_AGE_ONLY"
                 ? `Solo edad máxima: «Sub 18» admite a los nacidos en ${seasonYear ? birthYearForMaxAge(seasonYear, 18) : "…"} o después. Usa «Open|OPEN» para no limitar la edad.`
-                : "Los años son opcionales («Juvenil» sin años = sin restricción). Vacío = una sola versión sin categoría."}
+                : "Los años son opcionales («Juvenil» sin años = sin restricción). Vacío = una sola versión sin categoría. Un cuarto campo opcional da a los varones un año más: «Juvenil|2011|2013|2010» admite damas desde 2011 y varones desde 2010, como piden las bases de artística en Juvenil y Junior."}
             </p>
           </div>
+          {isLevelChampionship && bulkDiscipline === "ARTISTIC_SWIMMING" ? (
+            <div>
+              <Label htmlFor="bulk-level">Nivel</Label>
+              <Select id="bulk-level" name="level" defaultValue="">
+                <option value="">Sin nivel</option>
+                {ARTISTIC_LEVEL_VALUES.map((level) => (
+                  <option key={level} value={level}>
+                    {ARTISTIC_LEVEL_LABELS[level]}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs leading-5 text-fdnda-muted">
+                El nombre del nivel se antepone a la categoría de cada prueba
+                generada.
+              </p>
+            </div>
+          ) : null}
           <div>
             <Label>Sexos a generar</Label>
             <div className="flex flex-wrap gap-4">

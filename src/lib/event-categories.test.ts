@@ -15,6 +15,7 @@ describe("categorías por rango de años", () => {
           birthYearFrom: 2010,
           birthYearTo: 2012,
           maxAgeYears: null,
+          maleBirthYearFrom: null,
         },
       ],
     })
@@ -32,7 +33,7 @@ describe("categorías por rango de años", () => {
   it("texto vacío genera una sola versión sin categoría", () => {
     const result = parseCategorySpecs("   \n  ", RANGE)
     expect(result.ok && result.categories).toEqual([
-      { label: null, birthYearFrom: null, birthYearTo: null, maxAgeYears: null },
+      { label: null, birthYearFrom: null, birthYearTo: null, maxAgeYears: null, maleBirthYearFrom: null },
     ])
   })
 
@@ -49,6 +50,77 @@ describe("categorías por rango de años", () => {
   })
 })
 
+// Las bases de artística dan a los varones un año más en Juvenil y Junior. El
+// generador masivo es EL camino para nivelar un evento que ya existe, así que
+// tiene que poder expresarlo: sin el cuarto campo, un varón de 16 quedaba
+// fuera de Juvenil aunque las bases lo admitan.
+describe("el cuarto campo: «varones desde»", () => {
+  it("lee Nombre|desde|hasta|varonesDesde", () => {
+    const result = parseCategorySpecs("Juvenil|2011|2013|2010", RANGE)
+    expect(result).toEqual({
+      ok: true,
+      categories: [
+        {
+          label: "Juvenil",
+          birthYearFrom: 2011,
+          birthYearTo: 2013,
+          maxAgeYears: null,
+          maleBirthYearFrom: 2010,
+        },
+      ],
+    })
+  })
+
+  // Esta es la garantía de que nada de lo que existe hoy cambia: una línea de
+  // tres campos sigue produciendo exactamente el mismo CategorySpec.
+  it.each([
+    ["Juvenil|2011|2013", "con los dos años"],
+    ["Juvenil|2011|", "sin el año 'hasta'"],
+    ["Juvenil", "sin años"],
+    ["Juvenil|2011|2013|", "con el cuarto campo vacío"],
+  ])("«%s» (%s) deja maleBirthYearFrom en null", (line) => {
+    const result = parseCategorySpecs(line, RANGE)
+    expect(result.ok && result.categories[0].maleBirthYearFrom).toBeNull()
+  })
+
+  it("una línea de tres campos produce lo mismo que antes del cuarto campo", () => {
+    expect(parseCategorySpecs("Categoría B|2011|2012", RANGE)).toEqual({
+      ok: true,
+      categories: [
+        {
+          label: "Categoría B",
+          birthYearFrom: 2011,
+          birthYearTo: 2012,
+          maxAgeYears: null,
+          maleBirthYearFrom: null,
+        },
+      ],
+    })
+  })
+
+  it.each([
+    ["fuera del rango plausible", "Juvenil|2011|2013|1800"],
+    ["no es un número", "Juvenil|2011|2013|dos mil diez"],
+  ])("rechaza un «varones desde» %s", (_caso, line) => {
+    expect(parseCategorySpecs(line, RANGE)).toMatchObject({ ok: false })
+  })
+
+  // El año extra de los varones siempre está del lado viejo del rango: si es
+  // más nuevo que el 'hasta', la línea está mal escrita.
+  it("rechaza un «varones desde» posterior al año 'hasta'", () => {
+    expect(parseCategorySpecs("Juvenil|2011|2013|2014", RANGE)).toMatchObject({
+      ok: false,
+    })
+  })
+
+  // En MAX_AGE_ONLY el formato es otro y el cuarto campo no existe: el «|»
+  // ahí solo lleva la edad explícita.
+  it("no se cuela en las categorías Sub-N", () => {
+    const result = parseCategorySpecs("Sub 16", SUB_N)
+    expect(result.ok && result.categories[0].maleBirthYearFrom).toBeNull()
+  })
+})
+
 describe("categorías Sub-N", () => {
   it("convierte «Sub 18» en un piso de año sin tope superior", () => {
     const result = parseCategorySpecs("Sub 18", SUB_N)
@@ -60,6 +132,7 @@ describe("categorías Sub-N", () => {
           birthYearFrom: 2009,
           birthYearTo: null,
           maxAgeYears: 18,
+          maleBirthYearFrom: null,
         },
       ],
     })
@@ -98,6 +171,7 @@ describe("categorías Sub-N", () => {
           birthYearFrom: null,
           birthYearTo: null,
           maxAgeYears: null,
+          maleBirthYearFrom: null,
         },
       ],
     })

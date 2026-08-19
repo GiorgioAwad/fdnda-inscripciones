@@ -175,6 +175,7 @@ export default async function RegistrationPlanPage({
       discipline: modality.discipline,
       name: modality.name,
       category: modality.category,
+      level: modality.level,
       sexRule: modality.sexRule,
       birthYearFrom: modality.birthYearFrom,
       birthYearTo: modality.birthYearTo,

@@ -32,6 +32,8 @@ export interface ModalityView {
   discipline: string
   name: string
   category: string | null
+  /** Nivel del campeonato de niveles de artística. null fuera de ese formato. */
+  level: string | null
   sexRule: "MALE" | "FEMALE" | "MIXED" | "ANY"
   birthYearFrom: number | null
   birthYearTo: number | null
