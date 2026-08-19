@@ -16,6 +16,12 @@ export interface CategorySpec {
   birthYearTo: number | null
   /** Solo en MAX_AGE_ONLY: la N de "Sub-N", para poder re-renderizar la etiqueta. */
   maxAgeYears: number | null
+  /**
+   * Solo en natación artística: el 'desde' que aplica a varones cuando las
+   * bases les dan un año más que a damas (Juvenil, Junior). null = mismo rango
+   * para todos, que es el caso de todas las demás disciplinas.
+   */
+  maleBirthYearFrom: number | null
 }
 
 export type CategoryParseResult =
@@ -75,6 +81,7 @@ function parseRangeCategories(lines: string[]): CategoryParseResult {
       birthYearFrom: from,
       birthYearTo: to,
       maxAgeYears: null,
+      maleBirthYearFrom: null,
     })
   }
   return { ok: true, categories }
@@ -98,6 +105,7 @@ function parseMaxAgeCategories(
         birthYearFrom: null,
         birthYearTo: null,
         maxAgeYears: null,
+        maleBirthYearFrom: null,
       })
       continue
     }
@@ -114,6 +122,7 @@ function parseMaxAgeCategories(
       // Sin tope superior: por eso un sub-13 entra a sub-18.
       birthYearTo: null,
       maxAgeYears: maxAge,
+      maleBirthYearFrom: null,
     })
   }
   return { ok: true, categories }
@@ -146,7 +155,7 @@ export function parseCategorySpecs(
     return {
       ok: true,
       categories: [
-        { label: null, birthYearFrom: null, birthYearTo: null, maxAgeYears: null },
+        { label: null, birthYearFrom: null, birthYearTo: null, maxAgeYears: null, maleBirthYearFrom: null },
       ],
     }
   }

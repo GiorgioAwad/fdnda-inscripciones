@@ -48,12 +48,19 @@ export function buildModalityRows(
         // Sin tope de año no hay categoría inferior que pueda subir: la más alta
         // del lote se genera sin el permiso.
         const upgrades = input.allowsCategoryUpgrade && category.birthYearTo !== null
+        // Damas usan el rango de la categoría; el resto admite además al varón
+        // del año extra que dan las bases. MIXED lleva un varón, y ANY admite a
+        // cualquiera, así que ninguno puede ser más estrecho que MALE.
+        const birthYearFrom =
+          sexRule === "FEMALE"
+            ? category.birthYearFrom
+            : (category.maleBirthYearFrom ?? category.birthYearFrom)
         rows.push({
           discipline: input.discipline,
           name,
           category: label || null,
           sexRule,
-          birthYearFrom: category.birthYearFrom,
+          birthYearFrom,
           birthYearTo: category.birthYearTo,
           allowsCategoryUpgrade: upgrades,
           categoryUpgradeBirthYear: upgrades ? category.birthYearTo! + 1 : null,

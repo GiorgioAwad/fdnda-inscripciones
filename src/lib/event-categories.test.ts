@@ -15,6 +15,7 @@ describe("categorías por rango de años", () => {
           birthYearFrom: 2010,
           birthYearTo: 2012,
           maxAgeYears: null,
+          maleBirthYearFrom: null,
         },
       ],
     })
@@ -32,7 +33,7 @@ describe("categorías por rango de años", () => {
   it("texto vacío genera una sola versión sin categoría", () => {
     const result = parseCategorySpecs("   \n  ", RANGE)
     expect(result.ok && result.categories).toEqual([
-      { label: null, birthYearFrom: null, birthYearTo: null, maxAgeYears: null },
+      { label: null, birthYearFrom: null, birthYearTo: null, maxAgeYears: null, maleBirthYearFrom: null },
     ])
   })
 
@@ -60,6 +61,7 @@ describe("categorías Sub-N", () => {
           birthYearFrom: 2009,
           birthYearTo: null,
           maxAgeYears: 18,
+          maleBirthYearFrom: null,
         },
       ],
     })
@@ -98,6 +100,7 @@ describe("categorías Sub-N", () => {
           birthYearFrom: null,
           birthYearTo: null,
           maxAgeYears: null,
+          maleBirthYearFrom: null,
         },
       ],
     })

@@ -8,6 +8,7 @@ function category(overrides: Partial<CategorySpec> = {}): CategorySpec {
     birthYearFrom: 2011,
     birthYearTo: 2013,
     maxAgeYears: null,
+    maleBirthYearFrom: null,
     ...overrides,
   }
 }
@@ -54,7 +55,7 @@ describe("buildModalityRows", () => {
       discipline: "DIVING",
       names: ["Plataforma"],
       categories: [
-        { label: null, birthYearFrom: null, birthYearTo: null, maxAgeYears: null },
+        { label: null, birthYearFrom: null, birthYearTo: null, maxAgeYears: null, maleBirthYearFrom: null },
       ],
       variantsFor: () => ({ sexRules: ["ANY"], minAthletes: 1, maxAthletes: 1 }),
       price: 40,
@@ -123,5 +124,83 @@ describe("buildModalityRows", () => {
       startSortOrder: 12,
     })
     expect(rows[0].sortOrder).toBe(12)
+  })
+})
+
+// Las bases dan a los varones un año más en Juvenil (F 13-15, M 13-16) y en
+// Junior (F 15-19, M 15-20). Sin esto, un nadador de 2010 no entra a juvenil.
+describe("el rango masculino extendido", () => {
+  const juvenil: CategorySpec = {
+    label: "Juvenil",
+    birthYearFrom: 2011,
+    birthYearTo: 2013,
+    maxAgeYears: null,
+    maleBirthYearFrom: 2010,
+  }
+
+  function rowsFor(sexRules: readonly string[]) {
+    return buildModalityRows({
+      discipline: "ARTISTIC_SWIMMING",
+      names: ["Solo Libre"],
+      categories: [juvenil],
+      variantsFor: () => ({
+        sexRules: sexRules as never,
+        minAthletes: 1,
+        maxAthletes: 1,
+      }),
+      price: 60,
+      allowsCategoryUpgrade: false,
+      startSortOrder: 0,
+    })
+  }
+
+  it("damas conservan el rango de la categoría", () => {
+    expect(rowsFor(["FEMALE"])[0].birthYearFrom).toBe(2011)
+  })
+
+  it.each(["MALE", "MIXED", "ANY"])(
+    "%s admite además al varón del año extra",
+    (sexRule) => {
+      expect(rowsFor([sexRule])[0].birthYearFrom).toBe(2010)
+    }
+  )
+
+  it("el tope joven no se desdobla: es el mismo para todos", () => {
+    for (const sexRule of ["FEMALE", "MALE", "MIXED", "ANY"]) {
+      expect(rowsFor([sexRule])[0].birthYearTo).toBe(2013)
+    }
+  })
+
+  it("sin rango masculino todos los sexos usan el de la categoría", () => {
+    const sinExtra = { ...juvenil, maleBirthYearFrom: null }
+    for (const sexRule of ["FEMALE", "MALE", "MIXED", "ANY"]) {
+      const rows = buildModalityRows({
+        discipline: "ARTISTIC_SWIMMING",
+        names: ["Solo Libre"],
+        categories: [sinExtra],
+        variantsFor: () => ({
+          sexRules: [sexRule] as never,
+          minAthletes: 1,
+          maxAthletes: 1,
+        }),
+        price: 60,
+        allowsCategoryUpgrade: false,
+        startSortOrder: 0,
+      })
+      expect(rows[0].birthYearFrom).toBe(2011)
+    }
+  })
+
+  it("«sube de categoría» sigue saliendo del tope joven, no del masculino", () => {
+    const rows = buildModalityRows({
+      discipline: "ARTISTIC_SWIMMING",
+      names: ["Solo Libre"],
+      categories: [juvenil],
+      variantsFor: () => ({ sexRules: ["MALE"], minAthletes: 1, maxAthletes: 1 }),
+      price: 60,
+      allowsCategoryUpgrade: true,
+      startSortOrder: 0,
+    })
+    expect(rows[0].categoryUpgradeBirthYear).toBe(2014)
   })
 })
