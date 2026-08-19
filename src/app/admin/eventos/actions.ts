@@ -12,6 +12,8 @@ import {
 import { prisma } from "@/lib/prisma"
 import { requireAdmin } from "@/lib/auth"
 import {
+  ARTISTIC_LEVEL_LABELS,
+  isArtisticLevel,
   levelCategoriesToSpecs,
   parseLevelCategories,
 } from "@/lib/artistic-levels"
@@ -886,6 +888,7 @@ const bulkSchema = z.object({
   categoriesText: z.string().trim(),
   sexRules: z.array(z.enum(["MALE", "FEMALE", "MIXED", "ANY"])).min(1, "Selecciona al menos un sexo"),
   allowsCategoryUpgrade: z.boolean(),
+  level: z.string().optional(),
   minAthletes: z.coerce.number().int().min(1).max(20),
   maxAthletes: z.coerce.number().int().min(1).max(20),
   price: z.coerce.number().min(0).max(100000),
@@ -911,6 +914,7 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
     categoriesText: String(formData.get("categoriesText") ?? ""),
     sexRules: formData.getAll("sexRules").map(String),
     allowsCategoryUpgrade: formData.get("allowsCategoryUpgrade") === "on",
+    level: String(formData.get("level") ?? ""),
     minAthletes: formData.get("minAthletes"),
     maxAthletes: formData.get("maxAthletes"),
     price: formData.get("price"),
@@ -947,6 +951,24 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
     return {
       success: false,
       error: "«Sube de categoría» solo aplica a natación artística.",
+    }
+  }
+  const level = parsed.data.level?.trim() ? parsed.data.level.trim() : null
+  if (level !== null) {
+    if (!isArtisticLevel(level)) {
+      return { success: false, error: "Nivel inválido." }
+    }
+    if (parsed.data.discipline !== "ARTISTIC_SWIMMING") {
+      return {
+        success: false,
+        error: "El nivel solo aplica a natación artística.",
+      }
+    }
+    if (!event.isLevelChampionship) {
+      return {
+        success: false,
+        error: "Este evento no es un campeonato de niveles.",
+      }
     }
   }
   if (!event.season) {
@@ -1047,7 +1069,18 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
     price: generatedPrice,
     allowsCategoryUpgrade: parsed.data.allowsCategoryUpgrade,
     startSortOrder: (last?.sortOrder ?? -1) + 1,
-  }).map((row) => ({ ...row, eventId: event.id, ...leagueFields }))
+  }).map((row) => ({
+    ...row,
+    eventId: event.id,
+    ...leagueFields,
+    level,
+    // Igual que al crear el evento: el nivel viaja también dentro de `category`
+    // para que la descripción de la orden distinga dos pruebas homónimas.
+    category:
+      level === null
+        ? row.category
+        : [ARTISTIC_LEVEL_LABELS[level], row.category].filter(Boolean).join(" — "),
+  }))
 
   if (rows.length === 0) {
     return { success: false, error: "La combinación no genera ninguna prueba." }

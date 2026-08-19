@@ -19,6 +19,10 @@ import {
   THead,
   TR,
 } from "@/components/ui/table"
+import {
+  ARTISTIC_LEVEL_LABELS,
+  ARTISTIC_LEVEL_VALUES,
+} from "@/lib/artistic-levels"
 import { DISCIPLINE_VALUES, DISCIPLINES } from "@/lib/disciplines"
 import {
   birthYearForMaxAge,
@@ -146,6 +150,7 @@ function teamSizeLabel(min: number, max: number): string {
 export function ModalitiesManager({
   eventId,
   isLeague,
+  isLevelChampionship,
   eventDisciplines,
   disciplineConfigs,
   seasonCategories,
@@ -154,6 +159,7 @@ export function ModalitiesManager({
 }: {
   eventId: string
   isLeague: boolean
+  isLevelChampionship: boolean
   eventDisciplines: string[]
   disciplineConfigs: EventDisciplineConfigLike[]
   seasonCategories: SeasonCategoryOption[]
@@ -813,6 +819,23 @@ export function ModalitiesManager({
                 : "Los años son opcionales («Juvenil» sin años = sin restricción). Vacío = una sola versión sin categoría."}
             </p>
           </div>
+          {isLevelChampionship && bulkDiscipline === "ARTISTIC_SWIMMING" ? (
+            <div>
+              <Label htmlFor="bulk-level">Nivel</Label>
+              <Select id="bulk-level" name="level" defaultValue="">
+                <option value="">Sin nivel</option>
+                {ARTISTIC_LEVEL_VALUES.map((level) => (
+                  <option key={level} value={level}>
+                    {ARTISTIC_LEVEL_LABELS[level]}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs leading-5 text-fdnda-muted">
+                El nombre del nivel se antepone a la categoría de cada prueba
+                generada.
+              </p>
+            </div>
+          ) : null}
           <div>
             <Label>Sexos a generar</Label>
             <div className="flex flex-wrap gap-4">

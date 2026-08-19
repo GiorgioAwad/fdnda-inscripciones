@@ -144,6 +144,7 @@ export default async function EventoDetailPage({
       <ModalitiesManager
         eventId={event.id}
         isLeague={event.isLeague}
+        isLevelChampionship={event.isLevelChampionship}
         eventDisciplines={event.disciplines}
         disciplineConfigs={event.disciplineConfigs.map((config) => ({
           discipline: config.discipline,
