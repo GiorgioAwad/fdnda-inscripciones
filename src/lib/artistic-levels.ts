@@ -8,6 +8,8 @@
 // del admin y la server action, y porque así se puede verificar contra el PDF
 // de las bases sin levantar una base de datos.
 
+import type { CategorySpec } from "./event-categories"
+
 export const ARTISTIC_LEVEL_VALUES = ["BASICO", "INTERMEDIO", "AVANZADO"] as const
 
 export type ArtisticLevelValue = (typeof ARTISTIC_LEVEL_VALUES)[number]
@@ -147,4 +149,37 @@ export function parseLevelCategories(value: string): LevelCategoryDraft[] | null
     parsed.push({ level: candidate.level, label, from, to, maleFrom })
   }
   return parsed
+}
+
+export interface LevelCategoryGroup {
+  level: ArtisticLevelValue
+  specs: CategorySpec[]
+}
+
+/**
+ * Convierte las categorías del formulario en los grupos que consume
+ * buildModalityRows, uno por nivel y en el orden en que compiten.
+ *
+ * El nombre del nivel se antepone a la etiqueta porque la descripción de la
+ * orden se arma con `category` (ver lib/registration-snapshots.ts): sin él, dos
+ * pruebas homónimas de niveles distintos aparecerían idénticas en el
+ * comprobante que paga el club.
+ */
+export function levelCategoriesToSpecs(
+  categories: LevelCategoryDraft[]
+): LevelCategoryGroup[] {
+  const groups: LevelCategoryGroup[] = []
+  for (const level of ARTISTIC_LEVEL_VALUES) {
+    const specs = categories
+      .filter((category) => category.level === level)
+      .map<CategorySpec>((category) => ({
+        label: `${ARTISTIC_LEVEL_LABELS[level]} — ${category.label}`,
+        birthYearFrom: category.from,
+        birthYearTo: category.to,
+        maxAgeYears: null,
+        maleBirthYearFrom: category.maleFrom,
+      }))
+    if (specs.length > 0) groups.push({ level, specs })
+  }
+  return groups
 }

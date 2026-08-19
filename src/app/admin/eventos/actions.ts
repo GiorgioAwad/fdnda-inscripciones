@@ -11,6 +11,10 @@ import {
 } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { requireAdmin } from "@/lib/auth"
+import {
+  levelCategoriesToSpecs,
+  parseLevelCategories,
+} from "@/lib/artistic-levels"
 import { DISCIPLINE_VALUES, disciplineLabel } from "@/lib/disciplines"
 import { parseCategorySpecs } from "@/lib/event-categories"
 import { DISCIPLINE_PRESETS } from "@/lib/event-presets"
@@ -70,6 +74,7 @@ const eventSchema = z.object({
   chargesEntry: z.boolean(),
   chargesAthleteFee: z.boolean(),
   isLeague: z.boolean(),
+  isLevelChampionship: z.boolean(),
   athleteFee: z.string().optional(),
   ageRuleMode: z.enum(["RANGE", "MAX_AGE_ONLY"]),
   venue: z.string().trim().max(120).optional(),
@@ -84,6 +89,7 @@ const eventSchema = z.object({
   presetPrice: z.string().optional(),
   presetMatchesPerTeam: z.string().optional(),
   presetLeagueTeamCounts: z.string().optional(),
+  presetLevelCategories: z.string().optional(),
 })
 
 export async function saveEvent(formData: FormData): Promise<ActionResult> {
@@ -97,6 +103,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     chargesEntry: formData.get("chargesEntry") === "on",
     chargesAthleteFee: formData.get("chargesAthleteFee") === "on",
     isLeague: formData.get("isLeague") === "on",
+    isLevelChampionship: formData.get("isLevelChampionship") === "on",
     athleteFee: String(formData.get("athleteFee") ?? ""),
     ageRuleMode: String(formData.get("ageRuleMode") ?? "RANGE"),
     venue: String(formData.get("venue") ?? ""),
@@ -110,6 +117,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     presetPrice: String(formData.get("presetPrice") ?? ""),
     presetMatchesPerTeam: String(formData.get("presetMatchesPerTeam") ?? ""),
     presetLeagueTeamCounts: String(formData.get("presetLeagueTeamCounts") ?? ""),
+    presetLevelCategories: String(formData.get("presetLevelCategories") ?? ""),
   })
 
   if (!parsed.success) {
@@ -140,6 +148,13 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     return {
       success: false,
       error: "Solo un evento de polo acuático puede ser una liga.",
+    }
+  }
+  if (parsed.data.isLevelChampionship && discipline !== "ARTISTIC_SWIMMING") {
+    return {
+      success: false,
+      error:
+        "Solo un evento de natación artística puede ser un campeonato de niveles.",
     }
   }
 
@@ -178,6 +193,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
           seasonId: true,
           disciplines: true,
           isLeague: true,
+          isLevelChampionship: true,
           modalities: {
             select: {
               discipline: true,
@@ -226,6 +242,16 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
           "El formato de liga no puede cambiar porque el evento ya tiene inscripciones en una orden.",
       }
     }
+    if (
+      hasLockedEntries &&
+      existing.isLevelChampionship !== parsed.data.isLevelChampionship
+    ) {
+      return {
+        success: false,
+        error:
+          "El formato de niveles no puede cambiar porque el evento ya tiene inscripciones en una orden.",
+      }
+    }
   }
 
   // Los eventos legados multidisciplina conservan su arreglo: reducirlos a una
@@ -243,6 +269,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     endDate,
     registrationDeadline,
     isLeague: parsed.data.isLeague,
+    isLevelChampionship: parsed.data.isLevelChampionship,
     description: parsed.data.description || null,
   }
 
@@ -360,35 +387,77 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         ? leagueEntryPrice({ pricePerMatch: unitPrice, matchesPerTeam: matchesPerTeam! })
         : unitPrice
 
-      modalityRows = buildModalityRows({
-        discipline,
-        names: chosen.map((modality) => modality.name),
-        categories: categories.categories,
-        // Cada prueba del preset trae sus propios sexos y tamaño de formación.
-        variantsFor: (name) => {
-          const modality = chosen.find((row) => row.name === name)!
+      if (parsed.data.isLevelChampionship) {
+        // `|| "[]"` y no `?? "[]"`: el safeParse convierte un campo ausente en
+        // cadena vacía, no en undefined, y JSON.parse("") revienta.
+        const levelCategories = parseLevelCategories(
+          parsed.data.presetLevelCategories?.trim() || "[]"
+        )
+        if (levelCategories === null) {
+          return { success: false, error: "Categorías por nivel inválidas." }
+        }
+        const groups = levelCategoriesToSpecs(levelCategories)
+        if (groups.length === 0) {
           return {
-            sexRules: modality.sexRules as SexRule[],
-            minAthletes: modality.minAthletes,
-            maxAthletes: modality.maxAthletes,
+            success: false,
+            error: "Agrega las categorías de al menos un nivel.",
           }
-        },
-        price,
-        ...(parsed.data.isLeague && leagueTeamCounts
-          ? {
-              leaguePlanFor: (categoryIndex: number, sexRule: SexRule) => ({
-                pricePerMatch: unitPrice,
-                matchesPerTeam: matchesPerTeam!,
-                expectedTeams:
-                  leagueTeamCounts[categoryIndex][
-                    sexRule === "FEMALE" ? "FEMALE" : "MALE"
-                  ],
-              }),
+        }
+        // Un nivel por llamada, con el sortOrder corrido: las pruebas nacen
+        // ordenadas básico → intermedio → avanzado sin que ninguna vista tenga
+        // que ordenarlas después.
+        for (const group of groups) {
+          const levelRows = buildModalityRows({
+            discipline,
+            names: chosen.map((modality) => modality.name),
+            categories: group.specs,
+            variantsFor: (name) => {
+              const modality = chosen.find((row) => row.name === name)!
+              return {
+                sexRules: modality.sexRules as SexRule[],
+                minAthletes: modality.minAthletes,
+                maxAthletes: modality.maxAthletes,
+              }
+            },
+            price,
+            allowsCategoryUpgrade: false,
+            startSortOrder: modalityRows.length,
+          })
+          modalityRows.push(
+            ...levelRows.map((row) => ({ ...row, level: group.level }))
+          )
+        }
+      } else {
+        modalityRows = buildModalityRows({
+          discipline,
+          names: chosen.map((modality) => modality.name),
+          categories: categories.categories,
+          // Cada prueba del preset trae sus propios sexos y tamaño de formación.
+          variantsFor: (name) => {
+            const modality = chosen.find((row) => row.name === name)!
+            return {
+              sexRules: modality.sexRules as SexRule[],
+              minAthletes: modality.minAthletes,
+              maxAthletes: modality.maxAthletes,
             }
-          : {}),
-        allowsCategoryUpgrade: false,
-        startSortOrder: 0,
-      })
+          },
+          price,
+          ...(parsed.data.isLeague && leagueTeamCounts
+            ? {
+                leaguePlanFor: (categoryIndex: number, sexRule: SexRule) => ({
+                  pricePerMatch: unitPrice,
+                  matchesPerTeam: matchesPerTeam!,
+                  expectedTeams:
+                    leagueTeamCounts[categoryIndex][
+                      sexRule === "FEMALE" ? "FEMALE" : "MALE"
+                    ],
+                }),
+              }
+            : {}),
+          allowsCategoryUpgrade: false,
+          startSortOrder: 0,
+        })
+      }
       if (modalityRows.length > MAX_BULK_MODALITIES) {
         return {
           success: false,

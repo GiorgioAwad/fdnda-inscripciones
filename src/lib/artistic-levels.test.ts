@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   ARTISTIC_LEVEL_VALUES,
+  levelCategoriesToSpecs,
   levelCategoryPreset,
   parseLevelCategories,
   type LevelCategoryDraft,
@@ -101,5 +102,45 @@ describe("parseLevelCategories", () => {
   it("recorta los espacios de la etiqueta", () => {
     const json = '[{"level":"BASICO","label":"  Juvenil  ","from":null,"to":null,"maleFrom":null}]'
     expect(parseLevelCategories(json)?.[0].label).toBe("Juvenil")
+  })
+})
+
+describe("levelCategoriesToSpecs", () => {
+  it("agrupa por nivel en el orden básico → intermedio → avanzado", () => {
+    const grupos = levelCategoriesToSpecs([
+      { level: "AVANZADO", label: "Senior", from: null, to: 2011, maleFrom: null },
+      { level: "BASICO", label: "Juvenil", from: 2011, to: 2013, maleFrom: 2010 },
+    ])
+    expect(grupos.map((grupo) => grupo.level)).toEqual(["BASICO", "AVANZADO"])
+  })
+
+  it("antepone el nombre del nivel a la etiqueta de la categoría", () => {
+    const [grupo] = levelCategoriesToSpecs([
+      { level: "BASICO", label: "Infantil A", from: 2016, to: 2017, maleFrom: null },
+    ])
+    expect(grupo.specs[0].label).toBe("Básico — Infantil A")
+  })
+
+  it("traslada los años y el rango masculino al CategorySpec", () => {
+    const [grupo] = levelCategoriesToSpecs([
+      { level: "BASICO", label: "Juvenil", from: 2011, to: 2013, maleFrom: 2010 },
+    ])
+    expect(grupo.specs[0]).toMatchObject({
+      birthYearFrom: 2011,
+      birthYearTo: 2013,
+      maleBirthYearFrom: 2010,
+      maxAgeYears: null,
+    })
+  })
+
+  it("omite los niveles sin categorías", () => {
+    const grupos = levelCategoriesToSpecs([
+      { level: "BASICO", label: "Juvenil", from: 2011, to: 2013, maleFrom: null },
+    ])
+    expect(grupos).toHaveLength(1)
+  })
+
+  it("una lista vacía no produce ningún grupo", () => {
+    expect(levelCategoriesToSpecs([])).toEqual([])
   })
 })
