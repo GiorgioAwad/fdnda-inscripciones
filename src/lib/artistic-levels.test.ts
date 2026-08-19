@@ -5,6 +5,8 @@ import {
   levelCategoriesToSpecs,
   levelCategoryPreset,
   parseLevelCategories,
+  stripLevelPrefix,
+  withLevelPrefix,
   type LevelCategoryDraft,
 } from "./artistic-levels"
 
@@ -193,4 +195,73 @@ describe("groupByLevel", () => {
   it("una lista vacía no produce ningún grupo", () => {
     expect(groupByLevel<Row>([])).toEqual([])
   })
+})
+
+// El nivel se guarda dos veces a propósito (columna `level` y prefijo dentro de
+// `category`), porque la descripción de la orden se arma con `category`. Estas
+// dos funciones son el único lugar donde se compone y se descompone ese
+// prefijo: si alguien lo arma a mano en otro archivo, el día que cambie el
+// separador la etiqueta se parte en dos formas distintas.
+describe("withLevelPrefix / stripLevelPrefix", () => {
+  it("antepone el nombre del nivel", () => {
+    expect(withLevelPrefix("BASICO", "Infantil A — Damas")).toBe(
+      "Básico — Infantil A — Damas"
+    )
+  })
+
+  // Esta es la propiedad que hace que editar una prueba sea seguro: el
+  // formulario reenvía la categoría que ya trae el prefijo y no queda
+  // «Básico — Básico — Infantil A».
+  it("aplicarla dos veces da lo mismo que aplicarla una", () => {
+    const unaVez = withLevelPrefix("BASICO", "Infantil A — Damas")
+    expect(withLevelPrefix("BASICO", unaVez)).toBe(unaVez)
+  })
+
+  it("cambiar de nivel reemplaza el prefijo en vez de encadenarlo", () => {
+    expect(withLevelPrefix("INTERMEDIO", "Básico — Infantil A — Damas")).toBe(
+      "Intermedio — Infantil A — Damas"
+    )
+  })
+
+  // Es lo que ya hacía el generador masivo para una prueba sin categoría: la
+  // etiqueta pasa a ser el nombre del nivel a secas.
+  it("sin texto devuelve solo el nombre del nivel, y sigue siendo idempotente", () => {
+    expect(withLevelPrefix("AVANZADO", null)).toBe("Avanzado")
+    expect(withLevelPrefix("AVANZADO", "Avanzado")).toBe("Avanzado")
+  })
+
+  it("quita el prefijo cuando está", () => {
+    expect(stripLevelPrefix("Básico — Infantil A — Damas")).toBe(
+      "Infantil A — Damas"
+    )
+  })
+
+  it("devuelve el texto tal cual cuando no hay prefijo", () => {
+    expect(stripLevelPrefix("Infantil A — Damas")).toBe("Infantil A — Damas")
+  })
+
+  // La trampa: sin exigir el separador completo, «Básicos del club» quedaría
+  // convertido en «s del club».
+  it.each([
+    "Básicos del club",
+    "Básico juvenil",
+    "Intermedios — Damas",
+    "Avanzados",
+  ])("no toca «%s»: empieza con la palabra pero no con el prefijo", (texto) => {
+    expect(stripLevelPrefix(texto)).toBe(texto)
+  })
+
+  it("null entra y null sale", () => {
+    expect(stripLevelPrefix(null)).toBeNull()
+    expect(withLevelPrefix("BASICO", null)).toBe("Básico")
+  })
+
+  // Una categoría de un evento normal jamás lleva prefijo: pasar por acá no
+  // puede alterarla.
+  it.each(["Juvenil", "Categoría B — Damas", "Sub 16", "Open"])(
+    "deja intacta la categoría «%s» de un evento sin niveles",
+    (texto) => {
+      expect(stripLevelPrefix(texto)).toBe(texto)
+    }
+  )
 })

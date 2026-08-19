@@ -3,7 +3,12 @@
 import { ChevronDown, Lock, Trash2, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ARTISTIC_LEVEL_LABELS, groupByLevel } from "@/lib/artistic-levels"
+import {
+  ARTISTIC_LEVEL_LABELS,
+  groupByLevel,
+  stripLevelPrefix,
+  type ArtisticLevelValue,
+} from "@/lib/artistic-levels"
 import { disciplineLabel } from "@/lib/disciplines"
 import { athleteEligibilityError } from "@/lib/eligibility"
 import { formatMoney, SEX_LABELS } from "@/lib/utils"
@@ -37,8 +42,17 @@ function athleteName(athlete: AthleteView) {
   return `${athlete.lastNames}, ${athlete.firstNames}`
 }
 
-function modalityLabel(modality: ModalityView) {
-  return [modality.name, modality.category].filter(Boolean).join(" · ")
+// Bajo un encabezado que ya dice BÁSICO, la fila «Solo Libre · Básico —
+// Infantil A — Damas» repite el nivel. Se quita solo del grupo que lo lleva de
+// encabezado: en el grupo sin nivel la categoría se muestra tal cual está
+// guardada, porque ahí nada más la desambigua.
+function modalityLabel(
+  modality: ModalityView,
+  level: ArtisticLevelValue | null
+) {
+  const category =
+    level === null ? modality.category : stripLevelPrefix(modality.category)
+  return [modality.name, category].filter(Boolean).join(" · ")
 }
 
 export function AthleteEntryCard({
@@ -133,9 +147,9 @@ export function AthleteEntryCard({
               {groupByLevel(eligible).map((group) => (
                 <div key={group.level ?? "sin-nivel"}>
                   {group.level ? (
-                    <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-fdnda-turquoise-deep">
+                    <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-fdnda-turquoise-deep">
                       {ARTISTIC_LEVEL_LABELS[group.level]}
-                    </h4>
+                    </h3>
                   ) : null}
                   <ul className="grid gap-1.5 sm:grid-cols-2">
                     {group.rows.map((modality) => {
@@ -161,7 +175,7 @@ export function AthleteEntryCard({
                             />
                             <span className="min-w-0 flex-1">
                               <span className="block font-medium text-fdnda-ink">
-                                {modalityLabel(modality)}
+                                {modalityLabel(modality, group.level)}
                               </span>
                               <span className="block text-xs text-fdnda-muted">
                                 {disciplineLabel(modality.discipline)}

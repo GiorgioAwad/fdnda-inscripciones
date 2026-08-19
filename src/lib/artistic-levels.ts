@@ -151,6 +151,54 @@ export function parseLevelCategories(value: string): LevelCategoryDraft[] | null
   return parsed
 }
 
+/**
+ * El separador entre el nombre del nivel y la etiqueta de la categoría. Vive
+ * acá y en ningún otro lado: el prefijo se compone y se descompone siempre con
+ * las dos funciones de abajo.
+ */
+const LEVEL_PREFIX_SEPARATOR = " — "
+
+/**
+ * Quita el «Nivel — » inicial si lo hay. Devuelve el texto tal cual si no.
+ *
+ * Exige el separador completo, así que una categoría llamada «Básicos del
+ * club» no se toca. Un texto que es exactamente el nombre de un nivel se
+ * reduce a null, porque de ahí salió: es la prueba sin categoría a la que el
+ * generador masivo le puso el nivel de etiqueta.
+ */
+export function stripLevelPrefix(text: string | null): string | null {
+  if (text === null) return null
+  const trimmed = text.trim()
+  for (const level of ARTISTIC_LEVEL_VALUES) {
+    const label = ARTISTIC_LEVEL_LABELS[level]
+    if (trimmed === label) return null
+    const prefix = `${label}${LEVEL_PREFIX_SEPARATOR}`
+    if (trimmed.startsWith(prefix)) {
+      return trimmed.slice(prefix.length).trim() || null
+    }
+  }
+  return text
+}
+
+/**
+ * Antepone el nombre del nivel a una etiqueta, sin duplicarlo si ya está.
+ *
+ * Quita primero cualquier prefijo de nivel y recién después antepone el que
+ * toca. Por eso aplicarla dos veces da lo mismo que aplicarla una, que es lo
+ * que hace seguro editar una prueba: el formulario reenvía la categoría que ya
+ * trae el prefijo, y cambiar el nivel lo reemplaza en vez de encadenarlo.
+ *
+ * Con `text` en null devuelve solo el nombre del nivel.
+ */
+export function withLevelPrefix(
+  level: ArtisticLevelValue,
+  text: string | null
+): string {
+  return [ARTISTIC_LEVEL_LABELS[level], stripLevelPrefix(text)]
+    .filter(Boolean)
+    .join(LEVEL_PREFIX_SEPARATOR)
+}
+
 export interface LevelCategoryGroup {
   level: ArtisticLevelValue
   specs: CategorySpec[]
@@ -173,7 +221,7 @@ export function levelCategoriesToSpecs(
     const specs = categories
       .filter((category) => category.level === level)
       .map<CategorySpec>((category) => ({
-        label: `${ARTISTIC_LEVEL_LABELS[level]} — ${category.label}`,
+        label: withLevelPrefix(level, category.label),
         birthYearFrom: category.from,
         birthYearTo: category.to,
         maxAgeYears: null,

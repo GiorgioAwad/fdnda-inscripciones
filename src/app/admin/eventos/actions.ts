@@ -12,10 +12,10 @@ import {
 import { prisma } from "@/lib/prisma"
 import { requireAdmin } from "@/lib/auth"
 import {
-  ARTISTIC_LEVEL_LABELS,
   isArtisticLevel,
   levelCategoriesToSpecs,
   parseLevelCategories,
+  withLevelPrefix,
 } from "@/lib/artistic-levels"
 import { DISCIPLINE_VALUES, disciplineLabel } from "@/lib/disciplines"
 import { parseCategorySpecs } from "@/lib/event-categories"
@@ -1077,9 +1077,7 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
     // Igual que al crear el evento: el nivel viaja también dentro de `category`
     // para que la descripción de la orden distinga dos pruebas homónimas.
     category:
-      level === null
-        ? row.category
-        : [ARTISTIC_LEVEL_LABELS[level], row.category].filter(Boolean).join(" — "),
+      level === null ? row.category : withLevelPrefix(level, row.category ?? null),
   }))
 
   if (rows.length === 0) {

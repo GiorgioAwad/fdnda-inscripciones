@@ -22,6 +22,7 @@ import {
 import {
   ARTISTIC_LEVEL_LABELS,
   ARTISTIC_LEVEL_VALUES,
+  stripLevelPrefix,
 } from "@/lib/artistic-levels"
 import { DISCIPLINE_VALUES, DISCIPLINES } from "@/lib/disciplines"
 import {
@@ -259,7 +260,14 @@ export function ModalitiesManager({
               lanes={[m.discipline]}
               className={!m.isActive ? "opacity-60" : undefined}
               title={m.name}
-              subtitle={m.category || undefined}
+              // El nivel ya viaja en la insignia de al lado: repetirlo en el
+              // subtítulo daba «Básico» dos veces en la misma tarjeta. En la
+              // tabla de escritorio, que no tiene columna de nivel, la
+              // categoría se muestra completa para que la fila no quede
+              // ambigua.
+              subtitle={
+                (m.level ? stripLevelPrefix(m.category) : m.category) || undefined
+              }
               badges={
                 <>
                   {m.level ? (

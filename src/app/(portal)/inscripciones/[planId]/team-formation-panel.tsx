@@ -4,7 +4,12 @@ import { Plus, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { ARTISTIC_LEVEL_LABELS, groupByLevel } from "@/lib/artistic-levels"
+import {
+  ARTISTIC_LEVEL_LABELS,
+  groupByLevel,
+  stripLevelPrefix,
+  type ArtisticLevelValue,
+} from "@/lib/artistic-levels"
 import { disciplineLabel } from "@/lib/disciplines"
 import { isAthleteEligible, validateEntryComposition } from "@/lib/eligibility"
 import { leaguePriceBreakdown } from "@/lib/league"
@@ -26,8 +31,16 @@ function athleteName(athlete: AthleteView) {
   return `${athlete.lastNames}, ${athlete.firstNames}`
 }
 
-function modalityLabel(modality: ModalityView) {
-  return [modality.name, modality.category].filter(Boolean).join(" · ")
+// Dentro de un optgroup titulado «Básico» el prefijo del nivel sobra; fuera de
+// él la categoría se muestra completa, que es lo único que distingue dos
+// pruebas homónimas de niveles distintos.
+function modalityLabel(
+  modality: ModalityView,
+  level: ArtisticLevelValue | null
+) {
+  const category =
+    level === null ? modality.category : stripLevelPrefix(modality.category)
+  return [modality.name, category].filter(Boolean).join(" · ")
 }
 
 function ruleLabel(modality: ModalityView) {
@@ -142,14 +155,15 @@ export function TeamFormationPanel({
               group.level === null ? (
                 group.rows.map((row) => (
                   <option key={row.id} value={row.id}>
-                    {disciplineLabel(row.discipline)} · {modalityLabel(row)}
+                    {disciplineLabel(row.discipline)} · {modalityLabel(row, null)}
                   </option>
                 ))
               ) : (
                 <optgroup key={group.level} label={ARTISTIC_LEVEL_LABELS[group.level]}>
                   {group.rows.map((row) => (
                     <option key={row.id} value={row.id}>
-                      {disciplineLabel(row.discipline)} · {modalityLabel(row)}
+                      {disciplineLabel(row.discipline)} ·{" "}
+                      {modalityLabel(row, group.level)}
                     </option>
                   ))}
                 </optgroup>
