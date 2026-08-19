@@ -46,6 +46,8 @@ export interface ModalityRow {
   disciplineLabel: string
   name: string
   category: string
+  /** Nivel del campeonato de niveles de artística. null fuera de ese formato. */
+  level: string | null
   sexRule: string
   birthYearFrom: number | null
   birthYearTo: number | null
@@ -259,9 +261,18 @@ export function ModalitiesManager({
               title={m.name}
               subtitle={m.category || undefined}
               badges={
-                <Badge variant={m.isActive ? "success" : "neutral"}>
-                  {m.isActive ? "Activa" : "Inactiva"}
-                </Badge>
+                <>
+                  {m.level ? (
+                    <Badge variant="neutral">
+                      {ARTISTIC_LEVEL_LABELS[
+                        m.level as keyof typeof ARTISTIC_LEVEL_LABELS
+                      ]}
+                    </Badge>
+                  ) : null}
+                  <Badge variant={m.isActive ? "success" : "neutral"}>
+                    {m.isActive ? "Activa" : "Inactiva"}
+                  </Badge>
+                </>
               }
               actions={
                 <>

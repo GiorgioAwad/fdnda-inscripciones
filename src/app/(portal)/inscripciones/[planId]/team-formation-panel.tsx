@@ -4,6 +4,7 @@ import { Plus, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { ARTISTIC_LEVEL_LABELS, groupByLevel } from "@/lib/artistic-levels"
 import { disciplineLabel } from "@/lib/disciplines"
 import { isAthleteEligible, validateEntryComposition } from "@/lib/eligibility"
 import { leaguePriceBreakdown } from "@/lib/league"
@@ -137,11 +138,23 @@ export function TeamFormationPanel({
             onChange={(event) => onSelectModality(event.target.value)}
             className="min-h-11 w-full rounded-control border border-fdnda-border bg-white px-3 text-sm font-semibold text-fdnda-ink focus:border-fdnda-turquoise focus:outline-none focus:ring-2 focus:ring-fdnda-turquoise/25"
           >
-            {modalities.map((row) => (
-              <option key={row.id} value={row.id}>
-                {disciplineLabel(row.discipline)} · {modalityLabel(row)}
-              </option>
-            ))}
+            {groupByLevel(modalities).map((group) =>
+              group.level === null ? (
+                group.rows.map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {disciplineLabel(row.discipline)} · {modalityLabel(row)}
+                  </option>
+                ))
+              ) : (
+                <optgroup key={group.level} label={ARTISTIC_LEVEL_LABELS[group.level]}>
+                  {group.rows.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {disciplineLabel(row.discipline)} · {modalityLabel(row)}
+                    </option>
+                  ))}
+                </optgroup>
+              )
+            )}
           </select>
         </label>
         <p className="mt-2 text-xs text-fdnda-muted">

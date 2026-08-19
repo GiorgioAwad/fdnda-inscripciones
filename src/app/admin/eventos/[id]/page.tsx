@@ -168,6 +168,7 @@ export default async function EventoDetailPage({
           disciplineLabel: disciplineLabel(m.discipline),
           name: m.name,
           category: m.category ?? "",
+          level: m.level,
           sexRule: m.sexRule,
           birthYearFrom: m.birthYearFrom,
           birthYearTo: m.birthYearTo,

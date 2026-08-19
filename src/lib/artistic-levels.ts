@@ -183,3 +183,21 @@ export function levelCategoriesToSpecs(
   }
   return groups
 }
+
+/**
+ * Agrupa por nivel en el orden en que compiten y deja al final lo que no
+ * pertenece a un campeonato de niveles. Una lista sin niveles devuelve un solo
+ * grupo sin etiqueta: por eso una competencia normal se ve igual que siempre.
+ */
+export function groupByLevel<T extends { level: string | null }>(
+  rows: T[]
+): Array<{ level: ArtisticLevelValue | null; rows: T[] }> {
+  const groups: Array<{ level: ArtisticLevelValue | null; rows: T[] }> = []
+  for (const level of ARTISTIC_LEVEL_VALUES) {
+    const matching = rows.filter((row) => row.level === level)
+    if (matching.length > 0) groups.push({ level, rows: matching })
+  }
+  const sinNivel = rows.filter((row) => row.level === null)
+  if (sinNivel.length > 0) groups.push({ level: null, rows: sinNivel })
+  return groups
+}

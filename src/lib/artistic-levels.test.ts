@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   ARTISTIC_LEVEL_VALUES,
+  groupByLevel,
   levelCategoriesToSpecs,
   levelCategoryPreset,
   parseLevelCategories,
@@ -142,5 +143,54 @@ describe("levelCategoriesToSpecs", () => {
 
   it("una lista vacía no produce ningún grupo", () => {
     expect(levelCategoriesToSpecs([])).toEqual([])
+  })
+})
+
+describe("groupByLevel", () => {
+  interface Row {
+    id: string
+    level: string | null
+  }
+
+  it("agrupa en el orden en que compiten: básico → intermedio → avanzado", () => {
+    const filas: Row[] = [
+      { id: "a", level: "AVANZADO" },
+      { id: "b", level: "BASICO" },
+      { id: "c", level: "INTERMEDIO" },
+    ]
+    expect(groupByLevel(filas).map((grupo) => grupo.level)).toEqual([
+      "BASICO",
+      "INTERMEDIO",
+      "AVANZADO",
+    ])
+  })
+
+  it("deja el grupo sin nivel al final", () => {
+    const filas: Row[] = [
+      { id: "a", level: null },
+      { id: "b", level: "BASICO" },
+    ]
+    expect(groupByLevel(filas).map((grupo) => grupo.level)).toEqual([
+      "BASICO",
+      null,
+    ])
+  })
+
+  // Esto es lo que garantiza que un evento normal (sin campeonato de niveles)
+  // se vea exactamente igual que hoy: un solo grupo, sin etiqueta.
+  it("una lista toda con level null produce un único grupo con level null", () => {
+    const filas: Row[] = [
+      { id: "a", level: null },
+      { id: "b", level: null },
+      { id: "c", level: null },
+    ]
+    const grupos = groupByLevel(filas)
+    expect(grupos).toHaveLength(1)
+    expect(grupos[0].level).toBeNull()
+    expect(grupos[0].rows).toEqual(filas)
+  })
+
+  it("una lista vacía no produce ningún grupo", () => {
+    expect(groupByLevel<Row>([])).toEqual([])
   })
 })

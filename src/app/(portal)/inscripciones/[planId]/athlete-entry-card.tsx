@@ -3,6 +3,7 @@
 import { ChevronDown, Lock, Trash2, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ARTISTIC_LEVEL_LABELS, groupByLevel } from "@/lib/artistic-levels"
 import { disciplineLabel } from "@/lib/disciplines"
 import { athleteEligibilityError } from "@/lib/eligibility"
 import { formatMoney, SEX_LABELS } from "@/lib/utils"
@@ -128,47 +129,58 @@ export function AthleteEntryCard({
               No hay pruebas individuales para las que sea elegible.
             </p>
           ) : (
-            <ul className="grid gap-1.5 sm:grid-cols-2">
-              {eligible.map((modality) => {
-                const locked = lockedModalityIds.has(modality.id)
-                const checked = locked || selectedModalityIds.has(modality.id)
-                return (
-                  <li key={modality.id}>
-                    <label
-                      className={`flex min-h-11 items-center gap-2.5 rounded-control px-2.5 py-2 text-sm transition-colors motion-reduce:transition-none ${
-                        locked
-                          ? "cursor-not-allowed bg-fdnda-sunken text-fdnda-muted"
-                          : "cursor-pointer hover:bg-white hover:shadow-raised has-checked:bg-fdnda-navy-soft has-checked:ring-1 has-checked:ring-inset has-checked:ring-fdnda-navy/20"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={locked || readOnly || busy}
-                        onChange={(event) =>
-                          onToggleModality(modality.id, event.target.checked)
-                        }
-                        className="h-5 w-5 shrink-0 accent-fdnda-navy"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-medium text-fdnda-ink">
-                          {modalityLabel(modality)}
-                        </span>
-                        <span className="block text-xs text-fdnda-muted">
-                          {disciplineLabel(modality.discipline)}
-                          {modality.chargesEntry
-                            ? ` · ${formatMoney(modality.price)}`
-                            : " · incluida en la cuota"}
-                        </span>
-                      </span>
-                      {locked ? (
-                        <Lock className="h-3.5 w-3.5 shrink-0" aria-label="Ya inscrito" />
-                      ) : null}
-                    </label>
-                  </li>
-                )
-              })}
-            </ul>
+            <div className="space-y-3">
+              {groupByLevel(eligible).map((group) => (
+                <div key={group.level ?? "sin-nivel"}>
+                  {group.level ? (
+                    <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-fdnda-turquoise-deep">
+                      {ARTISTIC_LEVEL_LABELS[group.level]}
+                    </h4>
+                  ) : null}
+                  <ul className="grid gap-1.5 sm:grid-cols-2">
+                    {group.rows.map((modality) => {
+                      const locked = lockedModalityIds.has(modality.id)
+                      const checked = locked || selectedModalityIds.has(modality.id)
+                      return (
+                        <li key={modality.id}>
+                          <label
+                            className={`flex min-h-11 items-center gap-2.5 rounded-control px-2.5 py-2 text-sm transition-colors motion-reduce:transition-none ${
+                              locked
+                                ? "cursor-not-allowed bg-fdnda-sunken text-fdnda-muted"
+                                : "cursor-pointer hover:bg-white hover:shadow-raised has-checked:bg-fdnda-navy-soft has-checked:ring-1 has-checked:ring-inset has-checked:ring-fdnda-navy/20"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={locked || readOnly || busy}
+                              onChange={(event) =>
+                                onToggleModality(modality.id, event.target.checked)
+                              }
+                              className="h-5 w-5 shrink-0 accent-fdnda-navy"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block font-medium text-fdnda-ink">
+                                {modalityLabel(modality)}
+                              </span>
+                              <span className="block text-xs text-fdnda-muted">
+                                {disciplineLabel(modality.discipline)}
+                                {modality.chargesEntry
+                                  ? ` · ${formatMoney(modality.price)}`
+                                  : " · incluida en la cuota"}
+                              </span>
+                            </span>
+                            {locked ? (
+                              <Lock className="h-3.5 w-3.5 shrink-0" aria-label="Ya inscrito" />
+                            ) : null}
+                          </label>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
           )}
 
           {teamEntryLabels.length > 0 ? (
