@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation"
 import { Building2 } from "lucide-react"
 import { getCurrentUser } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { PageHeader } from "@/components/page-header"
 import { ClubContactForm } from "./contact-form"
@@ -30,56 +30,54 @@ export default async function ClubPage() {
     <div className="space-y-6">
       <PageHeader
         icon={Building2}
-        eyebrow="Gestión del club"
-        title="Información del club"
-        description="Los datos de identidad los administra la federación; el contacto lo mantienes tú."
+        title="Mi club"
+        description="El nombre, el código y la región solo los cambia la FDNDA: si alguno está mal, pídele la corrección."
       />
 
       <Card>
         <CardHeader>
-          <CardTitle>Datos registrados</CardTitle>
+          <h2 className="font-heading text-lg font-bold tracking-tight text-fdnda-navy">
+            Datos en la FDNDA
+          </h2>
         </CardHeader>
         <CardContent>
-          <dl className="grid gap-4 text-sm sm:grid-cols-4">
+          <dl className="grid gap-4 text-sm sm:grid-cols-3 lg:grid-cols-5">
             <div>
-              <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
-                Nombre
-              </dt>
+              <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">Nombre</dt>
               <dd className="mt-1 font-bold text-fdnda-ink">{club.name}</dd>
             </div>
             <div>
-              <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
-                Código
-              </dt>
+              <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">Código</dt>
               <dd className="num mt-1 font-bold text-fdnda-ink">{club.code}</dd>
             </div>
             <div>
-              <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
-                Región
-              </dt>
+              <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">Región</dt>
               <dd className="mt-1 font-bold text-fdnda-ink">{club.region || "—"}</dd>
             </div>
             <div>
-              <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
-                Deportistas
-              </dt>
-              <dd className="mt-1 flex items-center gap-2 font-bold text-fdnda-ink">
-                {club._count.athletes}
+              <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">Deportistas en el padrón</dt>
+              <dd className="num mt-1 font-bold text-fdnda-ink">{club._count.athletes}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">Estado en la FDNDA</dt>
+              <dd className="mt-1">
                 <Badge variant={club.isActive ? "success" : "danger"}>
-                  {club.isActive ? "Club activo" : "Club inactivo"}
+                  {club.isActive ? "Habilitado" : "Desactivado"}
                 </Badge>
               </dd>
             </div>
           </dl>
-          <p className="mt-4 text-xs text-fdnda-muted">
-            ¿Necesitas corregir el nombre, el código o la región? Escríbele a la FDNDA.
-          </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Contacto del club</CardTitle>
+          <h2 className="font-heading text-lg font-bold tracking-tight text-fdnda-navy">
+            Contacto del club
+          </h2>
+          <p className="text-sm text-fdnda-muted">
+            Izipay usa estos datos como datos del comprador cuando pagas una orden.
+          </p>
         </CardHeader>
         <CardContent>
           <ClubContactForm

@@ -1,9 +1,11 @@
 import { expect, test, type Page } from "@playwright/test"
 
-// Flujo de dos pasos: primero la competencia, después una sola pantalla donde se
-// agregan deportistas y se marcan sus pruebas. La revisión y el pago cierran.
+// Flujo de dos pasos: una pantalla donde se agregan deportistas y se marcan sus
+// pruebas, y la revisión con el pago. La competencia se elige antes, desde su
+// tarjeta, o en un paso previo si la planilla aún no la tiene.
 
-const SAVED = /Todos los cambios est.n guardados.*revisi.n [1-9]\d*/
+// Solo aparece con hora cuando al menos un cambio llegó al servidor.
+const SAVED = /Cambios guardados a las \d{1,2}:\d{2}/
 
 async function login(page: Page, username: string, password: string) {
   await page.goto("/login")
@@ -11,6 +13,19 @@ async function login(page: Page, username: string, password: string) {
   await page.getByLabel(/^Contrase/).fill(password)
   await page.getByRole("button", { name: "Ingresar" }).click()
   await expect(page).toHaveURL(/\/inicio/)
+  await dismissGuide(page)
+}
+
+// Los usuarios e2e nacen sin onboardedAt, así que el primer ingreso abre la
+// guía de bienvenida. Se omite y se espera a que el servidor lo registre: una
+// navegación inmediata podría cortar la acción y la guía volvería a abrirse.
+async function dismissGuide(page: Page) {
+  const guide = page.getByRole("dialog", { name: /Cómo afiliar e inscribir/ })
+  if (!(await guide.isVisible().catch(() => false))) return
+  const saved = page.waitForResponse((response) => response.request().method() === "POST")
+  await guide.getByRole("button", { name: "Omitir guía" }).click()
+  await saved
+  await expect(guide).toBeHidden()
 }
 
 async function expectSaved(page: Page) {
@@ -20,8 +35,8 @@ async function expectSaved(page: Page) {
 async function chooseCompetition(page: Page, eventName = "Competencia E2E") {
   const heading = page.getByRole("heading", { name: eventName, exact: true })
   await heading
-    .locator("xpath=ancestor::div[.//button[normalize-space()='Seleccionar']][1]")
-    .getByRole("button", { name: "Seleccionar" })
+    .locator("xpath=ancestor::div[.//button[normalize-space()='Inscribir en esta competencia']][1]")
+    .getByRole("button", { name: "Inscribir en esta competencia" })
     .click()
   // selectEvent recarga la página; al volver, el plan ya tiene competencia.
   await expect(page.getByRole("heading", { name: /Arma tu planilla/ })).toBeVisible()
@@ -70,6 +85,24 @@ test("obliga a reemplazar una credencial temporal antes de entrar", async ({
   await page.getByLabel(/^Contrase/).fill("Permanent456!")
   await page.getByRole("button", { name: "Ingresar" }).click()
   await expect(page).toHaveURL(/\/inicio/)
+
+  // Primer ingreso real: la guía se abre sola, se recorre completa y no vuelve
+  // a aparecer. Queda a mano en el menú.
+  const guide = page.getByRole("dialog", { name: /Cómo afiliar e inscribir/ })
+  await expect(guide).toBeVisible()
+  await expect(guide.getByRole("heading", { name: "Afilia a tu club" })).toBeVisible()
+  await guide.getByRole("button", { name: /^Siguiente: Registra a tus deportistas/ }).click()
+  await guide.getByRole("button", { name: /^Siguiente: Paga el carrito/ }).click()
+  await guide.getByRole("button", { name: /^Siguiente: Inscribe en competencias/ }).click()
+  const saved = page.waitForResponse((response) => response.request().method() === "POST")
+  await guide.getByRole("button", { name: "Ver mis primeros pasos" }).click()
+  await saved
+  await expect(guide).toBeHidden()
+
+  await page.reload()
+  await expect(page).toHaveURL(/\/inicio/)
+  await expect(page.getByRole("button", { name: "Ver la guía de inicio" }).first()).toBeVisible()
+  await expect(guide).toBeHidden()
 })
 
 test("admite y marca el ascenso explícito en natación artística", async ({
@@ -90,7 +123,7 @@ test("admite y marca el ascenso explícito en natación artística", async ({
   ).toBeVisible()
 
   const summaryPromise = page.waitForEvent("popup")
-  await page.getByRole("button", { name: /Resumen imprimible/ }).click()
+  await page.getByRole("button", { name: /Imprimir resumen/ }).first().click()
   const summary = await summaryPromise
   await expect(summary).toHaveURL(/\/inscripciones\/[^/]+\/resumen\?revision=\d+/)
   await expect(
@@ -149,7 +182,7 @@ test("bloquea el pago cuando falta afiliacion del deportista", async ({
   await expect(page.getByRole("button", { name: "Crear orden y pagar" })).toBeDisabled()
 })
 
-test("conserva una formación de equipo incompleta y bloquea el checkout", async ({
+test("conserva una pareja de clavados incompleta y bloquea el checkout", async ({
   page,
   isMobile,
 }) => {
@@ -159,14 +192,17 @@ test("conserva una formación de equipo incompleta y bloquea el checkout", async
   await chooseCompetition(page)
   await addAthlete(page, "88000006")
 
-  await page.getByRole("button", { name: /Nueva formaci.n/ }).click()
+  // «Armar pareja» no guarda una pareja vacía: se guarda con el
+  // primer integrante, y queda incompleta porque la prueba pide dos.
+  await page.getByRole("button", { name: "Armar pareja" }).click()
+  await page.getByRole("checkbox", { name: /Valeria/ }).check()
   await expectSaved(page)
   await page.getByRole("button", { name: /Cerrar edici.n/ }).click()
 
   await page.reload()
-  await expect(page.getByText("Formación incompleta", { exact: true })).toBeVisible()
+  await expect(page.getByText("Falta 1 integrante", { exact: true })).toBeVisible()
   await goToReview(page)
-  await expect(page.getByText(/Esta prueba requiere 2 deportista/)).toBeVisible()
+  await expect(page.getByText(/Esta prueba requiere 2 integrantes/)).toBeVisible()
   await expect(page.getByRole("button", { name: "Crear orden y pagar" })).toBeDisabled()
 })
 
@@ -195,7 +231,7 @@ test("un fallo de red no sobrescribe el borrador", async ({ page, isMobile }) =>
     .filter({ hasText: "88000004" })
     .getByRole("button", { name: /Agregar/ })
     .click()
-  await expect(page.getByRole("button", { name: "Recargar" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Recargar planilla" })).toBeVisible()
   await page.unroute("**/*")
   await page.reload()
   await page.getByPlaceholder("Nombre o documento").fill("88000004")

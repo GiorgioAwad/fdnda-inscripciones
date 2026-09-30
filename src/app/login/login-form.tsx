@@ -18,7 +18,7 @@ export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
     <form action={formAction} aria-busy={pending} className="space-y-5">
       <input type="hidden" name="callbackUrl" value={callbackUrl ?? ""} />
 
-      <div className="flex min-h-11 items-center" aria-live="polite">
+      <div aria-live="polite">
         {state.error ? (
           <p
             id="login-error"
@@ -28,37 +28,33 @@ export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             {state.error}
           </p>
-        ) : (
-          <p id="login-help" className="text-xs text-fdnda-muted">
-            Los campos marcados con <span className="font-bold text-fdnda-red">*</span> son
-            obligatorios.
-          </p>
-        )}
+        ) : null}
       </div>
 
       <div>
         <Label htmlFor="username" className="text-fdnda-navy">
-          Usuario <span className="text-fdnda-red" aria-hidden="true">*</span>
-          <span className="sr-only"> (obligatorio)</span>
+          Usuario
         </Label>
         <Input
           id="username"
           name="username"
           autoComplete="username"
-          placeholder="Usuario de tu club"
+          // key: al volver con error, el valor por defecto cambia y el campo
+          // debe tomarlo aunque React ya haya reiniciado el formulario.
+          key={state.username ?? ""}
+          defaultValue={state.username ?? ""}
           required
           autoFocus
           disabled={pending}
           aria-invalid={hasError}
-          aria-describedby={hasError ? "login-error" : "login-help"}
+          aria-describedby={hasError ? "login-error" : undefined}
           className="h-12 rounded-control border-fdnda-border-control shadow-none focus:border-fdnda-turquoise focus:ring-fdnda-turquoise/20"
         />
       </div>
 
       <div>
         <Label htmlFor="password" className="text-fdnda-navy">
-          Contraseña <span className="text-fdnda-red" aria-hidden="true">*</span>
-          <span className="sr-only"> (obligatorio)</span>
+          Contraseña
         </Label>
         <div className="relative">
           <Input
@@ -66,11 +62,10 @@ export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
             name="password"
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
-            placeholder="Ingresa tu contraseña"
             required
             disabled={pending}
             aria-invalid={hasError}
-            aria-describedby={hasError ? "login-error" : "login-help"}
+            aria-describedby={hasError ? "login-error" : undefined}
             className="h-12 rounded-control border-fdnda-border-control pr-12 shadow-none focus:border-fdnda-turquoise focus:ring-fdnda-turquoise/20"
           />
           <button

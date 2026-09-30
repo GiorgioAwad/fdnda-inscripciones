@@ -16,10 +16,10 @@ function stubValidProductionEnvironment() {
     IZIPAY_HASH_KEY: "hash-key",
     IZIPAY_PUBLIC_KEY: "public-key",
     IZIPAY_ENDPOINT: "https://api-pw.izipay.pe",
-    NEXT_PUBLIC_APP_URL: "https://inscripciones.fdnda.pe",
+    NEXT_PUBLIC_APP_URL: "https://inscripcionesfdnda.pe",
     MAINTENANCE_SECRET: "m".repeat(40),
     IP_HASH_SECRET: "i".repeat(40),
-    PRIVACY_CONTACT_EMAIL: "privacidad@fdnda.pe",
+    PRIVACY_CONTACT_EMAIL: "sportentries@fdnda.org",
     PERSONAL_DATA_BANK_REGISTRATION_CODE: "RNPDP-EXAMPLE",
   }
   for (const [name, value] of Object.entries(values)) vi.stubEnv(name, value)
@@ -35,10 +35,16 @@ describe("production configuration", () => {
     expect(() => assertProductionConfiguration({ force: true })).not.toThrow()
   })
 
+  it("accepts production without a bank registration code while it is pending", () => {
+    stubValidProductionEnvironment()
+    vi.stubEnv("PERSONAL_DATA_BANK_REGISTRATION_CODE", "")
+    expect(() => assertProductionConfiguration({ force: true })).not.toThrow()
+  })
+
   it("rejects sandbox payments and a non-canonical app URL", () => {
     stubValidProductionEnvironment()
     vi.stubEnv("IZIPAY_ENDPOINT", "https://sandbox-api-pw.izipay.pe")
-    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://inscripciones.fdnda.pe/portal?q=1")
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://inscripcionesfdnda.pe/portal?q=1")
     expect(() => assertProductionConfiguration({ force: true })).toThrow(
       /no sandbox.*ruta, query ni fragmento/
     )

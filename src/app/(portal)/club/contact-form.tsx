@@ -22,11 +22,15 @@ export function ClubContactForm({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
-  const handleSubmit = (formData: FormData) => {
+  // onSubmit con preventDefault en vez de <form action>: React 19 reinicia el
+  // formulario al terminar la acción aunque haya error, y se perdía lo escrito.
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
     startTransition(async () => {
       const result = await updateClubContact(formData)
       if (result.success) {
-        toast.success("Datos de contacto actualizados")
+        toast.success("Contacto del club guardado")
         router.refresh()
       } else {
         toast.error(result.error)
@@ -35,11 +39,17 @@ export function ClubContactForm({
   }
 
   return (
-    <form action={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
-          <Label htmlFor="cl-name">Delegado responsable</Label>
-          <Input id="cl-name" name="contactName" defaultValue={contactName} disabled={!canEdit} />
+          <Label htmlFor="cl-name">Nombre de contacto</Label>
+          <Input
+            id="cl-name"
+            name="contactName"
+            autoComplete="name"
+            defaultValue={contactName}
+            disabled={!canEdit}
+          />
         </div>
         <div>
           <Label htmlFor="cl-phone">Teléfono</Label>
@@ -47,16 +57,18 @@ export function ClubContactForm({
             id="cl-phone"
             name="contactPhone"
             type="tel"
+            autoComplete="tel"
             defaultValue={contactPhone}
             disabled={!canEdit}
           />
         </div>
         <div>
-          <Label htmlFor="cl-email">Correo</Label>
+          <Label htmlFor="cl-email">Correo electrónico</Label>
           <Input
             id="cl-email"
             name="contactEmail"
             type="email"
+            autoComplete="email"
             defaultValue={contactEmail}
             disabled={!canEdit}
           />
@@ -70,7 +82,8 @@ export function ClubContactForm({
         </div>
       ) : (
         <p className="text-xs text-fdnda-muted">
-          El contacto es compartido por todas las secciones y solo puede editarlo el coordinador general.
+          Solo el coordinador del club puede editar el contacto: es el mismo para
+          todas las disciplinas.
         </p>
       )}
     </form>

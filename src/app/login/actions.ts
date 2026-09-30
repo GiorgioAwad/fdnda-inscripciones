@@ -10,6 +10,9 @@ import {
 
 export interface LoginState {
   error?: string
+  // React 19 reinicia el formulario tras la acción: se devuelve el usuario
+  // escrito para que no haya que teclearlo de nuevo tras un error.
+  username?: string
 }
 
 export async function loginAction(
@@ -21,7 +24,7 @@ export async function loginAction(
   const callbackUrl = String(formData.get("callbackUrl") ?? "")
 
   if (!username || !password) {
-    return { error: "Ingresa tu usuario y contraseña." }
+    return { error: "Escribe tu usuario y tu contraseña.", username }
   }
 
   const ipHash = await getRequestIpHash()
@@ -48,7 +51,8 @@ export async function loginAction(
       ipHash,
     })
     return {
-      error: "Demasiados intentos. Espera unos minutos antes de volver a intentar.",
+      error: "Demasiados intentos seguidos. Espera 15 minutos y vuelve a intentarlo.",
+      username,
     }
   }
 
@@ -61,7 +65,10 @@ export async function loginAction(
     return {}
   } catch (error) {
     if (error instanceof AuthError) {
-      return { error: "Usuario o contraseña incorrectos." }
+      return {
+        error: "Usuario o contraseña incorrectos. Revisa las mayúsculas y vuelve a intentarlo.",
+        username,
+      }
     }
     // signIn lanza NEXT_REDIRECT en el flujo exitoso: debe propagarse.
     throw error

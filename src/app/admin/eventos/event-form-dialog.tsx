@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, useTransition } from "react"
+import { useState, useTransition, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Plus, Trash2 } from "lucide-react"
@@ -9,15 +9,28 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input"
 import { Dialog } from "@/components/ui/dialog"
 import { DISCIPLINE_VALUES, DISCIPLINES, type DisciplineValue } from "@/lib/disciplines"
 import { DISCIPLINE_PRESETS } from "@/lib/event-presets"
-import type { AgeRuleModeValue } from "@/lib/event-pricing"
-import { leagueTotalMatches } from "@/lib/league"
+import { birthYearForMaxAge, type AgeRuleModeValue } from "@/lib/event-pricing"
 import {
   ARTISTIC_LEVEL_LABELS,
   ARTISTIC_LEVEL_VALUES,
   levelCategoryPreset,
   type LevelCategoryDraft,
 } from "@/lib/artistic-levels"
+import { formatDateOnly, plural, SEX_RULE_LABELS } from "@/lib/utils"
 import { saveEvent } from "./actions"
+import {
+  birthYearRangeSummary,
+  categoryCount,
+  CategoryRowsEditor,
+  categoryRowsToText,
+  filledCategoryRows,
+  useCategoryRows,
+} from "./category-rows-editor"
+import { DialogFormFooter, useDiscardGuard, type DiscardGuard } from "./form-discard-guard"
+
+// Mismo tope que MAX_BULK_MODALITIES en actions.ts (un archivo "use server" no
+// puede exportar constantes). Se repite para avisar antes de enviar.
+const MAX_MODALITIES_PER_BATCH = 300
 
 export interface EventFormData {
   id: string
@@ -36,7 +49,11 @@ export interface EventFormData {
   isLevelChampionship: boolean
   athleteFee: string
   ageRuleMode: AgeRuleModeValue
-  /** true si el evento ya vendió inscripciones: la configuración se congela. */
+  /**
+   * true si alguna prueba tiene inscripciones en una orden (por pagar o
+   * pagada): disciplina, temporada, formato y cobro se congelan. Es la misma
+   * condición que aplica saveEvent en el servidor.
+   */
   hasLockedEntries: boolean
 }
 
@@ -45,44 +62,37 @@ export interface SeasonOption {
   name: string
   year: number
   isCurrent: boolean
-}
-
-interface CategoryDraft {
-  id: number
-  label: string
-  birthYearFrom: string
-  birthYearTo: string
-  maxAgeYears: string
-  isOpen: boolean
-  expectedFemaleTeams: string
-  expectedMaleTeams: string
-}
-
-function emptyCategory(id: number): CategoryDraft {
-  return {
-    id,
-    label: "",
-    birthYearFrom: "",
-    birthYearTo: "",
-    maxAgeYears: "",
-    isOpen: false,
-    expectedFemaleTeams: "3",
-    expectedMaleTeams: "3",
-  }
+  startDateISO: string
+  endDateISO: string
 }
 
 function isDisciplineValue(value: string): value is DisciplineValue {
   return (DISCIPLINE_VALUES as readonly string[]).includes(value)
 }
 
-export function EventFormFields({
+const SECTION = "space-y-4 rounded-surface border border-fdnda-border bg-fdnda-surface p-4"
+const LEGEND = "px-1 font-heading text-base font-bold text-fdnda-navy"
+const HELP = "mt-1 text-xs leading-5 text-fdnda-muted"
+const NOTE = "rounded-control bg-fdnda-sky/25 px-3 py-2 text-xs leading-5 text-fdnda-navy"
+const CHECK = "mt-0.5 h-4 w-4 shrink-0 accent-fdnda-turquoise-deep"
+const REMOVE_BUTTON =
+  "inline-flex h-11 w-11 items-center justify-center rounded-control text-fdnda-red-deep transition-colors hover:bg-fdnda-red-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-red/30"
+
+function EventForm({
   event,
   seasons,
+  pending,
+  guard,
+  onSubmit,
 }: {
   event?: EventFormData
   seasons: SeasonOption[]
+  pending: boolean
+  guard: DiscardGuard
+  onSubmit: (formData: FormData) => void
 }) {
-  // Un evento pertenece a una sola disciplina. Los eventos creados con el
+  const creating = !event
+  // Una competencia pertenece a una sola disciplina. Las creadas con el
   // formulario multidisciplina anterior conservan varias: se muestran en solo
   // lectura porque reducirlas borraría pruebas ya inscritas.
   const legacyDisciplines = event && event.disciplines.length > 1 ? event.disciplines : null
@@ -90,6 +100,7 @@ export function EventFormFields({
     event && isDisciplineValue(event.disciplines[0] ?? "")
       ? (event.disciplines[0] as DisciplineValue)
       : ""
+  const configLocked = event?.hasLockedEntries ?? false
 
   const [discipline, setDiscipline] = useState<DisciplineValue | "">(initialDiscipline)
   const preset = discipline ? DISCIPLINE_PRESETS[discipline] : null
@@ -107,25 +118,27 @@ export function EventFormFields({
   const [seasonId, setSeasonId] = useState(
     event?.seasonId || seasons.find((season) => season.isCurrent)?.id || ""
   )
-  const [levelRows, setLevelRows] = useState<LevelCategoryDraft[]>([])
-  const seasonYear = seasons.find((season) => season.id === seasonId)?.year ?? null
+  const season = seasons.find((option) => option.id === seasonId) ?? null
+  const seasonYear = season?.year ?? null
 
   // Las bases publican las categorías por edad; el año de la temporada las
-  // convierte en años de nacimiento. Es un punto de partida editable: si las
-  // bases cambian, el admin corrige sin esperar un despliegue.
-  function loadLevelPreset(year: number | null) {
-    setLevelRows(year === null ? [] : levelCategoryPreset(year))
-  }
+  // convierte en años de nacimiento. Es un punto de partida editable.
+  const [levelRows, setLevelRows] = useState<LevelCategoryDraft[]>([])
+  const [levelPresetYear, setLevelPresetYear] = useState<number | null>(null)
+  const [levelRowsEdited, setLevelRowsEdited] = useState(false)
 
   const [matchesPerTeam, setMatchesPerTeam] = useState("4")
   const [ageRuleMode, setAgeRuleMode] = useState<AgeRuleModeValue>(
     event?.ageRuleMode ?? "RANGE"
   )
   const [selectedModalities, setSelectedModalities] = useState<string[]>([])
-  const [categoryRows, setCategoryRows] = useState<CategoryDraft[]>([
-    emptyCategory(0),
-  ])
-  const nextCategoryId = useRef(1)
+  const categories = useCategoryRows(1)
+
+  function loadLevelPreset(year: number | null) {
+    setLevelRows(year === null ? [] : levelCategoryPreset(year))
+    setLevelPresetYear(year)
+    setLevelRowsEdited(false)
+  }
 
   // Elegir disciplina reinicia la configuración a lo que ese deporte espera.
   function chooseDiscipline(value: string) {
@@ -140,23 +153,19 @@ export function EventFormFields({
     setIsLeague(false)
     setIsLevelChampionship(false)
     setLevelRows([])
+    setLevelPresetYear(null)
+    setLevelRowsEdited(false)
     setAgeRuleMode(next.defaultAgeRuleMode)
     setSelectedModalities(next.modalities.map((modality) => modality.name))
-    const categoryId = nextCategoryId.current
-    nextCategoryId.current += 1
-    setCategoryRows([emptyCategory(categoryId)])
+    categories.reset()
   }
 
-  function updateCategory(
-    id: number,
-    field: Exclude<keyof CategoryDraft, "id" | "isOpen">,
-    value: string
-  ) {
-    setCategoryRows((current) =>
-      current.map((category) =>
-        category.id === id ? { ...category, [field]: value } : category
-      )
-    )
+  function chooseSeason(id: string) {
+    setSeasonId(id)
+    const year = seasons.find((option) => option.id === id)?.year ?? null
+    // Sin cambios del admin se recalcula solo; con cambios se ofrece recalcular
+    // (abajo) en vez de pisarlos sin avisar.
+    if (isLevelChampionship && !levelRowsEdited) loadLevelPreset(year)
   }
 
   function updateLevelRow(
@@ -164,6 +173,7 @@ export function EventFormFields({
     field: "label" | "from" | "to" | "maleFrom",
     value: string
   ) {
+    setLevelRowsEdited(true)
     setLevelRows((current) =>
       current.map((row, i) => {
         if (i !== index) return row
@@ -176,212 +186,276 @@ export function EventFormFields({
     )
   }
 
-  function setCategoryOpen(id: number, isOpen: boolean) {
-    setCategoryRows((current) =>
-      current.map((category) =>
-        category.id === id
-          ? { ...category, isOpen, maxAgeYears: isOpen ? "" : category.maxAgeYears }
-          : category
-      )
-    )
-  }
-
-  function addCategory() {
-    const categoryId = nextCategoryId.current
-    nextCategoryId.current += 1
-    setCategoryRows((current) => [...current, emptyCategory(categoryId)])
-  }
-
-  function removeCategory(id: number) {
-    setCategoryRows((current) => current.filter((category) => category.id !== id))
-  }
-
-  const categoriesText = categoryRows
-    .filter((category) => category.label.trim())
-    .map((category) =>
-      ageRuleMode === "MAX_AGE_ONLY"
-        ? `${category.label.trim()}|${category.isOpen ? "OPEN" : category.maxAgeYears}`
-        : `${category.label.trim()}|${category.birthYearFrom}|${category.birthYearTo}`
-    )
-    .join("\n")
+  const filledCategories = filledCategoryRows(categories.rows)
+  const categoriesText = categoryRowsToText(categories.rows, ageRuleMode)
   const leagueTeamCountsText = JSON.stringify(
-    categoryRows
-      .filter((category) => category.label.trim())
-      .map((category) => ({
-        FEMALE: Number(category.expectedFemaleTeams),
-        MALE: Number(category.expectedMaleTeams),
-      }))
+    filledCategories.map((category) => ({
+      FEMALE: Number(category.expectedFemaleTeams),
+      MALE: Number(category.expectedMaleTeams),
+    }))
   )
 
-  const configLocked = event?.hasLockedEntries ?? false
+  // Cuántas pruebas va a crear el alta: la misma cuenta que buildModalityRows
+  // (categorías × pruebas × sexos de cada prueba).
+  const chosenModalities = preset
+    ? preset.modalities.filter((modality) => selectedModalities.includes(modality.name))
+    : []
+  const sexVariants = chosenModalities.reduce(
+    (sum, modality) => sum + modality.sexRules.length,
+    0
+  )
+  const categoriesForCount = isLevelChampionship
+    ? levelRows.length
+    : categoryCount(categories.rows, ageRuleMode)
+  const modalityCount =
+    creating && chosenModalities.length > 0 ? categoriesForCount * sexVariants : 0
+
+  let blocked: string | null = null
+  if (preset && !configLocked && !chargesEntry && !chargesAthleteFee) {
+    blocked = "Marca al menos un concepto de cobro en la sección 3."
+  } else if (creating && chosenModalities.length > 0) {
+    if (isLevelChampionship && levelRows.length === 0) {
+      blocked = "Agrega al menos una categoría en algún nivel, o desmarca todas las pruebas."
+    } else if (
+      !isLevelChampionship &&
+      ageRuleMode === "MAX_AGE_ONLY" &&
+      categories.rows.length === 0
+    ) {
+      blocked = "Agrega al menos una categoría Sub-N u Open, o desmarca todas las pruebas."
+    } else if (isLeague && categories.rows.length === 0) {
+      // saveEvent exige planteles esperados por cada categoría de la liga.
+      blocked = "Agrega al menos una categoría: en una liga cada una declara sus planteles esperados."
+    } else if (modalityCount > MAX_MODALITIES_PER_BATCH) {
+      blocked = `Son ${modalityCount} pruebas y el máximo es ${MAX_MODALITIES_PER_BATCH}: quita categorías o pruebas.`
+    }
+  }
+
+  const submitLabel = !creating
+    ? "Guardar cambios de la competencia"
+    : !preset
+      ? "Crear competencia"
+      : modalityCount > 0
+        ? `Crear competencia y ${plural(modalityCount, "prueba", "pruebas")}`
+        : "Crear competencia sin pruebas"
+
+  function handleSubmit(formEvent: FormEvent<HTMLFormElement>) {
+    // onSubmit y no <form action>: React 19 reinicia los campos no controlados
+    // al terminar una acción de formulario, aunque el servidor devuelva un
+    // error, y el admin perdía nombre, fechas y precios por un solo dato mal.
+    formEvent.preventDefault()
+    if (blocked || pending) return
+    onSubmit(new FormData(formEvent.currentTarget))
+  }
+
+  const disciplineLabelText = discipline ? DISCIPLINES[discipline].label : ""
 
   return (
-    <>
+    <form onSubmit={handleSubmit} onChange={guard.markDirty} className="space-y-5">
       {event ? <input type="hidden" name="id" value={event.id} /> : null}
 
-      {/* 1 · Disciplina: gobierna todo lo que se muestra debajo. */}
-      <div>
-        <Label htmlFor="ev-discipline">Disciplina</Label>
-        {legacyDisciplines ? (
-          <div className="rounded-control border border-fdnda-border bg-fdnda-surface px-3.5 py-3 text-sm">
-            <p className="font-semibold text-fdnda-ink">
-              {legacyDisciplines
-                .map((value) =>
-                  isDisciplineValue(value) ? DISCIPLINES[value].label : value
-                )
-                .join(" · ")}
-            </p>
-            <p className="mt-1 text-xs leading-5 text-fdnda-muted">
-              Evento multidisciplina creado con el formulario anterior. Sus
-              disciplinas no se modifican desde acá para no dejar pruebas
-              huérfanas; configura cada una desde sus pruebas.
-            </p>
-            <input
-              type="hidden"
-              name="discipline"
-              value={legacyDisciplines[0] ?? ""}
+      {configLocked ? (
+        <p className={NOTE}>
+          Esta competencia ya tiene inscripciones en órdenes. Puedes cambiar nombre,
+          sede, ciudad, fechas, cierre de inscripciones y descripción. Disciplina,
+          temporada, formato y cobro quedan fijos. Las órdenes ya emitidas y sus
+          constancias conservan los datos con que se generaron.
+        </p>
+      ) : null}
+
+      {/* 1 · Disciplina y temporada: gobiernan todo lo que se muestra debajo. */}
+      <fieldset className={SECTION}>
+        <legend className={LEGEND}>1. Disciplina y temporada</legend>
+        <div>
+          <Label htmlFor="ev-discipline">Disciplina</Label>
+          {legacyDisciplines ? (
+            <div className="rounded-control border border-fdnda-border bg-white px-3.5 py-3 text-sm">
+              <p className="font-semibold text-fdnda-ink">
+                {legacyDisciplines
+                  .map((value) =>
+                    isDisciplineValue(value) ? DISCIPLINES[value].label : value
+                  )
+                  .join(" · ")}
+              </p>
+              <p className={HELP}>
+                Competencia de varias disciplinas creada con el formulario anterior.
+                Sus disciplinas no se cambian desde aquí para no dejar pruebas sin
+                disciplina. El cobro y las edades de abajo aplican a{" "}
+                {isDisciplineValue(legacyDisciplines[0] ?? "")
+                  ? DISCIPLINES[legacyDisciplines[0] as DisciplineValue].label
+                  : legacyDisciplines[0]}
+                .
+              </p>
+              <input type="hidden" name="discipline" value={legacyDisciplines[0] ?? ""} />
+            </div>
+          ) : (
+            <>
+              <Select
+                id="ev-discipline"
+                name="discipline"
+                required
+                value={discipline}
+                onChange={(e) => chooseDiscipline(e.target.value)}
+                disabled={configLocked}
+                aria-describedby="ev-discipline-help"
+              >
+                <option value="" disabled>
+                  Elige la disciplina
+                </option>
+                {DISCIPLINE_VALUES.map((value) => (
+                  <option key={value} value={value}>
+                    {DISCIPLINES[value].label}
+                  </option>
+                ))}
+              </Select>
+              {configLocked ? (
+                <input type="hidden" name="discipline" value={discipline} />
+              ) : null}
+              <p id="ev-discipline-help" className={HELP}>
+                {configLocked
+                  ? "Fija: la competencia tiene inscripciones en órdenes."
+                  : creating
+                    ? "Cada disciplina trae su forma de cobrar, de medir las edades y sus pruebas habituales. Cambiarla reinicia las secciones 3 y 4."
+                    : "Cambiarla reinicia el cobro y la forma de medir las edades."}
+              </p>
+            </>
+          )}
+        </div>
+
+        <div>
+          <Label htmlFor="ev-season">Temporada</Label>
+          <Select
+            id="ev-season"
+            name="seasonId"
+            required
+            value={seasonId}
+            onChange={(e) => chooseSeason(e.target.value)}
+            disabled={configLocked}
+            aria-describedby="ev-season-help"
+          >
+            <option value="" disabled>
+              Elige la temporada
+            </option>
+            {seasons.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name} ({option.year}){option.isCurrent ? " · vigente" : ""}
+              </option>
+            ))}
+          </Select>
+          {/* Un select deshabilitado no se envía: el espejo manda la misma
+              temporada, que con inscripciones en órdenes no puede cambiar. */}
+          {configLocked ? <input type="hidden" name="seasonId" value={seasonId} /> : null}
+          <p id="ev-season-help" className={HELP}>
+            {configLocked
+              ? "Fija: la competencia tiene inscripciones en órdenes."
+              : season
+                ? `Define las categorías y las afiliaciones que se exigen. Va del ${formatDateOnly(season.startDateISO)} al ${formatDateOnly(season.endDateISO)}: las fechas de la competencia deben caer dentro.`
+                : "Define las categorías y las afiliaciones que se exigen para competir."}
+          </p>
+        </div>
+      </fieldset>
+
+      {/* 2 · Datos de la competencia. */}
+      <fieldset className={SECTION}>
+        <legend className={LEGEND}>2. Datos de la competencia</legend>
+        <div>
+          <Label htmlFor="ev-name">Nombre de la competencia</Label>
+          <Input
+            id="ev-name"
+            name="name"
+            required
+            minLength={5}
+            maxLength={160}
+            placeholder="Campeonato Nacional …"
+            defaultValue={event?.name}
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="ev-venue">Sede (opcional)</Label>
+            <Input
+              id="ev-venue"
+              name="venue"
+              maxLength={120}
+              placeholder="Centro Acuático VIDENA"
+              defaultValue={event?.venue}
             />
           </div>
-        ) : (
-          <>
-            <Select
-              id="ev-discipline"
-              name="discipline"
+          <div>
+            <Label htmlFor="ev-city">Ciudad (opcional)</Label>
+            <Input
+              id="ev-city"
+              name="city"
+              maxLength={60}
+              placeholder="Lima"
+              defaultValue={event?.city}
+            />
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="ev-start">Fecha de inicio</Label>
+            <Input
+              id="ev-start"
+              name="startDate"
+              type="date"
               required
-              value={discipline}
-              onChange={(e) => chooseDiscipline(e.target.value)}
-              disabled={configLocked}
-            >
-              <option value="" disabled>
-                Selecciona la disciplina
-              </option>
-              {DISCIPLINE_VALUES.map((value) => (
-                <option key={value} value={value}>
-                  {DISCIPLINES[value].label}
-                </option>
-              ))}
-            </Select>
-            {configLocked ? (
-              <input type="hidden" name="discipline" value={discipline} />
-            ) : null}
-            <p className="mt-1 text-xs text-fdnda-muted">
-              {configLocked
-                ? "El evento ya tiene inscripciones en una orden: la disciplina y su cobro quedaron fijos."
-                : "Cada disciplina trae su propia forma de cobrar, medir edades y nombrar sus pruebas."}
-            </p>
-          </>
-        )}
-      </div>
-
-      {/* 2 · Datos generales. */}
-      <div>
-        <Label htmlFor="ev-season">Temporada deportiva</Label>
-        <Select
-          id="ev-season"
-          name="seasonId"
-          required
-          value={seasonId}
-          onChange={(e) => {
-            setSeasonId(e.target.value)
-            const year = seasons.find((season) => season.id === e.target.value)?.year
-            if (isLevelChampionship) loadLevelPreset(year ?? null)
-          }}
-        >
-          <option value="" disabled>
-            Selecciona una temporada
-          </option>
-          {seasons.map((season) => (
-            <option key={season.id} value={season.id}>
-              {season.name} ({season.year}){season.isCurrent ? " · vigente" : ""}
-            </option>
-          ))}
-        </Select>
-        <p className="mt-1 text-xs text-fdnda-muted">
-          Define las categorías y afiliaciones exigidas para competir.
-        </p>
-      </div>
-      <div>
-        <Label htmlFor="ev-name">Nombre del evento</Label>
-        <Input
-          id="ev-name"
-          name="name"
-          required
-          placeholder="Campeonato Nacional …"
-          defaultValue={event?.name}
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label htmlFor="ev-venue">Sede</Label>
-          <Input
-            id="ev-venue"
-            name="venue"
-            placeholder="Centro Acuático VIDENA"
-            defaultValue={event?.venue}
-          />
+              min={season?.startDateISO}
+              max={season?.endDateISO}
+              defaultValue={event?.startDateISO}
+            />
+          </div>
+          <div>
+            <Label htmlFor="ev-end">Fecha de fin</Label>
+            <Input
+              id="ev-end"
+              name="endDate"
+              type="date"
+              required
+              min={season?.startDateISO}
+              max={season?.endDateISO}
+              defaultValue={event?.endDateISO}
+            />
+          </div>
         </div>
         <div>
-          <Label htmlFor="ev-city">Ciudad</Label>
-          <Input id="ev-city" name="city" placeholder="Lima" defaultValue={event?.city} />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label htmlFor="ev-start">Inicio</Label>
+          <Label htmlFor="ev-deadline">Cierre de inscripciones (hora de Lima)</Label>
           <Input
-            id="ev-start"
-            name="startDate"
-            type="date"
+            id="ev-deadline"
+            name="registrationDeadline"
+            type="datetime-local"
             required
-            defaultValue={event?.startDateISO}
+            defaultValue={event?.deadlineLocal}
+            aria-describedby="ev-deadline-help"
           />
+          <p id="ev-deadline-help" className={HELP}>
+            Desde ese momento la competencia deja de aparecer a los clubes y ya no
+            pueden generar órdenes.
+          </p>
         </div>
         <div>
-          <Label htmlFor="ev-end">Fin</Label>
-          <Input
-            id="ev-end"
-            name="endDate"
-            type="date"
-            required
-            defaultValue={event?.endDateISO}
+          <Label htmlFor="ev-description">Descripción (opcional)</Label>
+          <Textarea
+            id="ev-description"
+            name="description"
+            rows={3}
+            maxLength={2000}
+            defaultValue={event?.description}
           />
         </div>
-      </div>
-      <div>
-        <Label htmlFor="ev-deadline">Cierre de inscripciones (hora Lima)</Label>
-        <Input
-          id="ev-deadline"
-          name="registrationDeadline"
-          type="datetime-local"
-          required
-          defaultValue={event?.deadlineLocal}
-        />
-      </div>
-      <div>
-        <Label htmlFor="ev-description">Descripción (opcional)</Label>
-        <Textarea
-          id="ev-description"
-          name="description"
-          rows={3}
-          defaultValue={event?.description}
-        />
-      </div>
+      </fieldset>
 
       {/* Un fieldset deshabilitado deshabilita todo lo que tiene dentro, y un
-          control deshabilitado no se envía. Sin estos espejos, editar un evento
-          con inscripciones pagadas mandaba la configuración vacía y fallaba con
-          «El evento debe cobrar al menos un concepto» — un error viejo, anterior
-          al campeonato de niveles, que además dejaba inalcanzable la guarda de
-          «el formato no puede cambiar». Van FUERA del fieldset, igual que el
-          espejo de `discipline`: adentro quedarían deshabilitados también. Los
-          valores son los que el evento ya tiene, porque con inscripciones
-          pagadas no pueden cambiar, solo confirmarse. Las casillas se envían
-          como «on» solo cuando están marcadas, que es lo que hace un checkbox. */}
+          control deshabilitado no se envía. Sin estos espejos, editar una
+          competencia con inscripciones en órdenes mandaba la configuración
+          vacía y fallaba con «Marca al menos un concepto de cobro». Van FUERA
+          del fieldset, igual que el espejo de `discipline`: adentro quedarían
+          deshabilitados también. Los valores son los que la competencia ya
+          tiene, porque no pueden cambiar, solo confirmarse. Las casillas se
+          envían como «on» solo cuando están marcadas, que es lo que hace un
+          checkbox. */}
       {discipline && preset && configLocked ? (
         <>
-          {chargesEntry ? (
-            <input type="hidden" name="chargesEntry" value="on" />
-          ) : null}
+          {chargesEntry ? <input type="hidden" name="chargesEntry" value="on" /> : null}
           {chargesAthleteFee ? (
             <input type="hidden" name="chargesAthleteFee" value="on" />
           ) : null}
@@ -394,70 +468,121 @@ export function EventFormFields({
         </>
       ) : null}
 
-      {/* 3 · Configuración propia de la disciplina elegida. */}
+      {/* 3 · Cobro y formato propios de la disciplina elegida. */}
       {discipline && preset ? (
-        <fieldset
-          className="rounded-surface border border-fdnda-border bg-fdnda-surface p-4"
-          disabled={configLocked}
-        >
-          <legend className="px-1 text-sm font-bold text-fdnda-navy">
-            Configuración de {DISCIPLINES[discipline].label}
-          </legend>
+        <fieldset className={SECTION} disabled={configLocked}>
+          <legend className={LEGEND}>3. Cobro y formato de {disciplineLabelText}</legend>
+          {configLocked ? (
+            <p className={HELP}>Fijos: la competencia tiene inscripciones en órdenes.</p>
+          ) : null}
 
-          <div className="mt-2 space-y-4">
-            <fieldset>
-              <legend className="text-sm font-bold text-fdnda-ink">Qué se cobra</legend>
-              <p className="mt-1 text-xs leading-5 text-fdnda-muted">
-                {preset.pricingHint}
+          <fieldset>
+            <legend className="text-sm font-semibold text-fdnda-ink">Qué se cobra</legend>
+            <p className={HELP}>{preset.pricingHint}</p>
+            <label className="mt-2 flex items-start gap-2.5 text-sm">
+              <input
+                type="checkbox"
+                name="chargesEntry"
+                checked={chargesEntry}
+                onChange={(e) => setChargesEntry(e.target.checked)}
+                className={CHECK}
+              />
+              <span>
+                <span className="font-medium text-fdnda-ink">Precio por formación</span>
+                <span className="block text-xs leading-5 text-fdnda-muted">
+                  Cada solo, dueto, equipo o plantel paga el precio de su prueba.
+                </span>
+              </span>
+            </label>
+            <label className="mt-2 flex items-start gap-2.5 text-sm">
+              <input
+                type="checkbox"
+                name="chargesAthleteFee"
+                checked={chargesAthleteFee}
+                onChange={(e) => setChargesAthleteFee(e.target.checked)}
+                className={CHECK}
+              />
+              <span>
+                <span className="font-medium text-fdnda-ink">
+                  Cuota de competencia por deportista
+                </span>
+                <span className="block text-xs leading-5 text-fdnda-muted">
+                  Se cobra una sola vez por deportista en toda la competencia.
+                </span>
+              </span>
+            </label>
+            {chargesEntry && chargesAthleteFee ? (
+              <p className={`mt-2 ${NOTE}`}>
+                Cada club elige en su planilla si paga el precio por formación, la
+                cuota de competencia por deportista o ambos (al menos uno).
               </p>
-              <label className="mt-2 flex items-start gap-2.5 text-sm">
-                <input
-                  type="checkbox"
-                  name="chargesEntry"
-                  checked={chargesEntry}
-                  onChange={(e) => setChargesEntry(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 accent-fdnda-turquoise-deep"
-                />
-                <span>Inscripción por formación (cada plantel, dueto o equipo paga)</span>
-              </label>
-              <label className="mt-2 flex items-start gap-2.5 text-sm">
-                <input
-                  type="checkbox"
-                  name="chargesAthleteFee"
-                  checked={chargesAthleteFee}
-                  onChange={(e) => setChargesAthleteFee(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 accent-fdnda-turquoise-deep"
-                />
-                <span>Cuota por deportista (una sola vez en todo el evento)</span>
-              </label>
-              {chargesEntry && chargesAthleteFee ? (
-                <p className="mt-2 rounded-control bg-fdnda-sky/25 p-2 text-xs text-fdnda-navy">
-                  Con los dos conceptos, cada club elige en su planilla cuáles
-                  paga. Debe marcar al menos uno.
-                </p>
-              ) : null}
-            </fieldset>
+            ) : null}
+            {!chargesEntry && !chargesAthleteFee ? (
+              <p className="mt-2 text-xs font-semibold leading-5 text-fdnda-red-deep" role="alert">
+                Marca al menos un concepto: la competencia tiene que cobrar algo.
+              </p>
+            ) : null}
+            {event && !configLocked && chargesEntry !== event.chargesEntry ? (
+              <p className={`mt-2 ${NOTE}`}>
+                {chargesEntry
+                  ? "Revisa el precio por formación de cada prueba antes de abrir inscripciones: las creadas sin este cobro tienen S/ 0."
+                  : "Las pruebas conservan su precio, pero ya no se cobra: solo queda la cuota de competencia por deportista."}
+              </p>
+            ) : null}
+          </fieldset>
 
-            {discipline === "WATER_POLO" ? (
+          {chargesAthleteFee ? (
+            <div>
+              <Label htmlFor="ev-athlete-fee">Cuota de competencia por deportista (S/)</Label>
+              <Input
+                id="ev-athlete-fee"
+                name="athleteFee"
+                type="number"
+                step="0.01"
+                min={0.01}
+                required
+                defaultValue={event?.athleteFee}
+                placeholder="80.00"
+                aria-describedby="ev-athlete-fee-help"
+              />
+              <p id="ev-athlete-fee-help" className={HELP}>
+                Se cobra una sola vez por deportista aunque compita en varias pruebas.
+              </p>
+            </div>
+          ) : (
+            <input type="hidden" name="athleteFee" value="" />
+          )}
+
+          {discipline === "WATER_POLO" ? (
+            <div>
               <label className="flex items-start gap-2.5 rounded-control border border-fdnda-border bg-white px-3 py-2.5 text-sm">
                 <input
                   type="checkbox"
                   name="isLeague"
                   checked={isLeague}
-                  onChange={(event) => setIsLeague(event.target.checked)}
-                  className="mt-0.5 h-4 w-4 accent-fdnda-turquoise-deep"
+                  onChange={(e) => setIsLeague(e.target.checked)}
+                  className={CHECK}
                 />
                 <span>
                   <span className="font-medium text-fdnda-ink">Es una liga</span>
                   <span className="mt-0.5 block text-xs leading-5 text-fdnda-muted">
-                    El precio de cada plantel sale de los partidos que juega en
-                    la fase preliminar.
+                    Cada plantel paga los partidos que juega en la fase preliminar:
+                    precio por partido × partidos por plantel.
                   </span>
                 </span>
               </label>
-            ) : null}
+              {event && !configLocked && isLeague !== event.isLeague ? (
+                <p className={`mt-2 ${NOTE}`}>
+                  {isLeague
+                    ? "Las pruebas que ya existen no cambian: edita cada una para completar el precio por partido, los partidos por plantel y los planteles esperados antes de abrir inscripciones."
+                    : "Las pruebas que ya existen no cambian: conservan el precio que tienen."}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
-            {discipline === "ARTISTIC_SWIMMING" ? (
+          {discipline === "ARTISTIC_SWIMMING" ? (
+            <div>
               <label className="flex items-start gap-2.5 rounded-control border border-fdnda-border bg-white px-3 py-2.5 text-sm">
                 <input
                   type="checkbox"
@@ -465,551 +590,427 @@ export function EventFormFields({
                   checked={isLevelChampionship}
                   onChange={(e) => {
                     setIsLevelChampionship(e.target.checked)
-                    loadLevelPreset(e.target.checked ? seasonYear : null)
+                    // Volver a marcar la casilla no pisa categorías ya cargadas.
+                    if (e.target.checked && levelRows.length === 0) {
+                      loadLevelPreset(seasonYear)
+                    }
                   }}
-                  className="mt-0.5 h-4 w-4 accent-fdnda-turquoise-deep"
+                  className={CHECK}
                 />
                 <span>
                   <span className="font-medium text-fdnda-ink">
                     Es un campeonato de niveles
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-fdnda-muted">
-                    Básico, intermedio y avanzado compiten con categorías por
-                    edad propias. Se cargan las de las bases y puedes editarlas.
+                    Básico, Intermedio y Avanzado compiten con categorías por edad
+                    propias. Al crear la competencia se cargan las de las bases y
+                    puedes editarlas.
                   </span>
                 </span>
               </label>
-            ) : null}
-
-            {chargesAthleteFee ? (
-              <div>
-                <Label htmlFor="ev-athlete-fee">Cuota por deportista (S/)</Label>
-                <Input
-                  id="ev-athlete-fee"
-                  name="athleteFee"
-                  type="number"
-                  step="0.01"
-                  min={0.01}
-                  required
-                  defaultValue={event?.athleteFee}
-                  placeholder="80.00"
-                />
-                <p className="mt-1 text-xs leading-5 text-fdnda-muted">
-                  Se cobra una sola vez por deportista aunque compita en varias
-                  pruebas.
+              {event && !configLocked && isLevelChampionship !== event.isLevelChampionship ? (
+                <p className={`mt-2 ${NOTE}`}>
+                  {isLevelChampionship
+                    ? "Las pruebas que ya existen no cambian: asígnales un nivel con «Editar prueba» o genera pruebas nuevas en lote."
+                    : "Las pruebas que ya existen no cambian."}
                 </p>
-              </div>
-            ) : (
-              <input type="hidden" name="athleteFee" value="" />
-            )}
-
-            <div>
-              <Label htmlFor="ev-age-rule">Cómo se miden las edades</Label>
-              <Select
-                id="ev-age-rule"
-                name="ageRuleMode"
-                value={ageRuleMode}
-                onChange={(e) => setAgeRuleMode(e.target.value as AgeRuleModeValue)}
-              >
-                <option value="RANGE">Rango de años de nacimiento (desde–hasta)</option>
-                <option value="MAX_AGE_ONLY">Categorías «Sub-N» u Open</option>
-              </Select>
-              <p className="mt-1 text-xs leading-5 text-fdnda-muted">
-                {ageRuleMode === "MAX_AGE_ONLY"
-                  ? "Sub-18 admite a los nacidos en ese año o después; Open no tiene límite de edad."
-                  : preset.categoryHint}
-              </p>
+              ) : null}
             </div>
+          ) : null}
 
-            {/* Pruebas iniciales: solo al crear, para que el evento nazca listo. */}
-            {!event ? (
-              <>
-                <div>
-                  <Label>Pruebas del evento</Label>
-                  <div className="space-y-2">
-                    {preset.modalities.map((modality) => (
-                      <label
-                        key={modality.name}
-                        className="flex items-start gap-2.5 text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          name="presetModalities"
-                          value={modality.name}
-                          checked={selectedModalities.includes(modality.name)}
-                          onChange={(e) =>
-                            setSelectedModalities((current) =>
-                              e.target.checked
-                                ? [...current, modality.name]
-                                : current.filter((name) => name !== modality.name)
-                            )
-                          }
-                          className="mt-0.5 h-4 w-4 accent-fdnda-turquoise-deep"
-                        />
-                        <span>
-                          <span className="font-medium text-fdnda-ink">
-                            {modality.name}
-                          </span>
-                          <span className="ml-2 text-xs text-fdnda-muted">
-                            {modality.minAthletes === modality.maxAthletes
-                              ? `${modality.minAthletes} integrante(s)`
-                              : `${modality.minAthletes}–${modality.maxAthletes} integrantes`}
-                          </span>
-                        </span>
-                      </label>
-                    ))}
+          <div>
+            <Label htmlFor="ev-age-rule">Cómo se miden las edades</Label>
+            <Select
+              id="ev-age-rule"
+              name="ageRuleMode"
+              value={ageRuleMode}
+              onChange={(e) => setAgeRuleMode(e.target.value as AgeRuleModeValue)}
+              aria-describedby="ev-age-rule-help"
+            >
+              <option value="RANGE">Rango de años de nacimiento (desde–hasta)</option>
+              <option value="MAX_AGE_ONLY">Categorías Sub-N u Open</option>
+            </Select>
+            <p id="ev-age-rule-help" className={HELP}>
+              {ageRuleMode === "MAX_AGE_ONLY"
+                ? seasonYear !== null
+                  ? `Solo cuenta la edad máxima: Sub-18 en la temporada ${seasonYear} admite nacidos en ${birthYearForMaxAge(seasonYear, 18)} o después. Open no tiene límite de edad.`
+                  : "Solo cuenta la edad máxima; Open no tiene límite de edad. Elige la temporada para ver desde qué año admite cada categoría."
+                : preset.categoryHint}
+            </p>
+            {event && !configLocked && ageRuleMode !== event.ageRuleMode ? (
+              <p className={`mt-2 ${NOTE}`}>
+                {ageRuleMode === "MAX_AGE_ONLY"
+                  ? "Las pruebas que ya existen no cambian: edita y guarda las que tengan año «Nacidos hasta» antes de abrir inscripciones."
+                  : "Las pruebas que ya existen no cambian."}
+              </p>
+            ) : null}
+          </div>
+        </fieldset>
+      ) : null}
+
+      {/* 4 · Pruebas iniciales: solo al crear, para que la competencia nazca lista. */}
+      {creating && discipline && preset ? (
+        <fieldset className={SECTION}>
+          <legend className={LEGEND}>4. Pruebas iniciales (opcional)</legend>
+          <p className={HELP}>
+            Se crea una prueba por cada combinación de prueba, categoría y sexo.
+            Después puedes agregar, editar o desactivar pruebas.
+          </p>
+
+          <fieldset>
+            <legend className="text-sm font-semibold text-fdnda-ink">Pruebas</legend>
+            <div className="mt-2 space-y-2">
+              {preset.modalities.map((modality) => (
+                <label key={modality.name} className="flex items-start gap-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    name="presetModalities"
+                    value={modality.name}
+                    checked={selectedModalities.includes(modality.name)}
+                    onChange={(e) =>
+                      setSelectedModalities((current) =>
+                        e.target.checked
+                          ? [...current, modality.name]
+                          : current.filter((name) => name !== modality.name)
+                      )
+                    }
+                    className={CHECK}
+                  />
+                  <span>
+                    <span className="font-medium text-fdnda-ink">{modality.name}</span>
+                    <span className="block text-xs leading-5 text-fdnda-muted">
+                      {modality.sexRules.map((rule) => SEX_RULE_LABELS[rule]).join(" · ")}
+                      {" · "}
+                      {modality.minAthletes === modality.maxAthletes
+                        ? plural(modality.minAthletes, "integrante", "integrantes")
+                        : `${modality.minAthletes} a ${modality.maxAthletes} integrantes`}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {chosenModalities.length === 0 ? (
+              <p className={`mt-2 ${NOTE}`}>
+                Sin pruebas marcadas: la competencia se crea vacía y agregas las
+                pruebas después.
+              </p>
+            ) : null}
+          </fieldset>
+
+          {chosenModalities.length > 0 ? (
+            <>
+              {isLeague ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {chargesEntry ? (
+                    <div>
+                      <Label htmlFor="ev-preset-price">Precio por partido (S/)</Label>
+                      <Input
+                        id="ev-preset-price"
+                        name="presetPrice"
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        required
+                        placeholder="60.00"
+                      />
+                    </div>
+                  ) : null}
+                  <div>
+                    <Label htmlFor="ev-matches">Partidos por plantel</Label>
+                    <Input
+                      id="ev-matches"
+                      name="presetMatchesPerTeam"
+                      type="number"
+                      min={1}
+                      max={40}
+                      required
+                      value={matchesPerTeam}
+                      onChange={(e) => setMatchesPerTeam(e.target.value)}
+                    />
                   </div>
-                  <p className="mt-1 text-xs leading-5 text-fdnda-muted">
-                    Se generan combinando cada prueba con las categorías de abajo.
-                    Después puedes agregar, editar o desactivar pruebas.
+                  <p className={`sm:col-span-2 ${HELP}`}>
+                    {chargesEntry
+                      ? `Cada plantel paga solo sus ${plural(Number(matchesPerTeam) || 0, "partido", "partidos")} de la fase preliminar.`
+                      : `Cada plantel juega ${plural(Number(matchesPerTeam) || 0, "partido", "partidos")} en la fase preliminar.`}{" "}
+                    Debajo, cada categoría calcula el total de partidos.
                   </p>
                 </div>
+              ) : chargesEntry ? (
+                <div>
+                  <Label htmlFor="ev-preset-price">Precio por formación (S/)</Label>
+                  <Input
+                    id="ev-preset-price"
+                    name="presetPrice"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    required
+                    placeholder="60.00"
+                    aria-describedby="ev-preset-price-help"
+                  />
+                  <p id="ev-preset-price-help" className={HELP}>
+                    Todas las pruebas creadas tendrán este precio; luego puedes
+                    cambiarlo en cada una.
+                  </p>
+                </div>
+              ) : null}
+              {!chargesEntry ? (
+                <p className={NOTE}>
+                  Sin precio por formación: esta competencia cobra solo la cuota de
+                  competencia por deportista.
+                </p>
+              ) : null}
 
-                {selectedModalities.length > 0 ? (
-                  <>
-                    <div>
-                      {isLevelChampionship ? (
-                        <>
-                          <input
-                            type="hidden"
-                            name="presetLevelCategories"
-                            value={JSON.stringify(levelRows)}
-                          />
-                          {ARTISTIC_LEVEL_VALUES.map((level) => (
-                            <div
-                              key={level}
-                              className="rounded-control border border-fdnda-border bg-white p-3"
-                            >
-                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                                <p className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
-                                  {ARTISTIC_LEVEL_LABELS[level]}
-                                </p>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() =>
-                                    setLevelRows((current) => [
-                                      ...current,
-                                      {
-                                        level,
-                                        label: "",
-                                        from: null,
-                                        to: null,
-                                        maleFrom: null,
-                                      },
-                                    ])
-                                  }
-                                >
-                                  <Plus className="h-4 w-4" aria-hidden="true" />
-                                  Agregar categoría
-                                </Button>
-                              </div>
-                              {levelRows.filter((row) => row.level === level).length ===
-                              0 ? (
-                                <p className="text-xs text-fdnda-muted">
-                                  Sin categorías: este nivel no genera pruebas.
-                                </p>
-                              ) : null}
-                              <div className="space-y-2">
-                                {levelRows.map((row, index) =>
-                                  row.level !== level ? null : (
-                                    <div
-                                      key={index}
-                                      className="grid items-end gap-2 sm:grid-cols-[minmax(9rem,1.4fr)_repeat(3,minmax(6rem,1fr))_auto]"
-                                    >
-                                      <div>
-                                        <Label htmlFor={`lv-label-${index}`}>
-                                          Categoría
-                                        </Label>
-                                        <Input
-                                          id={`lv-label-${index}`}
-                                          value={row.label}
-                                          onChange={(e) =>
-                                            updateLevelRow(index, "label", e.target.value)
-                                          }
-                                          maxLength={80}
-                                          required
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label htmlFor={`lv-from-${index}`}>Desde</Label>
-                                        <Input
-                                          id={`lv-from-${index}`}
-                                          type="number"
-                                          inputMode="numeric"
-                                          min={1950}
-                                          max={2050}
-                                          value={row.from ?? ""}
-                                          onChange={(e) =>
-                                            updateLevelRow(index, "from", e.target.value)
-                                          }
-                                          placeholder="Sin tope"
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label htmlFor={`lv-to-${index}`}>Hasta</Label>
-                                        <Input
-                                          id={`lv-to-${index}`}
-                                          type="number"
-                                          inputMode="numeric"
-                                          min={1950}
-                                          max={2050}
-                                          value={row.to ?? ""}
-                                          onChange={(e) =>
-                                            updateLevelRow(index, "to", e.target.value)
-                                          }
-                                          placeholder="Sin tope"
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label htmlFor={`lv-male-${index}`}>
-                                          Varones desde
-                                        </Label>
-                                        <Input
-                                          id={`lv-male-${index}`}
-                                          type="number"
-                                          inputMode="numeric"
-                                          min={1950}
-                                          max={2050}
-                                          value={row.maleFrom ?? ""}
-                                          onChange={(e) =>
-                                            updateLevelRow(index, "maleFrom", e.target.value)
-                                          }
-                                          placeholder="Igual"
-                                        />
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setLevelRows((current) =>
-                                            current.filter((_, i) => i !== index)
-                                          )
-                                        }
-                                        className="inline-flex h-9 w-9 items-center justify-center rounded-control text-fdnda-red-deep transition-colors hover:bg-fdnda-red-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-red/30"
-                                        aria-label={`Quitar ${row.label || "categoría"}`}
-                                      >
-                                        <Trash2 className="h-4 w-4" aria-hidden="true" />
-                                      </button>
-                                    </div>
-                                  )
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </>
-                      ) : (
-                        <>
-                          <div className="flex flex-wrap items-end justify-between gap-2">
-                            <div>
-                              <Label className="mb-0">Categorías</Label>
-                              <p className="mt-1 text-xs leading-5 text-fdnda-muted">
-                                {ageRuleMode === "MAX_AGE_ONLY"
-                                  ? "Agrega cada grupo e indica su edad máxima."
-                                  : "Agrega cada grupo y su rango inclusivo de años de nacimiento."}
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={addCategory}
-                            >
-                              <Plus className="h-4 w-4" aria-hidden="true" />
-                              Agregar categoría
-                            </Button>
-                          </div>
-
-                          <input
-                            type="hidden"
-                            name="presetCategoriesText"
-                            value={categoriesText}
-                          />
-                          {isLeague ? (
-                            <input
-                              type="hidden"
-                              name="presetLeagueTeamCounts"
-                              value={leagueTeamCountsText}
-                            />
-                          ) : null}
-
-                          <div className="mt-3 space-y-3">
-                            {categoryRows.map((category, index) => (
-                              <div
-                                key={category.id}
-                                className="rounded-control border border-fdnda-border bg-white p-3"
-                              >
-                                <div className="mb-2 flex items-center justify-between gap-3">
-                                  <p className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
-                                    Categoría {index + 1}
-                                  </p>
-                                  {categoryRows.length > 1 ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => removeCategory(category.id)}
-                                      className="inline-flex h-9 w-9 items-center justify-center rounded-control text-fdnda-red-deep transition-colors hover:bg-fdnda-red-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-red/30"
-                                      aria-label={`Quitar categoría ${index + 1}`}
-                                    >
-                                      <Trash2 className="h-4 w-4" aria-hidden="true" />
-                                    </button>
-                                  ) : null}
-                                </div>
-                                <div
-                                  className={`grid gap-3 ${
-                                    ageRuleMode === "MAX_AGE_ONLY"
-                                      ? "sm:grid-cols-[minmax(12rem,1.35fr)_minmax(10rem,1fr)]"
-                                      : "sm:grid-cols-[minmax(12rem,1.35fr)_repeat(2,minmax(8rem,1fr))]"
-                                  }`}
-                                >
+              {isLevelChampionship ? (
+                <div className="space-y-3">
+                  <input
+                    type="hidden"
+                    name="presetLevelCategories"
+                    value={JSON.stringify(levelRows)}
+                  />
+                  {levelRowsEdited &&
+                  seasonYear !== null &&
+                  levelPresetYear !== null &&
+                  seasonYear !== levelPresetYear ? (
+                    <div className={NOTE}>
+                      <p>
+                        Cambiaste la temporada: las categorías de abajo se calcularon
+                        para {levelPresetYear}. Recalcularlas descarta tus cambios.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={() => loadLevelPreset(seasonYear)}
+                      >
+                        Recalcular categorías para {seasonYear}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {ARTISTIC_LEVEL_VALUES.map((level) => {
+                    const levelLabel = ARTISTIC_LEVEL_LABELS[level]
+                    const rowsInLevel = levelRows.filter((row) => row.level === level)
+                    return (
+                      <fieldset
+                        key={level}
+                        className="rounded-control border border-fdnda-border bg-white p-3"
+                      >
+                        <legend className="px-1 text-sm font-semibold text-fdnda-ink">
+                          Nivel {levelLabel}
+                        </legend>
+                        {rowsInLevel.length === 0 ? (
+                          <p className="text-xs text-fdnda-muted">
+                            Sin categorías: este nivel no crea pruebas.
+                          </p>
+                        ) : null}
+                        <div className="space-y-3">
+                          {levelRows.map((row, index) =>
+                            row.level !== level ? null : (
+                              <div key={index}>
+                                <div className="grid items-end gap-2 sm:grid-cols-[minmax(9rem,1.4fr)_repeat(3,minmax(6rem,1fr))_auto]">
                                   <div>
-                                    <Label
-                                      htmlFor={`ev-category-label-${category.id}`}
-                                      className="whitespace-nowrap"
-                                    >
-                                      Nombre del grupo
+                                    <Label htmlFor={`lv-label-${index}`}>
+                                      Nombre de la categoría
                                     </Label>
                                     <Input
-                                      id={`ev-category-label-${category.id}`}
-                                      value={category.label}
-                                      onChange={(event) =>
-                                        updateCategory(category.id, "label", event.target.value)
-                                      }
-                                      placeholder={
-                                        ageRuleMode === "MAX_AGE_ONLY" ? "Sub 16" : "Grupo D"
+                                      id={`lv-label-${index}`}
+                                      value={row.label}
+                                      onChange={(e) =>
+                                        updateLevelRow(index, "label", e.target.value)
                                       }
                                       maxLength={80}
                                       required
                                     />
                                   </div>
-
-                                  {ageRuleMode === "MAX_AGE_ONLY" ? (
-                                    <div>
-                                      <Label
-                                        htmlFor={`ev-category-age-${category.id}`}
-                                        className="whitespace-nowrap"
-                                      >
-                                        Edad máxima
-                                      </Label>
-                                      <Input
-                                        id={`ev-category-age-${category.id}`}
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={1}
-                                        max={99}
-                                        value={category.maxAgeYears}
-                                        onChange={(event) =>
-                                          updateCategory(
-                                            category.id,
-                                            "maxAgeYears",
-                                            event.target.value
-                                          )
-                                        }
-                                        placeholder={category.isOpen ? "Sin límite" : "15"}
-                                        disabled={category.isOpen}
-                                        required={!category.isOpen}
-                                      />
-                                      <label className="mt-2 flex items-center gap-2 text-xs font-medium text-fdnda-muted">
-                                        <input
-                                          type="checkbox"
-                                          checked={category.isOpen}
-                                          onChange={(event) =>
-                                            setCategoryOpen(category.id, event.target.checked)
-                                          }
-                                          className="h-4 w-4 accent-fdnda-turquoise-deep"
-                                        />
-                                        Categoría Open, sin límite de edad
-                                      </label>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <div>
-                                        <Label
-                                          htmlFor={`ev-category-from-${category.id}`}
-                                          className="whitespace-nowrap"
-                                        >
-                                          Nacidos desde
-                                        </Label>
-                                        <Input
-                                          id={`ev-category-from-${category.id}`}
-                                          type="number"
-                                          inputMode="numeric"
-                                          min={1950}
-                                          max={category.birthYearTo || 2050}
-                                          value={category.birthYearFrom}
-                                          onChange={(event) =>
-                                            updateCategory(
-                                              category.id,
-                                              "birthYearFrom",
-                                              event.target.value
-                                            )
-                                          }
-                                          placeholder="2015"
-                                          required
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label
-                                          htmlFor={`ev-category-to-${category.id}`}
-                                          className="whitespace-nowrap"
-                                        >
-                                          Nacidos hasta
-                                        </Label>
-                                        <Input
-                                          id={`ev-category-to-${category.id}`}
-                                          type="number"
-                                          inputMode="numeric"
-                                          min={category.birthYearFrom || 1950}
-                                          max={2050}
-                                          value={category.birthYearTo}
-                                          onChange={(event) =>
-                                            updateCategory(
-                                              category.id,
-                                              "birthYearTo",
-                                              event.target.value
-                                            )
-                                          }
-                                          placeholder="2017"
-                                          required
-                                        />
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                                {isLeague ? (
-                                  <div className="mt-3 grid gap-3 border-t border-fdnda-border pt-3 sm:grid-cols-2">
-                                    <div>
-                                      <Label
-                                        htmlFor={`ev-category-female-teams-${category.id}`}
-                                      >
-                                        Equipos esperados · Femenino
-                                      </Label>
-                                      <Input
-                                        id={`ev-category-female-teams-${category.id}`}
-                                        type="number"
-                                        min={1}
-                                        max={40}
-                                        value={category.expectedFemaleTeams}
-                                        onChange={(event) =>
-                                          updateCategory(
-                                            category.id,
-                                            "expectedFemaleTeams",
-                                            event.target.value
-                                          )
-                                        }
-                                        required
-                                      />
-                                      <p className="mt-1 text-xs text-fdnda-muted">
-                                        {leagueTotalMatches({
-                                          expectedTeams:
-                                            Number(category.expectedFemaleTeams) || 0,
-                                          matchesPerTeam: Number(matchesPerTeam) || 0,
-                                        })}{" "}
-                                        partidos preliminares
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <Label
-                                        htmlFor={`ev-category-male-teams-${category.id}`}
-                                      >
-                                        Equipos esperados · Masculino
-                                      </Label>
-                                      <Input
-                                        id={`ev-category-male-teams-${category.id}`}
-                                        type="number"
-                                        min={1}
-                                        max={40}
-                                        value={category.expectedMaleTeams}
-                                        onChange={(event) =>
-                                          updateCategory(
-                                            category.id,
-                                            "expectedMaleTeams",
-                                            event.target.value
-                                          )
-                                        }
-                                        required
-                                      />
-                                      <p className="mt-1 text-xs text-fdnda-muted">
-                                        {leagueTotalMatches({
-                                          expectedTeams:
-                                            Number(category.expectedMaleTeams) || 0,
-                                          matchesPerTeam: Number(matchesPerTeam) || 0,
-                                        })}{" "}
-                                        partidos preliminares
-                                      </p>
-                                    </div>
+                                  <div>
+                                    <Label htmlFor={`lv-from-${index}`}>Nacidos desde</Label>
+                                    <Input
+                                      id={`lv-from-${index}`}
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={1950}
+                                      max={row.to ?? 2050}
+                                      value={row.from ?? ""}
+                                      onChange={(e) =>
+                                        updateLevelRow(index, "from", e.target.value)
+                                      }
+                                      placeholder="Sin tope"
+                                    />
                                   </div>
-                                ) : null}
+                                  <div>
+                                    <Label htmlFor={`lv-to-${index}`}>Nacidos hasta</Label>
+                                    <Input
+                                      id={`lv-to-${index}`}
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={row.from ?? 1950}
+                                      max={2050}
+                                      value={row.to ?? ""}
+                                      onChange={(e) =>
+                                        updateLevelRow(index, "to", e.target.value)
+                                      }
+                                      placeholder="Sin tope"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor={`lv-male-${index}`}>
+                                      Varones nacidos desde
+                                    </Label>
+                                    <Input
+                                      id={`lv-male-${index}`}
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={1950}
+                                      max={row.to ?? 2050}
+                                      value={row.maleFrom ?? ""}
+                                      onChange={(e) =>
+                                        updateLevelRow(index, "maleFrom", e.target.value)
+                                      }
+                                      placeholder="Igual que damas"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setLevelRowsEdited(true)
+                                      setLevelRows((current) =>
+                                        current.filter((_, i) => i !== index)
+                                      )
+                                    }}
+                                    className={REMOVE_BUTTON}
+                                    aria-label={`Quitar la categoría ${row.label || "sin nombre"} del nivel ${levelLabel}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                </div>
+                                <p className="mt-1 text-xs leading-5 text-fdnda-muted">
+                                  {birthYearRangeSummary(
+                                    row.from === null ? "" : String(row.from),
+                                    row.to === null ? "" : String(row.to),
+                                    row.maleFrom === null ? "" : String(row.maleFrom)
+                                  )}
+                                </p>
                               </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    {chargesEntry ? (
-                      <div>
-                        <Label htmlFor="ev-preset-price">
-                          {isLeague ? "Precio por partido (S/)" : "Precio por prueba (S/)"}
-                        </Label>
-                        <Input
-                          id="ev-preset-price"
-                          name="presetPrice"
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          required
-                          placeholder="60.00"
-                        />
-                      </div>
-                    ) : null}
-
-                    {isLeague ? (
-                      <div>
-                        <div>
-                          <Label htmlFor="ev-matches">Partidos por equipo</Label>
-                          <Input
-                            id="ev-matches"
-                            name="presetMatchesPerTeam"
-                            type="number"
-                            min={1}
-                            max={40}
-                            required
-                            value={matchesPerTeam}
-                            onChange={(event) => setMatchesPerTeam(event.target.value)}
-                          />
+                            )
+                          )}
                         </div>
-                        <p className="mt-1 text-xs leading-5 text-fdnda-muted">
-                          Cada plantel paga solo sus {Number(matchesPerTeam) || 0}{" "}
-                          partidos de la fase preliminar. La cantidad total de
-                          partidos se calcula arriba para cada categoría y sexo.
-                        </p>
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
-              </>
-            ) : null}
-          </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => {
+                            setLevelRowsEdited(true)
+                            setLevelRows((current) => [
+                              ...current,
+                              { level, label: "", from: null, to: null, maleFrom: null },
+                            ])
+                          }}
+                        >
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                          Agregar categoría a {levelLabel}
+                        </Button>
+                      </fieldset>
+                    )
+                  })}
+                </div>
+              ) : (
+                <>
+                  <input type="hidden" name="presetCategoriesText" value={categoriesText} />
+                  {isLeague ? (
+                    <input
+                      type="hidden"
+                      name="presetLeagueTeamCounts"
+                      value={leagueTeamCountsText}
+                    />
+                  ) : null}
+                  <CategoryRowsEditor
+                    idPrefix="ev-category"
+                    rows={categories.rows}
+                    onAdd={categories.add}
+                    onRemove={categories.remove}
+                    onUpdate={categories.update}
+                    ageRuleMode={ageRuleMode}
+                    seasonYear={seasonYear}
+                    namePlaceholder={preset.categoryPlaceholder}
+                    allowMaleYear={discipline === "ARTISTIC_SWIMMING"}
+                    league={isLeague ? { matchesPerTeam: Number(matchesPerTeam) || 0 } : null}
+                  />
+                </>
+              )}
+            </>
+          ) : null}
         </fieldset>
       ) : null}
-    </>
+
+      <DialogFormFooter
+        guard={guard}
+        discardTitle={
+          creating
+            ? "¿Descartar la competencia sin crearla?"
+            : `¿Descartar los cambios de «${event.name}»?`
+        }
+        discardConsequence={
+          creating
+            ? "Se perderá lo que escribiste en este formulario."
+            : "La competencia se queda como estaba."
+        }
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          {blocked ? (
+            <p
+              className="text-sm font-semibold leading-5 text-fdnda-red-deep sm:mr-auto"
+              role="status"
+            >
+              {blocked}
+            </p>
+          ) : null}
+          <Button variant="outline" onClick={guard.requestClose} disabled={pending}>
+            Cancelar
+          </Button>
+          <Button
+            type="submit"
+            disabled={Boolean(blocked)}
+            loading={pending}
+            loadingText={creating ? "Creando competencia…" : "Guardando cambios…"}
+          >
+            {submitLabel}
+          </Button>
+        </div>
+      </DialogFormFooter>
+    </form>
   )
 }
 
-export function NewEventButton({ seasons }: { seasons: SeasonOption[] }) {
+export function NewEventButton({
+  seasons,
+  label = "Nueva competencia",
+}: {
+  seasons: SeasonOption[]
+  label?: string
+}) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+  const guard = useDiscardGuard(() => setOpen(false))
 
   const handleSubmit = (formData: FormData) => {
+    const name = String(formData.get("name") ?? "").trim()
     startTransition(async () => {
       const result = await saveEvent(formData)
       if (result.success && result.eventId) {
-        toast.success("Evento creado con sus pruebas. Revísalas y ábrelo.")
+        const created = result.createdModalities ?? 0
+        toast.success(
+          created > 0
+            ? `Competencia «${name}» creada en borrador con ${plural(created, "prueba", "pruebas")}. Revisa precios y requisitos para abrir inscripciones.`
+            : `Competencia «${name}» creada en borrador. Agrega sus pruebas para poder abrir inscripciones.`
+        )
+        guard.reset()
         setOpen(false)
         router.push(`/admin/eventos/${result.eventId}`)
       } else {
-        toast.error(result.error)
+        toast.error(result.error ?? "No se pudo crear la competencia. Vuelve a intentarlo.")
       }
     })
   }
@@ -1017,25 +1018,20 @@ export function NewEventButton({ seasons }: { seasons: SeasonOption[] }) {
   return (
     <>
       <Button onClick={() => setOpen(true)}>
-        <Plus className="h-4 w-4" /> Nuevo evento
+        <Plus className="h-4 w-4" aria-hidden="true" /> {label}
       </Button>
       <Dialog
         open={open}
-        onClose={() => setOpen(false)}
-        title="Nuevo evento"
+        onClose={guard.requestClose}
+        title="Nueva competencia"
         className="sm:max-w-2xl"
       >
-        <form action={handleSubmit} className="space-y-4">
-          <EventFormFields seasons={seasons} />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={isPending}>
-              Crear evento
-            </Button>
-          </div>
-        </form>
+        <EventForm
+          seasons={seasons}
+          pending={isPending}
+          guard={guard}
+          onSubmit={handleSubmit}
+        />
       </Dialog>
     </>
   )
@@ -1050,15 +1046,18 @@ export function EditEventButton({
 }) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const guard = useDiscardGuard(() => setOpen(false))
 
   const handleSubmit = (formData: FormData) => {
+    const name = String(formData.get("name") ?? "").trim() || event.name
     startTransition(async () => {
       const result = await saveEvent(formData)
       if (result.success) {
-        toast.success("Evento actualizado")
+        toast.success(`Cambios de «${name}» guardados.`)
+        guard.reset()
         setOpen(false)
       } else {
-        toast.error(result.error)
+        toast.error(result.error ?? "No se pudieron guardar los cambios. Vuelve a intentarlo.")
       }
     })
   }
@@ -1066,25 +1065,21 @@ export function EditEventButton({
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
-        Editar evento
+        Editar datos de la competencia
       </Button>
       <Dialog
         open={open}
-        onClose={() => setOpen(false)}
-        title="Editar evento"
+        onClose={guard.requestClose}
+        title={`Editar «${event.name}»`}
         className="sm:max-w-2xl"
       >
-        <form action={handleSubmit} className="space-y-4">
-          <EventFormFields event={event} seasons={seasons} />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={isPending}>
-              Guardar
-            </Button>
-          </div>
-        </form>
+        <EventForm
+          event={event}
+          seasons={seasons}
+          pending={isPending}
+          guard={guard}
+          onSubmit={handleSubmit}
+        />
       </Dialog>
     </>
   )

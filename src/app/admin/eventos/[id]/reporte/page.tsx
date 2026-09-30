@@ -1,13 +1,13 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { ArrowLeft, BarChart3, Download, Medal, Receipt, Users, Wallet } from "lucide-react"
+import { BarChart3, Download } from "lucide-react"
 import { getEventReport } from "@/lib/event-report"
 import { expireStaleOrders } from "@/lib/orders"
 import { formatDateTimeLima, formatMoney } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { buttonClasses } from "@/components/ui/button"
 import { Badge, ORDER_STATUS_BADGE } from "@/components/ui/badge"
+import { Card } from "@/components/ui/card"
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table"
-import { StatCard, type StatTone } from "@/components/stat-card"
 import { Pagination } from "@/components/pagination"
 import { PageHeader } from "@/components/page-header"
 import { PrintButton } from "@/components/print-button"
@@ -17,6 +17,9 @@ import { disciplineLabel } from "@/lib/disciplines"
 export const dynamic = "force-dynamic"
 
 const REPORT_PAGE_SIZE = 50
+
+const SECTION_TITLE = "mb-1 font-heading text-xl text-fdnda-navy"
+const SECTION_HELP = "mb-3 text-sm leading-6 text-fdnda-muted"
 
 export default async function ReporteEventoPage({
   params,
@@ -35,11 +38,9 @@ export default async function ReporteEventoPage({
   const report = await getEventReport(id)
   if (!report) notFound()
 
+  const pageCount = (total: number) => Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE))
   const pageFor = (value: string | undefined, total: number) =>
-    Math.min(
-      Math.max(1, Math.trunc(Number(value) || 1)),
-      Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE))
-    )
+    Math.min(Math.max(1, Math.trunc(Number(value) || 1)), pageCount(total))
   const nominalPage = pageFor(query.nominalPage, report.nominalRows.length)
   const feePage = pageFor(query.feePage, report.athleteFeeRows.length)
   const orderPage = pageFor(query.orderPage, report.orderRows.length)
@@ -60,37 +61,32 @@ export default async function ReporteEventoPage({
     feePage,
     orderPage,
   }
+  // Imprimir saca la página que se ve: si algún listado tiene más de una, el
+  // papel no trae todas las filas y hay que decirlo antes de firmarlo.
+  const isPaginated = [
+    report.nominalRows.length,
+    report.athleteFeeRows.length,
+    report.orderRows.length,
+  ].some((total) => pageCount(total) > 1)
+  const generatedAt = formatDateTimeLima(new Date())
+  const eventHref = `/admin/eventos/${id}`
 
-  const stats: Array<{
-    label: string
-    value: string
-    icon: typeof Medal
-    tone: StatTone
-  }> = [
+  // Qué decir cuando todavía no hay nada: depende de si los clubes pueden
+  // inscribir. En borrador o cerrada nadie la ve, y el camino es la competencia.
+  const notVisible = report.event.status !== "OPEN"
+  const notVisibleText =
+    report.event.status === "DRAFT"
+      ? "La competencia está en borrador y los clubes todavía no la ven."
+      : "Las inscripciones de esta competencia están cerradas."
+
+  const summary: Array<{ label: string; value: string }> = [
+    { label: "Inscripciones pagadas", value: String(report.totals.paidRegistrations) },
+    { label: "Inscripciones por pagar", value: String(report.totals.pendingRegistrations) },
     {
-      label: "Inscripciones pagadas",
-      value: String(report.totals.paidRegistrations),
-      icon: Medal,
-      tone: "turquoise",
-    },
-    {
-      label: "Por pagar",
-      value: String(report.totals.pendingRegistrations),
-      icon: Receipt,
-      tone: "warning",
-    },
-    {
-      label: "Deportistas (pagados)",
+      label: "Deportistas con inscripción pagada",
       value: String(report.totals.distinctAthletes),
-      icon: Users,
-      tone: "navy",
     },
-    {
-      label: "Recaudado",
-      value: formatMoney(report.totals.revenue),
-      icon: Wallet,
-      tone: "turquoise",
-    },
+    { label: "Recaudado", value: formatMoney(report.totals.revenue) },
   ]
 
   return (
@@ -100,56 +96,59 @@ export default async function ReporteEventoPage({
         eventName={report.event.name}
         disciplines={report.event.disciplines}
         meta={[
-          { label: "Inscripciones pagadas", value: String(report.totals.paidRegistrations) },
-          { label: "Por pagar", value: String(report.totals.pendingRegistrations) },
-          { label: "Deportistas", value: String(report.totals.distinctAthletes) },
-          { label: "Recaudado", value: formatMoney(report.totals.revenue) },
+          ...summary,
+          { label: "Datos al", value: generatedAt },
         ]}
       />
 
-      <Link
-        href={`/admin/eventos/${id}`}
-        className="print-hidden inline-flex items-center gap-1 text-xs text-fdnda-muted hover:text-fdnda-ink"
-      >
-        <ArrowLeft className="h-3 w-3" aria-hidden="true" /> Volver al evento
-      </Link>
-
       <PageHeader
         className="print-hidden"
+        back={{ href: eventHref, label: "Volver a la competencia" }}
         icon={BarChart3}
-        eyebrow="Reporte de evento"
         lanes={report.event.disciplines}
         title={report.event.name}
-        description="Inscripciones, cuotas y recaudación de la competencia."
+        description={`Reporte de inscripciones pagadas y por pagar, cuotas de competencia y órdenes. Datos al ${generatedAt}.`}
         actions={
-          <div className="print-hidden flex flex-wrap gap-2">
-            <PrintButton label="Imprimir reporte" />
-            <a href={`/api/admin/eventos/${id}/export`} download>
-              <Button>
-                <Download className="h-4 w-4" aria-hidden="true" /> Exportar Excel
-              </Button>
-            </a>
+          <div className="print-hidden flex flex-col items-start gap-1.5 sm:items-end">
+            <div className="flex flex-wrap gap-2">
+              <PrintButton label={isPaginated ? "Imprimir esta página" : "Imprimir reporte"} />
+              <a
+                href={`/api/admin/eventos/${id}/export`}
+                download
+                className={buttonClasses()}
+              >
+                <Download className="h-4 w-4" aria-hidden="true" /> Descargar Excel del reporte
+              </a>
+            </div>
+            {isPaginated ? (
+              <p className="max-w-sm text-xs leading-5 text-fdnda-muted sm:text-right">
+                Se imprimen solo las filas visibles de cada listado. El Excel trae
+                todas.
+              </p>
+            ) : null}
           </div>
         }
       />
 
-      <div className="print-hidden grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((stat) => (
-          <StatCard
-            key={stat.label}
-            label={stat.label}
-            value={stat.value}
-            icon={stat.icon}
-            tone={stat.tone}
-          />
-        ))}
-      </div>
+      <section aria-label="Totales de la competencia" className="print-hidden">
+        <Card className="p-5">
+          <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+            {summary.map((row) => (
+              <div key={row.label}>
+                <dt className="text-sm font-semibold text-fdnda-muted">{row.label}</dt>
+                <dd className="num mt-0.5 text-lg font-semibold text-fdnda-ink">
+                  {row.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </Card>
+      </section>
 
       <section>
-        <h2 className="mb-3 font-heading text-xl text-fdnda-navy">
-          Resumen por prueba
-        </h2>
-        <TableContainer>
+        <h2 className={SECTION_TITLE}>Resumen por prueba</h2>
+        <p className={SECTION_HELP}>Pagadas y por pagar de cada prueba, con lo recaudado.</p>
+        <TableContainer aria-label="Resumen por prueba">
           <Table>
             <THead>
               <TR>
@@ -165,31 +164,44 @@ export default async function ReporteEventoPage({
               </TR>
             </THead>
             <TBody>
-              {report.modalityRows.map((row) => (
-                <TR key={row.modalityId}>
-                  <TD className="text-xs">{disciplineLabel(row.discipline)}</TD>
-                  <TD className="font-medium text-fdnda-ink">{row.name}</TD>
-                  <TD>{row.category || "—"}</TD>
-                  <TD>{row.sexLabel}</TD>
-                  <TD className="text-right">{formatMoney(row.price)}</TD>
-                  <TD className="text-right font-semibold text-fdnda-success">
-                    {row.paidCount}
+              {report.modalityRows.length === 0 ? (
+                <TR>
+                  <TD colSpan={9} className="py-8 text-center text-fdnda-muted">
+                    Esta competencia no tiene pruebas.{" "}
+                    <Link
+                      href={eventHref}
+                      className="print-hidden font-semibold text-fdnda-turquoise-deep underline underline-offset-4"
+                    >
+                      Agregar pruebas a la competencia
+                    </Link>
                   </TD>
-                  <TD className="text-right text-fdnda-warning">{row.pendingCount}</TD>
-                  <TD className="text-right">{row.athleteCount}</TD>
-                  <TD className="text-right font-semibold">{formatMoney(row.revenue)}</TD>
                 </TR>
-              ))}
+              ) : (
+                report.modalityRows.map((row) => (
+                  <TR key={row.modalityId}>
+                    <TD className="text-xs">{disciplineLabel(row.discipline)}</TD>
+                    <TD className="font-medium text-fdnda-ink">{row.name}</TD>
+                    <TD>{row.category || "Sin categoría"}</TD>
+                    <TD>{row.sexLabel}</TD>
+                    <TD className="text-right">{formatMoney(row.price)}</TD>
+                    <TD className="text-right font-semibold text-fdnda-success">
+                      {row.paidCount}
+                    </TD>
+                    <TD className="text-right text-fdnda-warning">{row.pendingCount}</TD>
+                    <TD className="text-right">{row.athleteCount}</TD>
+                    <TD className="text-right font-semibold">{formatMoney(row.revenue)}</TD>
+                  </TR>
+                ))
+              )}
             </TBody>
           </Table>
         </TableContainer>
       </section>
 
       <section>
-        <h2 className="mb-3 font-heading text-xl text-fdnda-navy">
-          Por club (solo pagadas)
-        </h2>
-        <TableContainer>
+        <h2 className={SECTION_TITLE}>Inscripciones pagadas por club</h2>
+        <p className={SECTION_HELP}>Solo cuenta lo pagado.</p>
+        <TableContainer aria-label="Inscripciones pagadas por club">
           <Table>
             <THead>
               <TR>
@@ -203,7 +215,9 @@ export default async function ReporteEventoPage({
               {report.clubRows.length === 0 ? (
                 <TR>
                   <TD colSpan={4} className="py-8 text-center text-fdnda-muted">
-                    Todavía no hay inscripciones pagadas.
+                    {notVisible
+                      ? `Todavía no hay inscripciones pagadas. ${notVisibleText}`
+                      : "Todavía no hay inscripciones pagadas: aparecen aquí cuando un club paga su orden."}
                   </TD>
                 </TR>
               ) : (
@@ -224,15 +238,17 @@ export default async function ReporteEventoPage({
       </section>
 
       <section>
-        <h2 className="mb-3 font-heading text-xl text-fdnda-navy">
-          Listado nominal ({report.nominalRows.length})
-        </h2>
-        <TableContainer>
+        <h2 className={SECTION_TITLE}>Listado nominal</h2>
+        <p className={SECTION_HELP}>
+          Una fila por deportista y prueba, pagadas y por pagar ({report.nominalRows.length}{" "}
+          en total).
+        </p>
+        <TableContainer aria-label="Listado nominal de inscripciones">
           <Table>
             <THead>
               <TR>
                 <TH>Deportista</TH>
-                <TH>Documento</TH>
+                <TH>N.º de documento</TH>
                 <TH>Año</TH>
                 <TH>Sexo</TH>
                 <TH>Club</TH>
@@ -245,7 +261,19 @@ export default async function ReporteEventoPage({
               {report.nominalRows.length === 0 ? (
                 <TR>
                   <TD colSpan={8} className="py-8 text-center text-fdnda-muted">
-                    Sin inscripciones todavía.
+                    {notVisible ? (
+                      <>
+                        Todavía no hay inscripciones. {notVisibleText}{" "}
+                        <Link
+                          href={eventHref}
+                          className="print-hidden font-semibold text-fdnda-turquoise-deep underline underline-offset-4"
+                        >
+                          Revisar requisitos para abrir inscripciones
+                        </Link>
+                      </>
+                    ) : (
+                      "Todavía no hay inscripciones: aparecen aquí cuando un club genera la orden de su planilla."
+                    )}
                   </TD>
                 </TR>
               ) : (
@@ -262,7 +290,7 @@ export default async function ReporteEventoPage({
                     <TD>{row.sex}</TD>
                     <TD>{row.clubName}</TD>
                     <TD>{row.modalityName}</TD>
-                    <TD>{row.category || "—"}</TD>
+                    <TD>{row.category || "Sin categoría"}</TD>
                     <TD>
                       <Badge variant={row.status === "Pagada" ? "success" : "warning"}>
                         {row.status}
@@ -277,10 +305,7 @@ export default async function ReporteEventoPage({
         <Pagination
           pathname={`/admin/eventos/${id}/reporte`}
           currentPage={nominalPage}
-          totalPages={Math.max(
-            1,
-            Math.ceil(report.nominalRows.length / REPORT_PAGE_SIZE)
-          )}
+          totalPages={pageCount(report.nominalRows.length)}
           pageParam="nominalPage"
           query={paginationQuery}
           className="mt-4"
@@ -289,20 +314,19 @@ export default async function ReporteEventoPage({
 
       {report.athleteFeeRows.length > 0 ? (
         <section>
-          <h2 className="mb-1 font-heading text-xl text-fdnda-navy">
-            Cuotas por deportista ({report.athleteFeeRows.length})
-          </h2>
-          <p className="mb-3 text-sm text-fdnda-muted">
-            Disciplinas que cobran un monto fijo por deportista para todo el
-            evento: sus pruebas figuran en S/ 0 porque el cobro está acá.
-            Recaudado por cuotas: {formatMoney(report.totals.athleteFeeRevenue)}.
+          <h2 className={SECTION_TITLE}>Cuotas de competencia por deportista</h2>
+          <p className={SECTION_HELP}>
+            Disciplinas que cobran un monto fijo por deportista para toda la
+            competencia: sus pruebas figuran en S/ 0 porque el cobro está aquí.
+            Recaudado por cuotas: {formatMoney(report.totals.athleteFeeRevenue)} (
+            {report.athleteFeeRows.length} en total).
           </p>
-          <TableContainer>
+          <TableContainer aria-label="Cuotas de competencia por deportista">
             <Table>
               <THead>
                 <TR>
                   <TH>Deportista</TH>
-                  <TH>Documento</TH>
+                  <TH>N.º de documento</TH>
                   <TH>Año</TH>
                   <TH>Sexo</TH>
                   <TH>Club</TH>
@@ -334,10 +358,7 @@ export default async function ReporteEventoPage({
           <Pagination
             pathname={`/admin/eventos/${id}/reporte`}
             currentPage={feePage}
-            totalPages={Math.max(
-              1,
-              Math.ceil(report.athleteFeeRows.length / REPORT_PAGE_SIZE)
-            )}
+            totalPages={pageCount(report.athleteFeeRows.length)}
             pageParam="feePage"
             query={paginationQuery}
             className="mt-4"
@@ -346,10 +367,11 @@ export default async function ReporteEventoPage({
       ) : null}
 
       <section>
-        <h2 className="mb-3 font-heading text-xl text-fdnda-navy">
-          Órdenes con inscripciones de este evento
-        </h2>
-        <TableContainer>
+        <h2 className={SECTION_TITLE}>Órdenes de esta competencia</h2>
+        <p className={SECTION_HELP}>
+          El monto es solo la parte de cada orden que corresponde a esta competencia.
+        </p>
+        <TableContainer aria-label="Órdenes de esta competencia">
           <Table>
             <THead>
               <TR>
@@ -357,8 +379,8 @@ export default async function ReporteEventoPage({
                 <TH>Club</TH>
                 <TH>Fecha</TH>
                 <TH className="text-right">Inscripciones</TH>
-                <TH className="text-right">Monto (evento)</TH>
-                <TH>Proveedor</TH>
+                <TH className="text-right">Monto de esta competencia</TH>
+                <TH>Proveedor de pago</TH>
                 <TH>Estado</TH>
               </TR>
             </THead>
@@ -366,7 +388,8 @@ export default async function ReporteEventoPage({
               {report.orderRows.length === 0 ? (
                 <TR>
                   <TD colSpan={7} className="py-8 text-center text-fdnda-muted">
-                    Sin órdenes todavía.
+                    Todavía no hay órdenes: se crean cuando un club genera la orden de
+                    su planilla.
                   </TD>
                 </TR>
               ) : (
@@ -377,7 +400,11 @@ export default async function ReporteEventoPage({
                       <TD className="num text-xs">
                         <span className="flex flex-wrap items-center gap-2">
                           {order.code}
-                          {order.isLegacy ? <Badge variant="warning">Legado</Badge> : null}
+                          {/* Órdenes históricas que mezclan competencias: se
+                              conservan sin dividir (schema.prisma, Order.isLegacy). */}
+                          {order.isLegacy ? (
+                            <Badge variant="warning">Incluye otras competencias</Badge>
+                          ) : null}
                         </span>
                       </TD>
                       <TD>{order.clubName}</TD>
@@ -386,9 +413,11 @@ export default async function ReporteEventoPage({
                       <TD className="text-right font-semibold">
                         {formatMoney(order.eventAmount)}
                       </TD>
-                      <TD>{order.provider || "—"}</TD>
+                      <TD>{order.provider || "Sin proveedor"}</TD>
                       <TD>
-                        <Badge variant={badge.variant}>{badge.label}</Badge>
+                        <Badge variant={badge?.variant ?? "neutral"}>
+                          {badge?.label ?? order.status}
+                        </Badge>
                       </TD>
                     </TR>
                   )
@@ -400,10 +429,7 @@ export default async function ReporteEventoPage({
         <Pagination
           pathname={`/admin/eventos/${id}/reporte`}
           currentPage={orderPage}
-          totalPages={Math.max(
-            1,
-            Math.ceil(report.orderRows.length / REPORT_PAGE_SIZE)
-          )}
+          totalPages={pageCount(report.orderRows.length)}
           pageParam="orderPage"
           query={paginationQuery}
           className="mt-4"

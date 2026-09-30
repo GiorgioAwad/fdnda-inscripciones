@@ -58,8 +58,10 @@ export const ORDER_STATUS_BADGE: Record<
 > = {
   PENDING: { label: "Pendiente", variant: "warning" },
   PAID: { label: "Pagada", variant: "success" },
-  FAILED: { label: "Fallida", variant: "danger" },
-  CANCELLED: { label: "Cancelada", variant: "neutral" },
+  FAILED: { label: "Pago rechazado", variant: "danger" },
+  // CANCELLED solo lo escribe expireStaleOrders (lib/orders.ts): una orden que
+  // venció sin pagarse. «Cancelada» sugería que alguien la anuló a propósito.
+  CANCELLED: { label: "Expirada", variant: "neutral" },
 }
 
 export const EVENT_STATUS_BADGE: Record<
@@ -68,7 +70,17 @@ export const EVENT_STATUS_BADGE: Record<
 > = {
   DRAFT: { label: "Borrador", variant: "neutral" },
   OPEN: { label: "Inscripciones abiertas", variant: "success" },
-  CLOSED: { label: "Cerrado", variant: "danger" },
+  // Cerrar inscripciones es una operación normal, no un error: antes salía en
+  // rojo y leía como fallo.
+  CLOSED: { label: "Inscripciones cerradas", variant: "neutral" },
+}
+
+// Estado derivado, no guardado: el evento sigue OPEN pero su cierre ya pasó,
+// así que los clubes ya no lo ven (lib/club-events.ts). Sin esto seguía en
+// verde «Inscripciones abiertas» cuando en la práctica ya no lo estaba.
+export const EVENT_DEADLINE_PASSED_BADGE: { label: string; variant: BadgeVariant } = {
+  label: "Plazo vencido",
+  variant: "warning",
 }
 
 // Estados derivados de afiliación (ver affiliationState en lib/affiliations).
@@ -80,7 +92,9 @@ export const AFFILIATION_STATE_BADGE: Record<
   string,
   { label: string; variant: BadgeVariant }
 > = {
-  ACTIVA: { label: "Activa", variant: "success" },
+  // «Vigente», no «Activa»: es la palabra de la temporada y de la vigencia, y
+  // «activo» ya nombra otra cosa (un club o un usuario habilitado).
+  ACTIVA: { label: "Vigente", variant: "success" },
   POR_VENCER: { label: "Por vencer", variant: "warning" },
   PENDIENTE: { label: "Pendiente de pago", variant: "warning" },
   VENCIDA: { label: "Vencida", variant: "danger" },

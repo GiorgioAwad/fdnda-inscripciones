@@ -67,13 +67,20 @@ export function entryChargeNoteForDiscipline(input: {
 }
 
 /**
- * Igual que `entryChargeSuffix`, pero sin el separador `" | "`: para mostrar
- * la nota como texto suelto (badge, línea aparte) en vez de pegada al final
- * de una descripción. Reutiliza `entryChargeSuffix` para no duplicar las
- * frases en dos lugares.
+ * La misma nota, redactada para mostrarse suelta (badge, línea aparte) en una
+ * planilla o constancia. No reutiliza `entryChargeSuffix`: ese sufijo queda
+ * grabado en la descripción de cada OrderItem y `entryChargeNoteFromDescription`
+ * lo vuelve a leer, así que no puede cambiar sin romper las órdenes históricas.
+ * Esta frase sí puede seguir el glosario del portal.
  */
 export function entryChargeNoteLabel(note: EntryChargeNote): string {
-  return entryChargeSuffix(note).replace(/^ \| /, "")
+  if (note === "IN_ATHLETE_FEE") {
+    return "Incluida en la cuota de competencia por deportista"
+  }
+  if (note === "CLUB_PAYS_PER_ATHLETE") {
+    return "Sin cargo: tu club eligió pagar la cuota de competencia por deportista"
+  }
+  return ""
 }
 
 /**

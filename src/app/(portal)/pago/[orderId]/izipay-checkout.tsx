@@ -96,8 +96,17 @@ function loadScript(src: string): Promise<void> {
   })
 }
 
-// Intenta el proxy propio y cae al CDN de Izipay. Si ambos fallan, el mensaje
-// acumula el motivo de cada intento para poder diagnosticar desde un reporte.
+const SDK_LOAD_ERROR =
+  "No pudimos abrir el módulo de pago. Desactiva el bloqueador de anuncios o prueba en otro navegador."
+const SESSION_ERROR =
+  "No pudimos abrir el módulo de pago. Recarga la página e inténtalo de nuevo."
+
+// Errores con un mensaje ya pensado para el club; cualquier otro se reemplaza
+// por uno genérico en vez de mostrar el texto técnico.
+class CheckoutError extends Error {}
+
+// Intenta el proxy propio y cae al CDN de Izipay. Si ambos fallan, el motivo
+// de cada intento queda en la consola para poder diagnosticar desde un reporte.
 async function loadIzipaySdk(cdnSrc: string): Promise<void> {
   if (typeof window.Izipay === "function") return
 
@@ -112,12 +121,19 @@ async function loadIzipaySdk(cdnSrc: string): Promise<void> {
     }
   }
 
-  throw new Error(
-    `No pudimos cargar el módulo de pago. Desactiva bloqueadores de anuncios o prueba en modo incógnito. (${failures.join(" | ")})`
-  )
+  // El detalle de cada intento va a la consola para soporte; al club solo le
+  // sirve saber qué hacer.
+  console.error("No se pudo cargar el SDK de Izipay:", failures.join(" | "))
+  throw new CheckoutError(SDK_LOAD_ERROR)
 }
 
-export function IzipayCheckout({ orderId }: { orderId: string }) {
+export function IzipayCheckout({
+  orderId,
+  totalLabel,
+}: {
+  orderId: string
+  totalLabel: string
+}) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -152,7 +168,8 @@ export function IzipayCheckout({ orderId }: { orderId: string }) {
       const data = await response.json()
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || "No se pudo validar el pago con Izipay")
+        console.error("Validación de pago rechazada:", data.error)
+        throw new CheckoutError("No pudimos confirmar el pago con Izipay.")
       }
 
       if (data.data?.status === "PAID") {
@@ -175,8 +192,10 @@ export function IzipayCheckout({ orderId }: { orderId: string }) {
       // la página mostrará el estado real. No se invita a pagar otra vez.
       handledRef.current = false
       setLoading(false)
+      const reason =
+        err instanceof CheckoutError ? err.message : "No pudimos confirmar el pago con Izipay."
       setError(
-        `${sanitizeMessage((err as Error).message)} Si el cobro se realizó, esta página se actualizará sola en unos segundos.`
+        `${reason} No vuelvas a pagar: si el cobro se realizó, esta página se actualizará sola en unos segundos.`
       )
     }
   }
@@ -195,7 +214,8 @@ export function IzipayCheckout({ orderId }: { orderId: string }) {
       const data = await response.json()
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || "No se pudo iniciar el pago.")
+        console.error("No se pudo crear la sesión de pago:", data.error)
+        throw new CheckoutError(SESSION_ERROR)
       }
 
       if (data.data.alreadyPaid) {
@@ -206,7 +226,7 @@ export function IzipayCheckout({ orderId }: { orderId: string }) {
       await loadIzipaySdk(data.data.scriptUrl)
 
       if (!window.Izipay) {
-        throw new Error("El módulo de pago no está disponible en este navegador.")
+        throw new CheckoutError(SDK_LOAD_ERROR)
       }
 
       // El SDK monta un iframe superpuesto (no abre una ventana), así que no lo
@@ -219,7 +239,8 @@ export function IzipayCheckout({ orderId }: { orderId: string }) {
       })
     } catch (err) {
       setLoading(false)
-      setError(err instanceof Error ? err.message : "Error al iniciar el pago.")
+      if (!(err instanceof CheckoutError)) console.error("Error al iniciar el pago:", err)
+      setError(err instanceof CheckoutError ? err.message : SESSION_ERROR)
     }
   }
 
@@ -231,15 +252,20 @@ export function IzipayCheckout({ orderId }: { orderId: string }) {
           (tarjeta, Yape y otros métodos). No cierres la ventana hasta terminar.
         </p>
         {error ? (
-          <p className="rounded-surface bg-fdnda-danger-soft px-3 py-2 text-sm text-fdnda-danger">{error}</p>
+          <p
+            role="alert"
+            className="rounded-surface bg-fdnda-danger-soft px-3 py-2 text-sm text-fdnda-danger"
+          >
+            {error}
+          </p>
         ) : null}
         <Button size="lg" className="w-full" onClick={startPayment} disabled={loading}>
           {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           ) : (
-            <CreditCard className="h-4 w-4" />
+            <CreditCard className="h-4 w-4" aria-hidden="true" />
           )}
-          {loading ? "Abriendo el módulo de pago…" : "Pagar con Izipay"}
+          {loading ? "Abriendo el módulo de pago…" : `Pagar orden · ${totalLabel}`}
         </Button>
       </CardContent>
     </Card>

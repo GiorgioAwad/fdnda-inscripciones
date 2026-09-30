@@ -14,7 +14,7 @@ import { registrationOrderItemView } from "@/lib/registration-snapshots"
 import { validateRegistrationPlan } from "@/lib/plan-validation"
 import { assertPlanAccess } from "@/lib/club-access"
 import { formatDateOnly, formatMoney } from "@/lib/utils"
-import { PrintButton } from "./print-button"
+import { PrintButton } from "@/components/print-button"
 
 export const dynamic = "force-dynamic"
 
@@ -146,6 +146,8 @@ export default async function PrintablePlanSummary({
         ),
       }
 
+  const totalLabel = currentFrozen.length > 0 ? "Total de la orden" : "Total estimado (aún sin orden)"
+
   return (
     <div className="space-y-6 bg-white print:p-0">
       <PrintSheetHeader
@@ -154,10 +156,9 @@ export default async function PrintablePlanSummary({
         clubName={frozenHeader?.club.name ?? plan.club.name}
         disciplines={sheetDisciplines}
         meta={[
-          { label: "Revisión", value: String(expectedRevision) },
           { label: "Deportistas", value: String(frozenSummary.rosterAthleteCount) },
-          { label: "Formaciones", value: String(frozenSummary.entryCount) },
-          { label: "Total", value: formatMoney(frozenSummary.totalAmount) },
+          { label: "Pruebas inscritas", value: String(frozenSummary.entryCount) },
+          { label: totalLabel, value: formatMoney(frozenSummary.totalAmount) },
         ]}
       />
 
@@ -165,24 +166,31 @@ export default async function PrintablePlanSummary({
         className="print-hidden"
         icon={ClipboardCheck}
         lanes={sheetDisciplines}
-        eyebrow={`Planilla · revisión ${expectedRevision}`}
+        back={{ href: `/inscripciones/${plan.id}`, label: "Volver a la planilla" }}
         title={frozenHeader?.event.name ?? plan.event?.name ?? "Planilla sin competencia"}
         description={`${frozenHeader?.club.name ?? plan.club.name}${frozenHeader ? ` · ${formatDateOnly(frozenHeader.event.startDate)} al ${formatDateOnly(frozenHeader.event.endDate)}` : plan.event ? ` · ${formatDateOnly(plan.event.startDate)} al ${formatDateOnly(plan.event.endDate)}` : ""}`}
-        actions={revisionChanged ? undefined : <PrintButton />}
+        actions={
+          revisionChanged ? undefined : (
+            <PrintButton
+              label="Imprimir planilla"
+              hint="Activa «Gráficos de fondo» en el diálogo de impresión para que salgan los colores de disciplina."
+            />
+          )
+        }
       />
 
       {revisionChanged ? (
         <Card className="border-fdnda-danger-ring bg-fdnda-danger-soft p-5 text-fdnda-danger">
-          <div className="flex gap-3"><AlertTriangle className="h-5 w-5 shrink-0" /><div><h2 className="font-bold">La planilla cambió antes de imprimir</h2><p className="mt-1 text-sm">Se solicitó la revisión {expectedRevision}, pero el servidor tiene la revisión {plan.revision}. No se generó una hoja que pudiera mezclar versiones.</p><Link className="mt-3 inline-block font-bold underline" href={`/inscripciones/${plan.id}`}>Volver y cargar la versión vigente</Link></div></div>
+          <div className="flex gap-3"><AlertTriangle className="h-5 w-5 shrink-0" aria-hidden="true" /><div><h2 className="font-bold">La planilla cambió después de abrir este resumen</h2><p className="mt-1 text-sm">Para no imprimir una hoja con datos viejos, vuelve a la planilla y genera el resumen otra vez.</p><Link className="mt-3 inline-block font-bold underline" href={`/inscripciones/${plan.id}`}>Volver a la planilla</Link></div></div>
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Metric label="Nómina" value={frozenSummary.rosterAthleteCount} />
+          <dl className="grid grid-cols-2 divide-fdnda-border rounded-control border border-fdnda-border sm:grid-cols-4 sm:divide-x">
+            <Metric label="Deportistas" value={frozenSummary.rosterAthleteCount} />
             <Metric label="Con pruebas" value={frozenSummary.registeredAthleteCount} />
-            <Metric label="Formaciones" value={frozenSummary.entryCount} />
-            <Metric label={currentFrozen.length > 0 ? "Total congelado" : "Total actual"} value={formatMoney(frozenSummary.totalAmount)} />
-          </div>
+            <Metric label="Pruebas inscritas" value={frozenSummary.entryCount} />
+            <Metric label={totalLabel} value={formatMoney(frozenSummary.totalAmount)} />
+          </dl>
 
           <section>
             <h2 className="mb-3 font-heading text-lg font-bold text-fdnda-navy">Inscripciones de esta planilla</h2>
@@ -192,7 +200,7 @@ export default async function PrintablePlanSummary({
               )) : plan.registrations.map((entry, index) => (
                 <Card key={entry.id} className="p-4 break-inside-avoid">
                   <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-bold uppercase tracking-wide text-fdnda-turquoise-deep">{disciplineLabel(entry.modality.discipline)}</p><h3 className="font-bold text-fdnda-navy">{index + 1}. {entry.modality.name}{entry.modality.category ? ` · ${entry.modality.category}` : ""}</h3></div><strong>{formatMoney(chargedEntryPrice(entry))}</strong></div>
-                  <p className="mt-2 text-sm text-fdnda-ink">{entry.athletes.map((row) => `${row.athlete.lastNames}, ${row.athlete.firstNames}${row.isReserve ? " (reserva)" : ""}`).join(" · ") || "Formación incompleta"}</p>
+                  <p className="mt-2 text-sm text-fdnda-ink">{entry.athletes.map((row) => `${row.athlete.lastNames}, ${row.athlete.firstNames}${row.isReserve ? " (reserva)" : ""}`).join(" · ") || "Sin integrantes"}</p>
                 </Card>
               ))}
             </div>
@@ -200,13 +208,13 @@ export default async function PrintablePlanSummary({
 
           {previousFrozen.length > 0 ? (
             <section>
-              <h2 className="mb-1 font-heading text-lg font-bold text-fdnda-navy">Inscripciones previas bloqueadas</h2>
-              <p className="mb-3 text-sm text-fdnda-muted">Resumen global de órdenes pagadas o pendientes del club para la misma competencia.</p>
+              <h2 className="mb-1 font-heading text-lg font-bold text-fdnda-navy">Inscripciones de órdenes anteriores</h2>
+              <p className="mb-3 text-sm text-fdnda-muted">Pruebas de tu club en esta competencia que ya están pagadas o con pago pendiente.</p>
               <div className="space-y-3">{previousFrozen.map((item, index) => <FrozenItemCard key={item.id} index={index} item={item} showStatus />)}</div>
             </section>
           ) : null}
 
-          {validation && validation.issues.length > 0 ? <section><h2 className="mb-3 font-heading text-lg font-bold text-fdnda-navy">Observaciones de validación</h2><ul className="space-y-2">{validation.issues.map((issue, index) => <li key={`${issue.code}-${index}`} className="flex gap-2 text-sm"><Badge variant={issue.severity === "ERROR" ? "danger" : "warning"}>{issue.severity === "ERROR" ? "Error" : "Aviso"}</Badge><span>{issue.message}</span></li>)}</ul></section> : null}
+          {validation && validation.issues.length > 0 ? <section><h2 className="mb-3 font-heading text-lg font-bold text-fdnda-navy">Pendientes antes de pagar</h2><ul className="space-y-2">{validation.issues.map((issue, index) => <li key={`${issue.code}-${index}`} className="flex gap-2 text-sm"><Badge variant={issue.severity === "ERROR" ? "danger" : "warning"}>{issue.severity === "ERROR" ? "Impide pagar" : "Aviso"}</Badge><span>{issue.message}</span></li>)}</ul></section> : null}
         </>
       )}
 
@@ -217,10 +225,10 @@ export default async function PrintablePlanSummary({
 
 function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <Card className="p-4">
-      <p className="text-eyebrow uppercase text-fdnda-muted">{label}</p>
-      <p className="num mt-1 text-2xl text-fdnda-navy">{value}</p>
-    </Card>
+    <div className="px-4 py-3">
+      <dt className="text-xs font-semibold text-fdnda-muted">{label}</dt>
+      <dd className="num mt-0.5 text-xl font-bold text-fdnda-navy">{value}</dd>
+    </div>
   )
 }
 
@@ -242,7 +250,7 @@ function FrozenItemCard({
       <div className="flex flex-wrap items-start gap-3">
         {showStatus ? (
           <Badge variant={item.orderStatus === "PAID" ? "success" : "warning"}>
-            {item.orderStatus === "PAID" ? "Pagada" : "Pendiente"}
+            {item.orderStatus === "PAID" ? "Pagada" : "Pago pendiente"}
           </Badge>
         ) : null}
         <div className="min-w-0 flex-1">

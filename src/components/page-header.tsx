@@ -1,5 +1,6 @@
 import * as React from "react"
-import type { LucideIcon } from "lucide-react"
+import Link from "next/link"
+import { ArrowLeft, type LucideIcon } from "lucide-react"
 import { LaneBand } from "@/components/ui/lane-band"
 import { cn } from "@/lib/utils"
 
@@ -14,7 +15,7 @@ export function PageHeader({
   title,
   description,
   actions,
-  eyebrow,
+  back,
   lanes,
   className,
 }: {
@@ -22,7 +23,10 @@ export function PageHeader({
   title: React.ReactNode
   description?: React.ReactNode
   actions?: React.ReactNode
-  eyebrow?: React.ReactNode
+  // Regreso a la pantalla madre («Volver a Competencias»). Sustituye al
+  // antetítulo en mayúsculas que había sobre cada h1: repetía el nombre de la
+  // sección que ya marca el menú y no llevaba a ningún lado.
+  back?: { href: string; label: string }
   lanes?: readonly string[]
   className?: string
 }) {
@@ -51,10 +55,14 @@ export function PageHeader({
           </div>
         ) : null}
         <div className="min-w-0">
-          {eyebrow ? (
-            <div className="mb-1.5 text-eyebrow uppercase text-fdnda-turquoise-deep">
-              {eyebrow}
-            </div>
+          {back ? (
+            <Link
+              href={back.href}
+              className="mb-1.5 inline-flex min-h-8 items-center gap-1.5 rounded-chip text-sm font-semibold text-fdnda-turquoise-deep underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fdnda-turquoise"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              {back.label}
+            </Link>
           ) : null}
           <h1 className="font-heading text-3xl leading-tight text-fdnda-navy sm:text-4xl">
             {title}

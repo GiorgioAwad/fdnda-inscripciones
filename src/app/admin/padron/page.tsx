@@ -8,7 +8,8 @@ import {
   getSeasonCategories,
 } from "@/lib/affiliations"
 import { categoryLabelFor } from "@/lib/categories"
-import { Button } from "@/components/ui/button"
+import { plural } from "@/lib/utils"
+import { buttonClasses } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
 import { Pagination } from "@/components/pagination"
 import { AthletesTable } from "./athletes-table"
@@ -25,6 +26,7 @@ export default async function PadronPage({
 }) {
   const { q, club, page } = await searchParams
   const requestedPage = Math.max(1, Math.trunc(Number(page) || 1))
+  const filtered = Boolean(q || club)
 
   const where = {
     ...(club ? { clubId: club } : {}),
@@ -44,7 +46,7 @@ export default async function PadronPage({
   const [total, clubs, categories] = await Promise.all([
     prisma.athlete.count({ where }),
     prisma.club.findMany({
-      select: { id: true, name: true, code: true },
+      select: { id: true, name: true, code: true, isActive: true },
       orderBy: { name: "asc" },
     }),
     season ? getSeasonCategories(season.id) : Promise.resolve([]),
@@ -65,23 +67,29 @@ export default async function PadronPage({
     take: PAGE_SIZE,
   })
 
+  const clubName = club ? clubs.find((row) => row.id === club)?.name ?? null : null
+
   return (
     <div className="space-y-6">
       <PageHeader
         icon={Users}
         title="Padrón de deportistas"
-        description={`${total} deportista${total === 1 ? "" : "s"} registrados.`}
+        description={
+          filtered
+            ? `${plural(total, "resultado", "resultados")} con los filtros aplicados`
+            : plural(total, "deportista registrado", "deportistas registrados")
+        }
         actions={
           <>
-            <a href="/api/admin/padron/plantilla" download>
-              <Button variant="outline">
-                <FileSpreadsheet className="h-4 w-4" /> Plantilla
-              </Button>
+            <a
+              href="/api/admin/padron/plantilla"
+              download
+              className={buttonClasses({ variant: "outline" })}
+            >
+              <FileSpreadsheet className="h-4 w-4" aria-hidden="true" /> Descargar plantilla
             </a>
-            <Link href="/admin/padron/importar">
-              <Button>
-                <Upload className="h-4 w-4" /> Importar Excel
-              </Button>
+            <Link href="/admin/padron/importar" className={buttonClasses()}>
+              <Upload className="h-4 w-4" aria-hidden="true" /> Importar padrón
             </Link>
           </>
         }
@@ -90,6 +98,7 @@ export default async function PadronPage({
       <PadronFilters clubs={clubs} />
 
       <AthletesTable
+        filter={filtered ? { q: q ?? "", clubName } : null}
         athletes={athletes.map((a) => {
           const disciplines = athleteDisciplines(a.disciplines)
           return {
@@ -121,6 +130,8 @@ export default async function PadronPage({
         currentPage={currentPage}
         totalPages={totalPages}
         query={{ q, club }}
+        pageSize={PAGE_SIZE}
+        totalItems={total}
       />
     </div>
   )

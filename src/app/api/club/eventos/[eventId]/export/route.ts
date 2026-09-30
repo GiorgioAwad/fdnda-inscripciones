@@ -22,14 +22,17 @@ export async function GET(
 ) {
   const user = await getCurrentUser()
   if (!user || user.role !== "CLUB" || !user.clubId) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    return NextResponse.json(
+      { error: "Inicia sesión con un usuario de acceso de tu club para descargar el reporte." },
+      { status: 401 }
+    )
   }
 
   const { eventId } = await params
   try {
     await assertEventAccess({ ...user, clubId: user.clubId }, eventId)
   } catch {
-    return NextResponse.json({ error: "Evento no encontrado" }, { status: 404 })
+    return NextResponse.json({ error: "Competencia no encontrada." }, { status: 404 })
   }
   const report = await getClubEventReport(
     eventId,
@@ -37,7 +40,7 @@ export async function GET(
     explicitDisciplineAccess(user)
   )
   if (!report) {
-    return NextResponse.json({ error: "Evento no encontrado" }, { status: 404 })
+    return NextResponse.json({ error: "Competencia no encontrada." }, { status: 404 })
   }
 
   const buffer = buildClubEventReportWorkbook({
@@ -53,10 +56,10 @@ export async function GET(
         VALOR: [report.event.venue, report.event.city].filter(Boolean).join(", "),
       },
       { CONCEPTO: "Temporada", VALOR: report.event.seasonName ?? "" },
-      { CONCEPTO: "Formaciones pagadas", VALOR: report.totals.paidRegistrations },
-      { CONCEPTO: "Formaciones por pagar", VALOR: report.totals.pendingRegistrations },
+      { CONCEPTO: "Inscripciones pagadas", VALOR: report.totals.paidRegistrations },
+      { CONCEPTO: "Inscripciones por pagar", VALOR: report.totals.pendingRegistrations },
       { CONCEPTO: "Deportistas inscritos", VALOR: report.totals.distinctAthletes },
-      { CONCEPTO: "Cuotas por deportista", VALOR: report.totals.athleteFees },
+      { CONCEPTO: "Cuotas de competencia por deportista", VALOR: report.totals.athleteFees },
       { CONCEPTO: "Total", VALOR: formatMoney(report.totals.amount) },
       { CONCEPTO: "Generado", VALOR: formatDateTimeLima(new Date()) },
     ],
@@ -65,7 +68,7 @@ export async function GET(
       PRUEBA: row.modalityName,
       CATEGORIA: row.category,
       SEXO: row.sexLabel,
-      FORMACIONES: row.entryCount,
+      INSCRIPCIONES: row.entryCount,
       DEPORTISTAS: row.athleteCount,
       IMPORTE: row.amount,
     })),

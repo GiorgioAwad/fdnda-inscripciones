@@ -2,6 +2,13 @@
 
 ## Estado de salida
 
+La primera salida cubre clavados, natación artística y polo acuático. FDNDA
+pospuso natación convencional: no hay padrón importado ni cuenta delegada para
+esa disciplina. Cada uno de los 11 clubes del padrón conserva una cuenta
+coordinadora y tiene cuentas delegadas para las disciplinas actualmente
+importadas. Aquatica conserva un club único con delegados separados para
+artística y polo.
+La temporada 2026 tiene afiliaciones vigentes para los 12 clubes (13 pares club-disciplina) y los 474 deportistas activos del padrón. CHILE está afiliado en clavados sin deportistas. Estas afiliaciones se cargaron por indicación de FDNDA sin publicar tarifas ni registrar pagos; las altas posteriores requieren su propia afiliación.
 El código incluye validación estricta de configuración, pagos correlacionados,
 rate limiting compartido en PostgreSQL, revocación de sesiones, auditoría,
 cabeceras de seguridad, health checks, imagen Docker, migraciones y CI. Aun así,
@@ -22,10 +29,8 @@ de esta lista:
 - [ ] Tratamiento de datos personales revisado por asesoría peruana, banco de
   datos personales registrado y código cargado en el entorno.
 - [ ] MFA o una segunda barrera de acceso para administradores.
-- [ ] Scheduler cada minuto, logs centralizados, alarmas y responsable de guardia.
-  En Vercel esto exige plan **Pro** y volver a añadir el bloque `crons` a
-  `vercel.json`, que se retiró para poder desplegar staging en Hobby. Ver
-  `docs/VERCEL_DEPLOYMENT.md`.
+- [ ] Worker de Cloudflare con cron cada minuto, logs, alarmas y responsable de
+  guardia. Ver [`scheduler/`](../scheduler/README.md).
 - [ ] Credenciales de clubes entregadas de forma segura y archivo JSON local
   eliminado o cifrado después de la entrega.
 
@@ -38,7 +43,7 @@ de esta lista:
   hosting web. Ambas con `sslmode=require`.
 - Consistencia: PostgreSQL es la fuente de verdad para cupos, pagos y límites.
   Redis no es necesario en el diseño actual.
-- Scheduler: invoca cada minuto
+- Scheduler: Worker de Cloudflare que invoca cada minuto
   `POST /api/internal/maintenance/expire-orders` con
   `Authorization: Bearer <MAINTENANCE_SECRET>`.
 - Observabilidad: recopilar stdout/stderr JSON, comprobar `/api/health/live` y
@@ -58,7 +63,7 @@ Generar valores independientes para *staging* y producción.
 | --- | --- |
 | `DATABASE_URL` | Neon pooled, TLS, usuario de aplicación |
 | `DIRECT_DATABASE_URL` | Neon directo, TLS, solo job de migración; nunca en el hosting web |
-| `CRON_SECRET` | igual que `MAINTENANCE_SECRET` (lo envía el cron de Vercel) |
+| `CRON_SECRET` | prescindible con Cloudflare; si se conserva, igual que `MAINTENANCE_SECRET` |
 | `AUTH_SECRET` | aleatorio, mínimo 32 caracteres |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Base64 de 32 bytes, igual en todas las instancias |
 | `PAYMENTS_MODE` | exactamente `izipay` |
@@ -67,7 +72,7 @@ Generar valores independientes para *staging* y producción.
 | `MAINTENANCE_SECRET` | aleatorio, mínimo 32 caracteres |
 | `IP_HASH_SECRET` | aleatorio, mínimo 32 caracteres |
 | `PRIVACY_CONTACT_EMAIL` | buzón atendido para derechos de titulares |
-| `PERSONAL_DATA_BANK_REGISTRATION_CODE` | registro real, no un marcador |
+| `PERSONAL_DATA_BANK_REGISTRATION_CODE` | opcional en la app mientras FDNDA tramita el registro; al configurarlo, usar el código real |
 
 Guardar secretos en el gestor del hosting. No pasarlos como argumentos de shell,
 no imprimirlos y no reutilizarlos entre entornos. Rotar de inmediato ante una

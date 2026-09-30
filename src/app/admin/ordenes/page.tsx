@@ -1,14 +1,16 @@
 import Link from "next/link"
-import { AlertTriangle, Receipt } from "lucide-react"
+import { AlertTriangle, Receipt, SearchCheck } from "lucide-react"
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import {
   countOrdersRequiringPaymentReview,
   expireStaleOrders,
 } from "@/lib/orders"
-import { formatDateTimeLima, formatMoney } from "@/lib/utils"
-import { Badge, ORDER_STATUS_BADGE } from "@/components/ui/badge"
+import { formatDateTimeLima, formatMoney, plural } from "@/lib/utils"
+import { Badge, ORDER_KIND_BADGE, ORDER_STATUS_BADGE } from "@/components/ui/badge"
+import { buttonClasses } from "@/components/ui/button"
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table"
+import { EmptyState } from "@/components/empty-state"
 import { PageHeader } from "@/components/page-header"
 import { Pagination } from "@/components/pagination"
 
@@ -62,7 +64,10 @@ export default async function OrdenesAdminPage({
         title="Órdenes de pago"
         description={
           <>
-            {total} órdenes · Total cobrado:{" "}
+            {onlyReview
+              ? `${plural(total, "orden", "órdenes")} por conciliar`
+              : plural(total, "orden", "órdenes")}{" "}
+            · Cobrado en órdenes pagadas:{" "}
             <span className="font-bold text-fdnda-success">
               {formatMoney(paid._sum.totalAmount ?? 0)}
             </span>
@@ -70,54 +75,82 @@ export default async function OrdenesAdminPage({
         }
       />
 
+      {/* Sin nada por conciliar, la salida a la lista completa la da el estado
+          vacío de abajo (antes la tabla decía «Aún no hay órdenes» y no había
+          forma de volver). */}
       {reviewCount > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-fdnda-warning-ring bg-fdnda-warning-soft p-4 text-sm text-fdnda-warning">
           <span className="flex items-center gap-2 font-semibold">
-            <AlertTriangle className="h-5 w-5" aria-hidden="true" />
-            {reviewCount} orden(es) vencidas tienen un intento de pago y requieren
-            conciliación con Izipay. No liberes sus cupos ni pidas un segundo pago.
+            <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden="true" />
+            {reviewCount === 1
+              ? "1 orden vencida tiene un intento de pago con Izipay y está por conciliar. No liberes sus cupos ni pidas un segundo pago."
+              : `${reviewCount} órdenes vencidas tienen un intento de pago con Izipay y están por conciliar. No liberes sus cupos ni pidas un segundo pago.`}
           </span>
           <Link
             href={onlyReview ? "/admin/ordenes" : "/admin/ordenes?review=1"}
-            className="font-bold underline"
+            className="inline-flex min-h-11 items-center font-bold underline underline-offset-2"
           >
-            {onlyReview ? "Ver todas" : "Ver pendientes"}
+            {onlyReview
+              ? "Mostrar todas las órdenes"
+              : `Mostrar solo ${reviewCount === 1 ? "la orden" : `las ${reviewCount}`} por conciliar`}
           </Link>
         </div>
       ) : null}
 
-      <TableContainer>
-        <Table>
-          <THead>
-            <TR>
-              <TH>Código</TH>
-              <TH>Club</TH>
-              <TH>Fecha</TH>
-              <TH className="text-right">Inscripciones</TH>
-              <TH className="text-right">Total</TH>
-              <TH>Proveedor</TH>
-              <TH>Referencia</TH>
-              <TH>Estado</TH>
-            </TR>
-          </THead>
-          <TBody>
-            {orders.length === 0 ? (
+      {orders.length === 0 ? (
+        <div className="rounded-surface border border-fdnda-border bg-white shadow-raised">
+          {onlyReview ? (
+            <EmptyState
+              icon={SearchCheck}
+              title="No hay órdenes por conciliar"
+              action={
+                <Link href="/admin/ordenes" className={buttonClasses({ variant: "outline" })}>
+                  Mostrar todas las órdenes
+                </Link>
+              }
+            >
+              Ninguna orden vencida tiene un intento de pago con Izipay sin confirmar.
+            </EmptyState>
+          ) : (
+            <EmptyState icon={Receipt} title="Aún no hay órdenes">
+              Aparecen aquí cuando un club paga desde el portal su afiliación o una
+              planilla de inscripción.
+            </EmptyState>
+          )}
+        </div>
+      ) : (
+        <TableContainer aria-label="Órdenes de pago">
+          <Table>
+            <THead>
               <TR>
-                <TD colSpan={8} className="py-10 text-center text-fdnda-muted">
-                  Aún no hay órdenes.
-                </TD>
+                <TH>Código</TH>
+                <TH>Tipo</TH>
+                <TH>Club</TH>
+                <TH>Fecha</TH>
+                <TH className="text-right">Ítems</TH>
+                <TH className="text-right">Total</TH>
+                <TH>Proveedor</TH>
+                <TH>Referencia</TH>
+                <TH>Estado</TH>
               </TR>
-            ) : (
-              orders.map((order) => {
+            </THead>
+            <TBody>
+              {orders.map((order) => {
                 const badge = ORDER_STATUS_BADGE[order.status]
+                const kind = ORDER_KIND_BADGE[order.kind]
                 return (
                   <TR key={order.id}>
                     <TD className="num text-xs">
                       <span className="flex flex-wrap items-center gap-2">
                         {order.code}
-                        {order.isLegacy ? <Badge variant="warning">Legado</Badge> : null}
+                        {/* isLegacy: orden histórica que mezcla competencias
+                            (ver schema.prisma). «Legado» no le decía nada al admin. */}
+                        {order.isLegacy ? (
+                          <Badge variant="warning">Varias competencias</Badge>
+                        ) : null}
                       </span>
                     </TD>
+                    <TD>{kind ? <Badge variant={kind.variant}>{kind.label}</Badge> : "—"}</TD>
                     <TD className="font-medium text-fdnda-ink">{order.club.name}</TD>
                     <TD>{formatDateTimeLima(order.createdAt)}</TD>
                     <TD className="text-right">{order._count.items}</TD>
@@ -133,16 +166,18 @@ export default async function OrdenesAdminPage({
                     </TD>
                   </TR>
                 )
-              })
-            )}
-          </TBody>
-        </Table>
-      </TableContainer>
+              })}
+            </TBody>
+          </Table>
+        </TableContainer>
+      )}
       <Pagination
         pathname="/admin/ordenes"
         currentPage={currentPage}
         totalPages={totalPages}
         query={{ review: onlyReview ? "1" : undefined }}
+        pageSize={PAGE_SIZE}
+        totalItems={total}
       />
     </div>
   )

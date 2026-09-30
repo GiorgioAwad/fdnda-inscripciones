@@ -8,24 +8,41 @@ import { Button } from "@/components/ui/button"
 import { DISCIPLINES, type DisciplineValue } from "@/lib/disciplines"
 import { addAffiliationsAction } from "./actions"
 
-// La cuota del club es por disciplina: cada tarjeta de /afiliacion trae su botón.
+// La cuota del club es por disciplina. El botón agrega una o varias cuotas al
+// carrito y se queda en la página: antes redirigía al carrito tras cada clic,
+// y un club con tres disciplinas tenía que ir y volver tres veces.
 export function AffiliateClubButton({
   year,
-  discipline,
+  disciplines,
+  label,
+  variant = "default",
+  className,
 }: {
   year: number
-  discipline: DisciplineValue
+  disciplines: DisciplineValue[]
+  label: string
+  variant?: "default" | "outline"
+  className?: string
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const label = DISCIPLINES[discipline].label
 
   const handleClick = () => {
     startTransition(async () => {
-      const result = await addAffiliationsAction({ clubDisciplines: [discipline] })
+      const result = await addAffiliationsAction({ clubDisciplines: disciplines })
       if (result.success) {
-        toast.success(`Cuota ${year} de ${label} agregada al carrito`)
-        router.push("/afiliacion/carrito")
+        toast.success(
+          disciplines.length === 1
+            ? `Cuota de afiliación ${year} del club en ${DISCIPLINES[disciplines[0]].label} agregada al carrito`
+            : `${disciplines.length} cuotas de afiliación ${year} del club agregadas al carrito`,
+          {
+            action: {
+              label: "Pagar carrito",
+              onClick: () => router.push("/afiliacion/carrito"),
+            },
+          }
+        )
+        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -33,9 +50,14 @@ export function AffiliateClubButton({
   }
 
   return (
-    <Button onClick={handleClick} loading={isPending} className="w-full sm:w-auto">
+    <Button
+      onClick={handleClick}
+      loading={isPending}
+      variant={variant}
+      className={className ?? "w-full sm:w-auto"}
+    >
       <BadgePlus className="h-4 w-4" aria-hidden="true" />
-      Afiliar {year}
+      {label}
     </Button>
   )
 }

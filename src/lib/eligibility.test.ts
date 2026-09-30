@@ -47,13 +47,13 @@ describe("elegibilidad deportiva", () => {
         ...athlete,
         birthDate: "2009-12-31T00:00:00.000Z",
       })
-    ).toContain("fuera del rango")
+    ).toBe("Nació en 2009; esta prueba es para nacidos entre 2010 y 2013.")
     expect(
       athleteEligibilityError(modality, {
         ...athlete,
         birthDate: "2014-01-01T00:00:00.000Z",
       })
-    ).toContain("fuera del rango")
+    ).toBe("Nació en 2014; esta prueba es para nacidos entre 2010 y 2013.")
   })
 
   it("aplica sexo femenino, masculino y libre", () => {
@@ -68,10 +68,10 @@ describe("elegibilidad deportiva", () => {
 
     expect(
       athleteEligibilityError({ ...base, sexRule: "FEMALE" }, male)
-    ).toBe("La prueba es solo para damas")
+    ).toBe("Esta prueba es solo para damas.")
     expect(
       athleteEligibilityError({ ...base, sexRule: "MALE" }, athlete)
-    ).toBe("La prueba es solo para varones")
+    ).toBe("Esta prueba es solo para varones.")
     expect(athleteEligibilityError({ ...base, sexRule: "ANY" }, male)).toBeNull()
   })
 
@@ -101,7 +101,10 @@ describe("elegibilidad deportiva", () => {
       minAthletes: 2,
       maxAthletes: 2,
     }
-    expect(validateEntryComposition(modality, [athlete])).toHaveLength(2)
+    expect(validateEntryComposition(modality, [athlete])).toEqual([
+      "Esta prueba requiere 2 integrantes; marcaste 1.",
+      "Una prueba mixta requiere al menos un varón y una dama.",
+    ])
     expect(
       validateEntryComposition(modality, [
         athlete,
@@ -126,12 +129,12 @@ describe("elegibilidad deportiva", () => {
       { ...athlete, id: "athlete-4" },
     ]
 
-    expect(validateEntryComposition(modality, athletes.slice(0, 1))[0]).toContain(
-      "requiere 2 a 3"
+    expect(validateEntryComposition(modality, athletes.slice(0, 1))[0]).toBe(
+      "Esta prueba requiere de 2 a 3 integrantes; marcaste 1."
     )
     expect(validateEntryComposition(modality, athletes.slice(0, 3))).toEqual([])
-    expect(validateEntryComposition(modality, athletes)[0]).toContain(
-      "requiere 2 a 3"
+    expect(validateEntryComposition(modality, athletes)[0]).toBe(
+      "Esta prueba requiere de 2 a 3 integrantes; marcaste 4."
     )
   })
 
@@ -145,7 +148,7 @@ describe("elegibilidad deportiva", () => {
       maxAthletes: 4,
     }
     expect(validateEntryComposition(modality, [athlete, athlete])).toContain(
-      "Ana Nadadora está repetido."
+      "Nadadora, Ana aparece dos veces en la formación."
     )
   })
 })

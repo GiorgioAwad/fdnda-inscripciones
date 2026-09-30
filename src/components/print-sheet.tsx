@@ -70,16 +70,16 @@ export function PrintSheetFooter({ signatureLabel }: { signatureLabel?: string }
           </div>
         </div>
         <div className="w-40">
-          <div className="mt-6 border-t border-fdnda-ink pt-1 text-xs">Documento</div>
+          <div className="mt-6 border-t border-fdnda-ink pt-1 text-xs">N.º de documento</div>
         </div>
       </div>
       {/* La numeración automática de páginas solo funciona en los margin boxes
-          de @page, que ningún navegador de escritorio implementa. La delegamos
-          al pie nativo del diálogo de impresión en vez de prometerla. */}
+          de @page, que ningún navegador de escritorio implementa: la pone el
+          pie nativo del diálogo de impresión. No se explica en el papel, que no
+          es un lugar para instrucciones del navegador. */}
       <p className="mt-2 text-[8pt] text-fdnda-muted">
         Emitido por el portal de {FEDERATION_SHORT} el{" "}
-        {formatDateTimeLima(new Date())}. La numeración de páginas la agrega el
-        navegador al imprimir.
+        {formatDateTimeLima(new Date())}.
       </p>
     </footer>
   )

@@ -479,9 +479,11 @@ describe("validación autoritativa de planillas", () => {
 
     expect(result.valid).toBe(false)
     expect(composition).toHaveLength(4)
-    expect(composition.map((row) => row.message).join("\n")).toMatch(
-      /fuera del rango|solo para damas|varón y una dama|requiere 2 a 3/
-    )
+    const messages = composition.map((row) => row.message).join("\n")
+    expect(messages).toMatch(/esta prueba es para nacidos entre 2010 y 2013/)
+    expect(messages).toMatch(/Esta prueba es solo para damas\./)
+    expect(messages).toMatch(/requiere al menos un varón y una dama/)
+    expect(messages).toMatch(/requiere de 2 a 3 integrantes; marcaste 1/)
   })
 
   it("detecta duplicados entre formaciones y contra una orden confirmada", async () => {

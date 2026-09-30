@@ -254,7 +254,7 @@ describe("guardar formaciones y reservas", () => {
     expect(result).toMatchObject({
       success: false,
       code: "DUPLICATE_ENTRY",
-      error: "Ana Duplicada ya aparece en esta prueba.",
+      error: "Duplicada, Ana ya está en otra formación de esta prueba.",
     })
     expect(database.tx.registration.create).not.toHaveBeenCalled()
     expect(database.tx.registrationAthlete.createMany).not.toHaveBeenCalled()

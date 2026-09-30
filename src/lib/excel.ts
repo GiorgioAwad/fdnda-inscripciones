@@ -68,7 +68,10 @@ export function buildPadronTemplate(clubs: Array<{ code: string; name: string }>
     [
       "- DISCIPLINAS: una o varias separadas por coma (ver hoja Disciplinas). Se cobra una cuota de afiliación por cada una.",
     ],
-    ["- Si el NRO_DOCUMENTO ya existe, se actualizan sus datos y su club."],
+    [
+      "- Si el NRO_DOCUMENTO ya existe, se actualizan sus datos y su club. La vista previa avisa en cada fila que cambia de club.",
+    ],
+    ["- Máximo 5000 filas y 4 MB por archivo."],
   ])
   notes["!cols"] = [{ wch: 100 }]
   XLSX.utils.book_append_sheet(workbook, notes, "Instrucciones")
@@ -240,7 +243,11 @@ export function parsePadronWorkbook(buffer: Buffer | ArrayBuffer): {
   try {
     workbook = XLSX.read(buffer, { type: "buffer", cellDates: true })
   } catch {
-    return { rows: [], fileError: "No se pudo leer el archivo. ¿Es un Excel válido?" }
+    return {
+      rows: [],
+      fileError:
+        "No se pudo leer el archivo. Ábrelo en Excel, guárdalo como .xlsx y vuelve a subirlo.",
+    }
   }
 
   const sheetName =
@@ -248,7 +255,10 @@ export function parsePadronWorkbook(buffer: Buffer | ArrayBuffer): {
     workbook.SheetNames[0]
   const sheet = workbook.Sheets[sheetName]
   if (!sheet) {
-    return { rows: [], fileError: "El archivo no tiene hojas." }
+    return {
+      rows: [],
+      fileError: "El archivo no tiene hojas. Usa la plantilla y copia ahí tus datos.",
+    }
   }
 
   const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
@@ -257,7 +267,10 @@ export function parsePadronWorkbook(buffer: Buffer | ArrayBuffer): {
   })
 
   if (rawRows.length === 0) {
-    return { rows: [], fileError: "La hoja está vacía." }
+    return {
+      rows: [],
+      fileError: `La hoja «${sheetName}» está vacía: copia los deportistas debajo de los encabezados.`,
+    }
   }
 
   // Mapear encabezados reales -> campos conocidos.
@@ -279,19 +292,20 @@ export function parsePadronWorkbook(buffer: Buffer | ArrayBuffer): {
   ]
   const missing = required.filter((f) => !headerMap.has(f))
   if (missing.length > 0) {
+    const names = missing.map((f) =>
+      f === "firstNames" ? "NOMBRES"
+      : f === "lastNames" ? "APELLIDOS"
+      : f === "docNumber" ? "NRO_DOCUMENTO"
+      : f === "birthDate" ? "FECHA_NACIMIENTO"
+      : f === "sex" ? "SEXO"
+      : f === "disciplines" ? "DISCIPLINAS"
+      : "CLUB"
+    )
     return {
       rows: [],
-      fileError: `Faltan columnas: ${missing
-        .map((f) =>
-          f === "firstNames" ? "NOMBRES"
-          : f === "lastNames" ? "APELLIDOS"
-          : f === "docNumber" ? "NRO_DOCUMENTO"
-          : f === "birthDate" ? "FECHA_NACIMIENTO"
-          : f === "sex" ? "SEXO"
-          : f === "disciplines" ? "DISCIPLINAS"
-          : "CLUB"
-        )
-        .join(", ")}. Descarga la plantilla para ver el formato.`,
+      fileError: `${
+        names.length === 1 ? `Falta la columna ${names[0]}` : `Faltan las columnas ${names.join(", ")}`
+      } en la primera fila de la hoja «${sheetName}». Descarga la plantilla para ver el formato.`,
     }
   }
 
@@ -316,33 +330,42 @@ export function parsePadronWorkbook(buffer: Buffer | ArrayBuffer): {
     }
 
     const errors: string[] = []
-    if (!firstNames) errors.push("NOMBRES vacío")
-    if (!lastNames) errors.push("APELLIDOS vacío")
+    if (!firstNames) errors.push("Falta NOMBRES")
+    if (!lastNames) errors.push("Falta APELLIDOS")
     if (!docNumber) {
-      errors.push("NRO_DOCUMENTO vacío")
+      errors.push("Falta NRO_DOCUMENTO")
     } else if (!/^[a-zA-Z0-9-]{4,20}$/.test(docNumber)) {
-      errors.push(`NRO_DOCUMENTO inválido: "${docNumber}"`)
+      errors.push(
+        `NRO_DOCUMENTO «${docNumber}» no es válido: usa de 4 a 20 letras, números o guiones`
+      )
     }
 
     const sex = parseSex(sexRaw)
-    if (!sex) errors.push(`SEXO inválido: "${sexRaw}" (usa M o F)`)
+    if (!sex) {
+      errors.push(
+        sexRaw.trim() ? `SEXO «${sexRaw.trim()}» no es válido: usa M o F` : "Falta SEXO (usa M o F)"
+      )
+    }
 
     const birthDateISO = parseBirthDate(get("birthDate"))
     if (!birthDateISO || !isValidCalendarDate(birthDateISO)) {
-      errors.push(`FECHA_NACIMIENTO inválida (usa DD/MM/AAAA)`)
+      errors.push("FECHA_NACIMIENTO no es una fecha válida: usa DD/MM/AAAA")
     }
 
-    if (!clubRef) errors.push("CLUB vacío")
+    if (!clubRef) errors.push("Falta CLUB")
 
     // Cada disciplina genera su propia cuota anual, así que no puede quedar vacía.
     const parsedDisciplines = parseDisciplines(get("disciplines"))
     let disciplines: DisciplineValue[] = []
     if ("unknownValues" in parsedDisciplines) {
+      const unknown = parsedDisciplines.unknownValues
       errors.push(
-        `DISCIPLINAS no reconocida(s): ${parsedDisciplines.unknownValues.join(", ")}`
+        unknown.length === 1
+          ? `DISCIPLINAS: «${unknown[0]}» no es una disciplina reconocida (ver hoja Disciplinas)`
+          : `DISCIPLINAS: no se reconocen ${unknown.map((value) => `«${value}»`).join(", ")} (ver hoja Disciplinas)`
       )
     } else if (parsedDisciplines.disciplines.length === 0) {
-      errors.push("DISCIPLINAS vacío (ver hoja Disciplinas)")
+      errors.push("Falta DISCIPLINAS (ver hoja Disciplinas)")
     } else {
       disciplines = parsedDisciplines.disciplines
     }
@@ -462,8 +485,8 @@ export function buildAffiliationsWorkbook(data: {
     XLSX.utils.book_append_sheet(workbook, sheet, name)
   }
 
-  addSheet("Clubes", data.clubRows, [32, 14, 20, 18, 14, 12, 14, 12, 12, 14])
-  addSheet("Deportistas", data.athleteRows, [30, 14, 12, 6, 30, 20, 18, 14, 14])
+  addSheet("Clubes", data.clubRows, [32, 14, 20, 18, 22, 14, 12, 10, 18, 24])
+  addSheet("Deportistas", data.athleteRows, [30, 14, 12, 10, 30, 20, 18, 18, 14])
 
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer
 }

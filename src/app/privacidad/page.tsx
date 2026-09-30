@@ -1,4 +1,6 @@
 import type { Metadata } from "next"
+import Link from "next/link"
+import { ArrowLeft } from "lucide-react"
 
 export const metadata: Metadata = {
   title: "Política de Privacidad",
@@ -6,16 +8,22 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   const contactEmail =
-    process.env.PRIVACY_CONTACT_EMAIL || "privacidad@fdnda.pe"
-  const bankCode =
-    process.env.PERSONAL_DATA_BANK_REGISTRATION_CODE || "Pendiente de registro"
+    process.env.PRIVACY_CONTACT_EMAIL || "sportentries@fdnda.org"
+  // Sin código configurado no se publica un «pendiente»: la frase se omite.
+  const bankCode = process.env.PERSONAL_DATA_BANK_REGISTRATION_CODE
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6">
+      {/* La raíz lleva al portal que corresponda (o al login sin sesión). */}
+      <Link
+        href="/"
+        className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-control px-1 text-sm font-bold text-fdnda-muted underline-offset-4 hover:text-fdnda-navy hover:underline"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Volver al portal
+      </Link>
       <article className="space-y-6 rounded-surface border border-fdnda-border bg-white p-6 shadow-raised sm:p-8">
         <div>
-          <p className="text-sm font-semibold text-fdnda-turquoise-deep">FDNDA</p>
-          <h1 className="mt-1 text-3xl font-bold text-fdnda-navy">
+          <h1 className="text-3xl font-bold text-fdnda-navy">
             Política de Privacidad
           </h1>
           <p className="mt-2 text-sm text-fdnda-muted">
@@ -27,8 +35,13 @@ export default function PrivacyPage() {
           <h2 className="text-xl font-bold text-fdnda-navy">Responsable</h2>
           <p className="text-sm leading-6 text-fdnda-ink">
             La Federación Deportiva Nacional de Deportes Acuáticos (FDNDA) es
-            responsable del banco de datos de afiliaciones e inscripciones. Código
-            de registro: <strong>{bankCode}</strong>.
+            responsable del banco de datos de afiliaciones e inscripciones.
+            {bankCode ? (
+              <>
+                {" "}
+                Código de registro: <strong>{bankCode}</strong>.
+              </>
+            ) : null}
           </p>
         </section>
 

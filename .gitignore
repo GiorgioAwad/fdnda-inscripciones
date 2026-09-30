@@ -40,9 +40,17 @@ yarn-error.log*
 # sensitive local data imports
 /.private-imports/
 
+# source toolkit (the optimized web pictograms live in /public/pictograms)
+/PICTOGRAMAS FDNDA/
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Cloudflare maintenance scheduler
+/scheduler/node_modules/
+/scheduler/.wrangler/
+/scheduler/.dev.vars*

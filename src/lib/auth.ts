@@ -128,6 +128,7 @@ export async function getCurrentUser() {
       isActive: true,
       sessionVersion: true,
       mustChangePassword: true,
+      onboardedAt: true,
       clubId: true,
       disciplineAccess: true,
       club: { select: { name: true, isActive: true } },
@@ -150,6 +151,9 @@ export async function getCurrentUser() {
     disciplineAccess: liveUser.disciplineAccess,
     sessionVersion: liveUser.sessionVersion,
     mustChangePassword: liveUser.mustChangePassword,
+    // Se lee en vivo y no viaja en el JWT: cerrar la guía no debe obligar a
+    // reemitir la sesión.
+    onboardedAt: liveUser.onboardedAt,
   }
 }
 

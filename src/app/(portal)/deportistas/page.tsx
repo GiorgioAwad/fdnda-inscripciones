@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { Clock3, Users } from "lucide-react"
+import { BadgeCheck, Clock3, Users } from "lucide-react"
 import { getCurrentUser } from "@/lib/auth"
 import {
   affiliationState,
@@ -17,8 +17,9 @@ import {
   type DisciplineValue,
 } from "@/lib/disciplines"
 import { prisma } from "@/lib/prisma"
-import { cn, formatDateOnly, SEX_LABELS } from "@/lib/utils"
+import { cn, formatDateOnly, plural, SEX_LABELS } from "@/lib/utils"
 import { AFFILIATION_STATE_BADGE, Badge } from "@/components/ui/badge"
+import { buttonClasses } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table"
 import { PageHeader } from "@/components/page-header"
@@ -113,10 +114,22 @@ export default async function DeportistasPage({
     <div className="space-y-6">
       <PageHeader
         icon={Users}
-        eyebrow="Afiliación"
-        title="Deportistas"
-        description={`${allTotal} deportista(s) en el padrón de tu club. La afiliación anual se gestiona en «Estado de afiliación».`}
-        actions={<AddAthleteDialog disciplineAccess={availableDisciplines} />}
+        title="Padrón de deportistas"
+        description={`${plural(allTotal, "deportista", "deportistas")} en el padrón de tu club. Los datos y las disciplinas de un deportista ya registrado solo los corrige la FDNDA.`}
+        actions={
+          <>
+            {allTotal > 0 ? (
+              <Link
+                href="/afiliacion?tab=deportistas"
+                className={buttonClasses({ variant: "outline" })}
+              >
+                <BadgeCheck className="h-4 w-4" aria-hidden="true" />
+                Afiliar deportistas
+              </Link>
+            ) : null}
+            <AddAthleteDialog disciplineAccess={availableDisciplines} />
+          </>
+        }
       />
 
       {filters.length > 1 ? (
@@ -144,28 +157,48 @@ export default async function DeportistasPage({
       ) : null}
 
       {!season ? (
-        <Card>
-          <EmptyState icon={Clock3} title="Temporada no habilitada">
-            La federación todavía no abrió la temporada de afiliaciones. Puedes
-            registrar deportistas; su afiliación se generará al abrirse.
-          </EmptyState>
-        </Card>
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-surface border border-fdnda-border bg-white px-4 py-3 text-sm text-fdnda-muted"
+        >
+          <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-fdnda-navy" aria-hidden="true" />
+          <span>
+            La temporada de afiliación aún no abre. Puedes registrar deportistas
+            ahora; cuando la FDNDA la abra, afílialos desde Estado de afiliación →
+            Deportistas por afiliar.
+          </span>
+        </p>
       ) : null}
 
       {athletes.length === 0 ? (
         <Card>
-          <EmptyState icon={Users} title="No hay deportistas para mostrar">
-            {filter
-              ? "Ningún deportista de tu club practica esta disciplina."
-              : "Usa «Agregar deportista» para registrarlos."}
-          </EmptyState>
+          {allTotal === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="Tu padrón está vacío"
+              action={<AddAthleteDialog disciplineAccess={availableDisciplines} />}
+            >
+              Registra a cada deportista con su N.º de documento. Solo los deportistas
+              del padrón se pueden afiliar e inscribir en competencias.
+            </EmptyState>
+          ) : (
+            <EmptyState
+              icon={Users}
+              title={`Ningún deportista practica ${filter ? DISCIPLINES[filter].label : "esta disciplina"}`}
+              action={
+                <Link href="/deportistas" className={buttonClasses({ variant: "outline" })}>
+                  Mostrar todo el padrón
+                </Link>
+              }
+            />
+          )}
         </Card>
       ) : (
-        <TableContainer>
+        <TableContainer aria-label="Padrón de deportistas">
           <Table>
             <THead>
               <TR>
-                <TH className="w-12">N°</TH>
+                <TH className="w-12">N.º</TH>
                 <TH>Deportista</TH>
                 <TH>F. nacimiento</TH>
                 <TH>Documento</TH>
@@ -211,7 +244,7 @@ export default async function DeportistasPage({
                             const settled = isSettledState(state)
                             const short = DISCIPLINES[discipline].short
 
-                            // Lo no regularizado enlaza directo a donde se arregla.
+                            // Lo no afiliado enlaza directo a donde se afilia.
                             return settled ? (
                               <Badge key={discipline} variant={badge.variant}>
                                 {short} · {badge.label}
@@ -219,9 +252,10 @@ export default async function DeportistasPage({
                             ) : (
                               <Link
                                 key={discipline}
-                                href="/afiliacion?tab=deportistas"
+                                href={`/afiliacion?tab=deportistas&disciplina=${discipline}`}
                                 className="rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fdnda-turquoise"
-                                title={`Afiliar ${short}`}
+                                title={`Afiliar en ${DISCIPLINES[discipline].label}`}
+                                aria-label={`Afiliar a ${row.lastNames}, ${row.firstNames} en ${DISCIPLINES[discipline].label} (${badge.label})`}
                               >
                                 <Badge variant={badge.variant}>
                                   {short} · {badge.label}

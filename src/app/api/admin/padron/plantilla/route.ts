@@ -8,7 +8,10 @@ export const runtime = "nodejs"
 export async function GET() {
   const user = await getCurrentUser()
   if (!user || user.role !== "ADMIN") {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    return NextResponse.json(
+      { error: "Inicia sesión como administrador para descargar la plantilla del padrón." },
+      { status: 401 }
+    )
   }
 
   const clubs = await prisma.club.findMany({

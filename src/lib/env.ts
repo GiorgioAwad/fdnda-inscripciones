@@ -61,9 +61,6 @@ export function assertProductionConfiguration(options?: { force?: boolean }): vo
     "IP_HASH_SECRET",
     "PRIVACY_CONTACT_EMAIL",
     "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY",
-    // El registro del banco de datos personales ampara el tratamiento real de
-    // datos de titulares; un entorno de pruebas con datos ficticios no lo tiene.
-    ...(isStaging ? [] : ["PERSONAL_DATA_BANK_REGISTRATION_CODE"]),
     // Las credenciales de la pasarela solo hacen falta si se va a cobrar.
     ...(paymentsMode === "izipay"
       ? [

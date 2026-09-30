@@ -31,6 +31,26 @@ const sizeClasses: Record<Size, string> = {
   icon: "h-11 w-11 p-0",
 }
 
+// Un enlace que se ve como botón usa estas clases directamente sobre <Link> o
+// <a>. Antes se envolvía un <Button> dentro de un <Link>, y eso anida dos
+// elementos interactivos (a > button): HTML inválido, doble parada de
+// tabulador y un lector de pantalla que anuncia dos controles para un destino.
+export function buttonClasses({
+  variant = "default",
+  size = "default",
+  className,
+}: { variant?: Variant; size?: Size; className?: string } = {}) {
+  return cn(
+    "inline-flex select-none items-center justify-center gap-2 rounded-control font-semibold",
+    "transition-[background-color,border-color,box-shadow,transform] duration-150 motion-reduce:transition-none",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-turquoise focus-visible:ring-offset-2",
+    "disabled:cursor-not-allowed disabled:opacity-55 aria-disabled:pointer-events-none aria-disabled:opacity-55",
+    variantClasses[variant],
+    sizeClasses[size],
+    className
+  )
+}
+
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
   size?: Size
@@ -59,15 +79,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       data-loading={loading || undefined}
-      className={cn(
-        "inline-flex select-none items-center justify-center gap-2 rounded-control font-semibold",
-        "transition-[background-color,border-color,box-shadow,transform] duration-150 motion-reduce:transition-none",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-turquoise focus-visible:ring-offset-2",
-        "disabled:cursor-not-allowed disabled:opacity-55",
-        variantClasses[variant],
-        sizeClasses[size],
-        className
-      )}
+      className={buttonClasses({ variant, size, className })}
       {...props}
     >
       {loading ? (

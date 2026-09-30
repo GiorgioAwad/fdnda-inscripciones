@@ -7,8 +7,10 @@ import { clubEventWhere, getClubEventScope } from "@/lib/club-events"
 import { disciplineConfigFor } from "@/lib/event-pricing"
 import { validateRegistrationPlan } from "@/lib/plan-validation"
 import { assertPlanAccess, explicitDisciplineAccess } from "@/lib/club-access"
+import { formatDateTimeLima } from "@/lib/utils"
 import { resumeStep } from "../steps"
 import {
+  athleteDisciplinesCoveringEvent,
   getRegistrationPlan,
   searchClubAthletesForPlan,
 } from "@/lib/registration-plans"
@@ -25,17 +27,30 @@ import type {
 
 export const dynamic = "force-dynamic"
 
-function athleteView(athlete: {
-  id: string
-  firstNames: string
-  lastNames: string
-  docType: string
-  docNumber: string
-  birthDate: Date
-  sex: "M" | "F"
-  disciplines: string[]
-}): AthleteView {
-  return { ...athlete, birthDate: athlete.birthDate.toISOString() }
+function athleteView(
+  athlete: {
+    id: string
+    firstNames: string
+    lastNames: string
+    docType: string
+    docNumber: string
+    birthDate: Date
+    sex: "M" | "F"
+    disciplines: string[]
+  },
+  covered: Map<string, string[]> | null
+): AthleteView {
+  return {
+    id: athlete.id,
+    firstNames: athlete.firstNames,
+    lastNames: athlete.lastNames,
+    docType: athlete.docType,
+    docNumber: athlete.docNumber,
+    birthDate: athlete.birthDate.toISOString(),
+    sex: athlete.sex,
+    disciplines: athlete.disciplines,
+    coveredDisciplines: covered ? (covered.get(athlete.id) ?? []) : null,
+  }
 }
 
 function eventView(event: {
@@ -51,10 +66,16 @@ function eventView(event: {
   season?: { name: string } | null
 }): EventView {
   return {
-    ...event,
+    id: event.id,
+    name: event.name,
+    slug: event.slug,
+    venue: event.venue,
+    city: event.city,
     startDate: event.startDate.toISOString(),
     endDate: event.endDate.toISOString(),
     registrationDeadline: event.registrationDeadline.toISOString(),
+    registrationDeadlineLabel: formatDateTimeLima(event.registrationDeadline),
+    disciplines: event.disciplines,
     seasonName: event.season?.name ?? null,
   }
 }
@@ -97,9 +118,10 @@ export default async function RegistrationPlanPage({
       ? { discipline: { in: access } }
       : {}
 
-  // El selector solo ofrece competencias de las disciplinas del club.
+  // Solo una planilla sin competencia muestra el selector, y solo ofrece
+  // competencias de las disciplinas del club.
   const events =
-    scope.disciplines.length === 0
+    plan.eventId || scope.disciplines.length === 0
       ? []
       : await prisma.event.findMany({
           where: clubEventWhere(scope.disciplines, {
@@ -111,7 +133,7 @@ export default async function RegistrationPlanPage({
           orderBy: [{ startDate: "asc" }, { name: "asc" }],
         })
 
-  const [modalities, disciplineConfigs] = plan.eventId
+  const [modalities, disciplineConfigs, covered] = plan.eventId
     ? await Promise.all([
         prisma.eventModality.findMany({
           where: { eventId: plan.eventId, isActive: true, ...planDisciplineWhere },
@@ -120,8 +142,18 @@ export default async function RegistrationPlanPage({
         prisma.eventDisciplineConfig.findMany({
           where: { eventId: plan.eventId, ...planDisciplineWhere },
         }),
+        // Afiliación de cada deportista visible (buscador y planilla), con el
+        // mismo criterio que la revisión: así el club la ve antes de marcar.
+        athleteDisciplinesCoveringEvent({
+          clubId: user.clubId,
+          eventId: plan.eventId,
+          athleteIds: [
+            ...athletePage.rows.map((row) => row.id),
+            ...plan.athletes.map((row) => row.athleteId),
+          ],
+        }),
       ])
-    : [[], []]
+    : [[], [], null]
 
   const lockedEntries = plan.eventId
     ? await prisma.registration.findMany({
@@ -139,6 +171,17 @@ export default async function RegistrationPlanPage({
       })
     : []
 
+  // Leer el reloj acá (servidor) y no en el render del cliente.
+  const now = new Date()
+  const closedReason: PlanView["closedReason"] = !plan.event
+    ? null
+    : plan.event.status !== "OPEN"
+      ? "CLOSED"
+      : plan.event.registrationDeadline < now
+        ? "DEADLINE"
+        : null
+
+  const activeOrder = plan.orders[0] ?? null
   const view: PlanView = {
     id: plan.id,
     status: plan.status,
@@ -146,7 +189,7 @@ export default async function RegistrationPlanPage({
     currentStep: plan.currentStep,
     clubName: plan.club.name,
     event: plan.event ? eventView(plan.event) : null,
-    roster: plan.athletes.map((row) => athleteView(row.athlete)),
+    roster: plan.athletes.map((row) => athleteView(row.athlete, covered)),
     entries: plan.registrations.map((entry) => ({
       id: entry.id,
       modalityId: entry.modalityId,
@@ -154,15 +197,21 @@ export default async function RegistrationPlanPage({
       athleteIds: entry.athletes.map((row) => row.athleteId),
       reserveIds: entry.athletes.filter((row) => row.isReserve).map((row) => row.athleteId),
     })),
-    activeOrder: plan.orders[0]
-      ? { id: plan.orders[0].id, status: plan.orders[0].status }
+    activeOrder: activeOrder
+      ? {
+          id: activeOrder.id,
+          code: activeOrder.code,
+          status: activeOrder.status,
+          totalAmount: Number(activeOrder.totalAmount),
+        }
       : null,
     paysEntry: plan.paysEntry,
     paysAthleteFee: plan.paysAthleteFee,
+    closedReason,
   }
 
   const athletePageView: AthletePageView = {
-    rows: athletePage.rows.map((row) => athleteView(row)),
+    rows: athletePage.rows.map((row) => athleteView(row, covered)),
     page: athletePage.page,
     pageSize: athletePage.pageSize,
     total: athletePage.total,
@@ -190,6 +239,7 @@ export default async function RegistrationPlanPage({
       ageRuleMode: config.ageRuleMode,
       chargesEntry: config.chargesEntry,
       chargesAthleteFee: config.chargesAthleteFee,
+      athleteFee: config.athleteFee === null ? null : Number(config.athleteFee),
     }
   })
   const lockedEntryViews: LockedEntryView[] = lockedEntries.map((entry) => ({
@@ -212,9 +262,12 @@ export default async function RegistrationPlanPage({
     }))
   )
 
-  // Si la planilla reanuda en revisión, se valida acá y el club ve el total sin
-  // pasar por un spinner. En los otros pasos no se gasta la consulta.
+  // Si un borrador reanuda en revisión, se valida acá y el club ve el total sin
+  // pasar por un spinner. Una planilla con orden no se revalida: su orden ya
+  // fijó importes y reglas, y revalidarla contra el estado actual de la
+  // competencia mostraría errores que no le corresponden.
   const initialValidation =
+    plan.status === "DRAFT" &&
     resumeStep(plan.currentStep, Boolean(plan.eventId)) === 3
       ? await validateRegistrationPlan({
           planId,
@@ -224,13 +277,27 @@ export default async function RegistrationPlanPage({
         })
       : null
 
+  const statusLine = !plan.event
+    ? "Elige la competencia para empezar a inscribir."
+    : plan.status === "PAID"
+      ? "Planilla pagada"
+      : plan.status === "AWAITING_PAYMENT"
+        ? "Orden pendiente de pago"
+        : plan.status === "ABANDONED"
+          ? "Planilla reemplazada"
+          : closedReason === "CLOSED"
+            ? "Inscripciones cerradas"
+            : closedReason === "DEADLINE"
+              ? `Inscripciones cerradas el ${formatDateTimeLima(plan.event.registrationDeadline)}`
+              : `Inscripción hasta el ${formatDateTimeLima(plan.event.registrationDeadline)}`
+
   return (
     <div className="space-y-6">
       <PageHeader
         icon={ClipboardList}
-        eyebrow="Inscripciones deportivas"
+        back={{ href: "/inscripciones", label: "Volver a Inscripciones" }}
         title={plan.event?.name ?? "Nueva planilla"}
-        description={`Club ${plan.club.name} · Borrador persistente con control de cambios.`}
+        description={`Club ${plan.club.name} · ${statusLine}`}
       />
       <RegistrationPlanWizard
         initialPlan={view}

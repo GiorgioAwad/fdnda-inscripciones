@@ -1,4 +1,4 @@
-import { birthYearOf, SEX_RULE_LABELS } from "./utils"
+import { birthYearOf, plural } from "./utils"
 
 export interface EligibilityModality {
   sexRule: "MALE" | "FEMALE" | "MIXED" | "ANY"
@@ -36,24 +36,36 @@ export function competesUpACategory(
   )
 }
 
+// «para nacidos entre 2010 y 2012», «para nacidos en 2009 o después». Sin
+// tope superior es la lectura Sub-N (un piso de año); sin piso, un tope.
+function birthYearWindow(from: number | null, to: number | null): string {
+  if (from !== null && to !== null) return `para nacidos entre ${from} y ${to}`
+  if (from !== null) return `para nacidos en ${from} o después`
+  return `para nacidos en ${to} o antes`
+}
+
 export function athleteEligibilityError(
   modality: EligibilityModality,
   athlete: EligibilityAthlete
 ): string | null {
   const year = birthYearOf(athlete.birthDate)
   const upgraded = competesUpACategory(modality, athlete)
+  const outOfRange =
+    !upgraded &&
+    ((modality.birthYearFrom !== null && year < modality.birthYearFrom) ||
+      (modality.birthYearTo !== null && year > modality.birthYearTo))
 
-  if (!upgraded && modality.birthYearFrom !== null && year < modality.birthYearFrom) {
-    return `Nacido en ${year}: fuera del rango ${modality.birthYearFrom}-${modality.birthYearTo ?? "…"}`
-  }
-  if (!upgraded && modality.birthYearTo !== null && year > modality.birthYearTo) {
-    return `Nacido en ${year}: fuera del rango ${modality.birthYearFrom ?? "…"}-${modality.birthYearTo}`
+  if (outOfRange) {
+    return `Nació en ${year}; esta prueba es ${birthYearWindow(
+      modality.birthYearFrom,
+      modality.birthYearTo
+    )}.`
   }
   if (modality.sexRule === "MALE" && athlete.sex !== "M") {
-    return "La prueba es solo para varones"
+    return "Esta prueba es solo para varones."
   }
   if (modality.sexRule === "FEMALE" && athlete.sex !== "F") {
-    return "La prueba es solo para damas"
+    return "Esta prueba es solo para damas."
   }
   return null
 }
@@ -65,6 +77,10 @@ export function isAthleteEligible(
   return athleteEligibilityError(modality, athlete) === null
 }
 
+function athleteName(athlete: EligibilityAthlete): string {
+  return `${athlete.lastNames}, ${athlete.firstNames}`
+}
+
 // Valida la composición completa de una inscripción (individual o dueto/equipo).
 export function validateEntryComposition(
   modality: EligibilityModality,
@@ -73,26 +89,26 @@ export function validateEntryComposition(
   const errors: string[] = []
 
   if (athletes.length < modality.minAthletes || athletes.length > modality.maxAthletes) {
-    const range =
+    const required =
       modality.minAthletes === modality.maxAthletes
-        ? `${modality.minAthletes}`
-        : `${modality.minAthletes} a ${modality.maxAthletes}`
+        ? plural(modality.minAthletes, "integrante", "integrantes")
+        : `de ${modality.minAthletes} a ${modality.maxAthletes} integrantes`
     errors.push(
-      `Esta prueba requiere ${range} deportista(s); seleccionaste ${athletes.length}.`
+      `Esta prueba requiere ${required}; marcaste ${athletes.length}.`
     )
   }
 
   const seen = new Set<string>()
   for (const athlete of athletes) {
     if (seen.has(athlete.id)) {
-      errors.push(`${athlete.firstNames} ${athlete.lastNames} está repetido.`)
+      errors.push(`${athleteName(athlete)} aparece dos veces en la formación.`)
       continue
     }
     seen.add(athlete.id)
 
     const error = athleteEligibilityError(modality, athlete)
     if (error) {
-      errors.push(`${athlete.firstNames} ${athlete.lastNames}: ${error}`)
+      errors.push(`${athleteName(athlete)}: ${error}`)
     }
   }
 
@@ -101,9 +117,7 @@ export function validateEntryComposition(
     const hasMale = athletes.some((a) => a.sex === "M")
     const hasFemale = athletes.some((a) => a.sex === "F")
     if (!hasMale || !hasFemale) {
-      errors.push(
-        `Una prueba ${SEX_RULE_LABELS.MIXED.toLowerCase()} requiere al menos un varón y una dama.`
-      )
+      errors.push("Una prueba mixta requiere al menos un varón y una dama.")
     }
   }
 

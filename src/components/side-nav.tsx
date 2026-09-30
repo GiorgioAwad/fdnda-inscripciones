@@ -16,6 +16,9 @@ export interface SideNavLink {
   icon: LucideIcon
   exact?: boolean
   badge?: number
+  // Qué cuenta el globo, para lectores de pantalla: «3 por afiliar». Sin esto
+  // se anunciaba un número suelto después del nombre del enlace.
+  badgeLabel?: string
 }
 
 export interface SideNavGroup {
@@ -118,6 +121,9 @@ function NavLinks({
                       )}
                     >
                       {link.badge}
+                      {link.badgeLabel ? (
+                        <span className="sr-only"> {link.badgeLabel}</span>
+                      ) : null}
                     </span>
                   ) : null}
                 </Link>
@@ -133,19 +139,24 @@ function NavLinks({
 function AccountArea({
   userName,
   contextLabel,
+  guideAction,
   signOutAction,
 }: {
   userName: string
   contextLabel?: string
+  guideAction?: ReactNode
   signOutAction: ReactNode
 }) {
   return (
     <div className="border-t border-white/15 px-4 py-4">
-      <p className="text-eyebrow uppercase text-fdnda-sky/70">
-        {contextLabel ?? "Sesión activa"}
-      </p>
-      <p className="mt-1 truncate text-sm font-semibold text-white">{userName}</p>
-      <div className="mt-2 [&_button]:w-full">{signOutAction}</div>
+      <p className="truncate text-sm font-semibold text-white">{userName}</p>
+      {contextLabel ? (
+        <p className="truncate text-xs text-fdnda-sky">{contextLabel}</p>
+      ) : null}
+      <div className="mt-2 flex flex-col gap-0.5 [&_button]:w-full">
+        {guideAction}
+        {signOutAction}
+      </div>
     </div>
   )
 }
@@ -158,10 +169,12 @@ export function SideNav({
   subtitle,
   homeLabel,
   accountLabel,
+  guideAction,
   menuLabel = "Abrir menú",
 }: {
   groups: SideNavGroup[]
   userName: string
+  guideAction?: ReactNode
   signOutAction: ReactNode
   homeHref: string
   subtitle: string
@@ -246,6 +259,7 @@ export function SideNav({
         <AccountArea
           userName={userName}
           contextLabel={accountLabel}
+          guideAction={guideAction}
           signOutAction={signOutAction}
         />
       </aside>
@@ -306,6 +320,7 @@ export function SideNav({
             <AccountArea
               userName={userName}
               contextLabel={accountLabel}
+              guideAction={guideAction}
               signOutAction={signOutAction}
             />
           </div>

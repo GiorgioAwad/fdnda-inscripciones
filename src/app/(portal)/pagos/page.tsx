@@ -3,13 +3,14 @@ import { redirect } from "next/navigation"
 import { Receipt } from "lucide-react"
 import { getCurrentUser } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { expireStaleOrders } from "@/lib/orders"
+import { expireStaleOrders, ORDER_EXPIRATION_MINUTES } from "@/lib/orders"
 import { formatDateTimeLima, formatMoney } from "@/lib/utils"
 import {
   Badge,
   ORDER_KIND_BADGE,
   ORDER_STATUS_BADGE,
 } from "@/components/ui/badge"
+import { buttonClasses } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table"
 import { PageHeader } from "@/components/page-header"
@@ -31,6 +32,21 @@ const KIND_BY_FILTER: Record<string, "AFFILIATION" | "REGISTRATION" | undefined>
   inscripcion: "REGISTRATION",
 }
 
+const EMPTY_BY_FILTER: Record<string, { title: string; body: string }> = {
+  todos: {
+    title: "Tu club aún no tiene órdenes",
+    body: "Cuando pagues una afiliación o una planilla de inscripción, su orden aparecerá aquí.",
+  },
+  afiliacion: {
+    title: "Aún no hay órdenes de afiliación",
+    body: "Se crean al pagar el carrito de afiliación.",
+  },
+  inscripcion: {
+    title: "Aún no hay órdenes de inscripción",
+    body: "Se crean al pagar una planilla de inscripción.",
+  },
+}
+
 const PAGE_SIZE = 25
 
 export default async function PagosPage({
@@ -44,17 +60,8 @@ export default async function PagosPage({
 
   const user = await getCurrentUser()
   if (!user) redirect("/login")
-
-  if (!user.clubId) {
-    return (
-      <Card>
-        <EmptyState icon={Receipt} title="Sección de clubes">
-          El historial de pagos es de cada club. Usa el panel de órdenes de
-          administración.
-        </EmptyState>
-      </Card>
-    )
-  }
+  // El historial es de cada club; la federación ve todas las órdenes en su panel.
+  if (!user.clubId) redirect("/admin/ordenes")
 
   await expireStaleOrders()
 
@@ -74,14 +81,15 @@ export default async function PagosPage({
     take: PAGE_SIZE,
     include: { _count: { select: { items: true } } },
   })
+  const now = new Date()
+  const empty = EMPTY_BY_FILTER[activeFilter] ?? EMPTY_BY_FILTER.todos
 
   return (
     <div className="space-y-6">
       <PageHeader
         icon={Receipt}
-        eyebrow="Pagos"
-        title="Pagos y comprobantes"
-        description="Órdenes de afiliación e inscripción de tu club. La orden pagada sirve como constancia."
+        title="Pagos y constancias"
+        description={`Órdenes de afiliación e inscripción de tu club. Una orden sin pagar vence a los ${ORDER_EXPIRATION_MINUTES} minutos; la orden pagada es tu constancia.`}
       />
 
       <nav aria-label="Filtrar por tipo" className="flex flex-wrap gap-1 border-b border-fdnda-border">
@@ -107,12 +115,12 @@ export default async function PagosPage({
 
       {orders.length === 0 ? (
         <Card>
-          <EmptyState icon={Receipt} title="Sin órdenes todavía">
-            Cuando pagues una afiliación o una inscripción aparecerá aquí.
+          <EmptyState icon={Receipt} title={empty.title}>
+            {empty.body}
           </EmptyState>
         </Card>
       ) : (
-        <TableContainer>
+        <TableContainer aria-label="Órdenes de pago del club">
           <Table>
             <THead>
               <TR>
@@ -122,19 +130,47 @@ export default async function PagosPage({
                 <TH className="text-right">Ítems</TH>
                 <TH className="text-right">Total</TH>
                 <TH>Estado</TH>
-                <TH></TH>
+                <TH>
+                  <span className="sr-only">Acción</span>
+                </TH>
               </TR>
             </THead>
             <TBody>
               {orders.map((order) => {
-                const statusBadge = ORDER_STATUS_BADGE[order.status]
+                // PENDING con el plazo vencido que sigue viva = tuvo un intento
+                // de pago con Izipay y quedó por conciliar (no se libera sola).
+                const inReview = order.status === "PENDING" && order.expiresAt < now
+                const statusBadge = inReview
+                  ? { label: "Por conciliar", variant: "warning" as const }
+                  : ORDER_STATUS_BADGE[order.status]
                 const kindBadge = ORDER_KIND_BADGE[order.kind]
+                const retryHref =
+                  order.kind === "AFFILIATION"
+                    ? "/afiliacion/carrito"
+                    : order.registrationPlanId
+                      ? `/inscripciones/${order.registrationPlanId}`
+                      : "/inscripciones"
+
+                const action =
+                  order.status === "PAID"
+                    ? { href: `/pago/${order.id}`, label: "Ver constancia", aria: `Ver constancia de la orden ${order.code}` }
+                    : order.status === "PENDING"
+                      ? inReview
+                        ? { href: `/pago/${order.id}`, label: "Revisar orden", aria: `Revisar la orden ${order.code}` }
+                        : { href: `/pago/${order.id}`, label: "Pagar orden", aria: `Pagar la orden ${order.code}` }
+                      : { href: retryHref, label: "Reintentar", aria: `Reintentar el pago de la orden ${order.code}` }
+
                 return (
                   <TR key={order.id}>
                     <TD className="num text-xs">
                       <span className="flex flex-wrap items-center gap-2">
-                        {order.code}
-                        {order.isLegacy ? <Badge variant="warning">Legado</Badge> : null}
+                        <Link
+                          href={`/pago/${order.id}`}
+                          className="font-semibold text-fdnda-navy underline-offset-4 hover:underline"
+                        >
+                          {order.code}
+                        </Link>
+                        {order.isLegacy ? <Badge variant="warning">Varias competencias</Badge> : null}
                       </span>
                     </TD>
                     <TD>
@@ -150,10 +186,14 @@ export default async function PagosPage({
                     </TD>
                     <TD>
                       <Link
-                        href={`/pago/${order.id}`}
-                        className="inline-flex min-h-11 items-center rounded-control px-2 text-sm font-bold text-fdnda-navy underline-offset-4 hover:bg-fdnda-sky-soft hover:underline"
+                        href={action.href}
+                        aria-label={action.aria}
+                        className={buttonClasses({
+                          variant: order.status === "PENDING" && !inReview ? "default" : "ghost",
+                          size: "sm",
+                        })}
                       >
-                        {order.status === "PENDING" ? "Pagar" : "Ver constancia"}
+                        {action.label}
                       </Link>
                     </TD>
                   </TR>

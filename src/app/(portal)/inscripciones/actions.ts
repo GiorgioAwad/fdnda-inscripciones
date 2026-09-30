@@ -29,7 +29,9 @@ const revision = z.number().int().nonnegative()
 
 const mutationSchema = z.object({ planId: id, expectedRevision: revision })
 
-const invalid = (error = "Los datos enviados no son válidos."): RegistrationPlanActionError => ({
+const invalid = (
+  error = "No pudimos procesar el cambio. Recarga la planilla e inténtalo de nuevo."
+): RegistrationPlanActionError => ({
   success: false,
   code: "UNEXPECTED_ERROR",
   error,
@@ -46,7 +48,7 @@ async function authorize(work: () => Promise<void>) {
     await work()
     return null
   } catch {
-    return invalid("No autorizado para esta disciplina.")
+    return invalid("Tu usuario de acceso no tiene permiso para inscribir en esta disciplina.")
   }
 }
 

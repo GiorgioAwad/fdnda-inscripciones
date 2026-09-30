@@ -45,7 +45,7 @@ export const metadata: Metadata = {
   },
   description: `Plataforma oficial de afiliaciones e inscripciones de la ${FEDERATION_SHORT}.`,
   icons: {
-    icon: "/fdnda-logo.png",
+    icon: "/favicon.ico?v=fdnda-20260930",
     apple: "/fdnda-logo.png",
   },
 };

@@ -8,6 +8,7 @@ import { requireAdmin } from "@/lib/auth"
 import { DISCIPLINE_VALUES, type DisciplineValue } from "@/lib/disciplines"
 import { parsePadronWorkbook } from "@/lib/excel"
 import { getRequestIpHash, writeAuditLog } from "@/lib/security"
+import { plural } from "@/lib/utils"
 
 export interface ActionResult {
   success: boolean
@@ -27,6 +28,13 @@ export interface ImportPreviewRow {
   clubName: string | null
   disciplines: DisciplineValue[]
   exists: boolean
+  // Club actual del documento cuando ya existe y el archivo trae otro: la
+  // importación lo mueve igual, pero la vista previa tiene que avisarlo.
+  currentClubName: string | null
+  clubChange: boolean
+  // El club del archivo está desactivado: se importa, pero sus usuarios no
+  // pueden entrar al portal.
+  clubInactive: boolean
   errors: string[]
 }
 
@@ -46,10 +54,11 @@ async function buildClubResolver() {
   const clubs = await prisma.club.findMany({
     select: { id: true, name: true, code: true, isActive: true },
   })
-  const byKey = new Map<string, { id: string; name: string }>()
+  const byKey = new Map<string, { id: string; name: string; isActive: boolean }>()
   for (const club of clubs) {
-    byKey.set(club.code.trim().toUpperCase(), { id: club.id, name: club.name })
-    byKey.set(club.name.trim().toUpperCase(), { id: club.id, name: club.name })
+    const value = { id: club.id, name: club.name, isActive: club.isActive }
+    byKey.set(club.code.trim().toUpperCase(), value)
+    byKey.set(club.name.trim().toUpperCase(), value)
   }
   return (ref: string) => byKey.get(ref.trim().toUpperCase()) ?? null
 }
@@ -61,10 +70,13 @@ export async function previewPadronImport(
 
   const file = formData.get("file")
   if (!(file instanceof File) || file.size === 0) {
-    return { success: false, error: "Selecciona un archivo Excel." }
+    return { success: false, error: "Elige un archivo Excel (.xlsx o .xls) con el padrón." }
   }
   if (file.size > MAX_IMPORT_BYTES) {
-    return { success: false, error: "El archivo supera los 4 MB." }
+    return {
+      success: false,
+      error: "El archivo pesa más de 4 MB. Divide el padrón en dos archivos e impórtalos por separado.",
+    }
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
@@ -75,7 +87,10 @@ export async function previewPadronImport(
       Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
     )
   if (!isZipXlsx && !isLegacyXls) {
-    return { success: false, error: "El archivo no tiene un formato Excel válido." }
+    return {
+      success: false,
+      error: "El archivo no es un Excel (.xlsx o .xls). Descarga la plantilla y copia ahí tus datos.",
+    }
   }
   const { rows, fileError } = parsePadronWorkbook(buffer)
 
@@ -83,12 +98,15 @@ export async function previewPadronImport(
     return { success: false, error: fileError }
   }
   if (rows.length === 0) {
-    return { success: false, error: "No se encontraron filas con datos." }
+    return {
+      success: false,
+      error: "El archivo no tiene filas con datos debajo de los encabezados.",
+    }
   }
   if (rows.length > MAX_IMPORT_ROWS) {
     return {
       success: false,
-      error: `El archivo tiene ${rows.length} filas; el máximo por importación es ${MAX_IMPORT_ROWS}.`,
+      error: `El archivo tiene ${rows.length} filas y el máximo por importación es ${MAX_IMPORT_ROWS}. Divídelo en varios archivos.`,
     }
   }
 
@@ -97,9 +115,9 @@ export async function previewPadronImport(
   const docNumbers = rows.map((r) => r.docNumber).filter(Boolean)
   const existing = await prisma.athlete.findMany({
     where: { docNumber: { in: docNumbers } },
-    select: { docNumber: true },
+    select: { docNumber: true, clubId: true, club: { select: { name: true } } },
   })
-  const existingDocs = new Set(existing.map((a) => a.docNumber))
+  const existingByDoc = new Map(existing.map((a) => [a.docNumber, a]))
 
   // Documentos duplicados dentro del mismo archivo.
   const docCounts = new Map<string, number>()
@@ -113,11 +131,14 @@ export async function previewPadronImport(
     const errors = [...row.errors]
     const club = row.clubRef ? resolveClub(row.clubRef) : null
     if (row.clubRef && !club) {
-      errors.push(`Club "${row.clubRef}" no existe (usa el código o nombre exacto)`)
+      errors.push(`CLUB «${row.clubRef}» no existe: usa el código o el nombre exacto (hoja Clubes)`)
     }
     if (row.docNumber && (docCounts.get(row.docNumber) ?? 0) > 1) {
-      errors.push(`NRO_DOCUMENTO repetido en el archivo`)
+      errors.push("NRO_DOCUMENTO repetido en el archivo")
     }
+
+    const current = existingByDoc.get(row.docNumber) ?? null
+    const clubChange = Boolean(current && club && current.clubId !== club.id)
 
     return {
       rowNumber: row.rowNumber,
@@ -131,7 +152,10 @@ export async function previewPadronImport(
       clubId: club?.id ?? null,
       clubName: club?.name ?? null,
       disciplines: row.disciplines,
-      exists: existingDocs.has(row.docNumber),
+      exists: current !== null,
+      currentClubName: current?.club.name ?? null,
+      clubChange,
+      clubInactive: Boolean(club && !club.isActive),
       errors,
     }
   })
@@ -147,6 +171,8 @@ export async function previewPadronImport(
 }
 
 const commitRowSchema = z.object({
+  // Fila del Excel: solo sirve para decir desde dónde falló un guardado.
+  rowNumber: z.number().int().positive().optional(),
   firstNames: z.string().trim().min(1),
   lastNames: z.string().trim().min(1),
   docType: z.enum(["DNI", "CE", "PASAPORTE", "OTROS"]),
@@ -171,14 +197,20 @@ export async function commitPadronImport(rowsJson: string): Promise<ImportCommit
   try {
     parsedRows = JSON.parse(rowsJson)
   } catch {
-    return { success: false, error: "Datos de importación inválidos." }
+    return {
+      success: false,
+      error: "No se pudo leer la vista previa. Vuelve a analizar el archivo.",
+    }
   }
 
   if (!Array.isArray(parsedRows) || parsedRows.length === 0) {
-    return { success: false, error: "No hay filas válidas para importar." }
+    return { success: false, error: "No hay filas sin errores para importar." }
   }
   if (parsedRows.length > MAX_IMPORT_ROWS) {
-    return { success: false, error: "Demasiadas filas." }
+    return {
+      success: false,
+      error: `Son más de ${MAX_IMPORT_ROWS} filas. Divide el archivo e impórtalo por partes.`,
+    }
   }
 
   const rows: Array<z.infer<typeof commitRowSchema>> = []
@@ -187,7 +219,7 @@ export async function commitPadronImport(rowsJson: string): Promise<ImportCommit
     if (!parsed.success) {
       return {
         success: false,
-        error: "Una fila no pasó la validación. Vuelve a analizar el archivo.",
+        error: "Una fila cambió desde la vista previa. Vuelve a analizar el archivo.",
       }
     }
     rows.push(parsed.data)
@@ -197,23 +229,42 @@ export async function commitPadronImport(rowsJson: string): Promise<ImportCommit
   const clubIds = [...new Set(rows.map((r) => r.clubId))]
   const clubCount = await prisma.club.count({ where: { id: { in: clubIds } } })
   if (clubCount !== clubIds.length) {
-    return { success: false, error: "Hay clubes inválidos. Vuelve a analizar el archivo." }
+    return {
+      success: false,
+      error: "Uno de los clubes del archivo ya no existe. Vuelve a analizar el archivo.",
+    }
   }
 
   const seenDocs = new Set<string>()
   for (const row of rows) {
     if (seenDocs.has(row.docNumber)) {
-      return { success: false, error: `Documento repetido: ${row.docNumber}.` }
+      return {
+        success: false,
+        error: `El N.º de documento ${row.docNumber} está repetido. Corrígelo y vuelve a analizar el archivo.`,
+      }
     }
     seenDocs.add(row.docNumber)
   }
 
+  // Nuevos frente a actualizados se cuenta ANTES del upsert: después ya no
+  // hay forma de distinguirlos.
+  const existingDocs = new Set(
+    (
+      await prisma.athlete.findMany({
+        where: { docNumber: { in: rows.map((row) => row.docNumber) } },
+        select: { docNumber: true },
+      })
+    ).map((athlete) => athlete.docNumber)
+  )
+
   let created = 0
   let updated = 0
+  // Cada lote se guarda en su propia transacción: si falla el tercero, los dos
+  // primeros ya quedaron guardados y el mensaje tiene que decirlo.
+  const BATCH = 200
+  let savedRows = 0
 
   try {
-    // Lotes para no abrir una transacción gigante.
-    const BATCH = 200
     for (let i = 0; i < rows.length; i += BATCH) {
       const batch = rows.slice(i, i + BATCH)
       await prisma.$transaction(
@@ -245,22 +296,43 @@ export async function commitPadronImport(rowsJson: string): Promise<ImportCommit
           })
         })
       )
+      for (const row of batch) {
+        if (existingDocs.has(row.docNumber)) updated += 1
+        else created += 1
+      }
+      savedRows += batch.length
+    }
+  } catch (error) {
+    console.error("commitPadronImport error:", error)
+    const duplicate =
+      error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
+    const cause = duplicate
+      ? "otro deportista ya usa uno de esos N.º de documento"
+      : "no se pudo guardar un lote de filas"
+    const failedRow = rows[savedRows]?.rowNumber
+
+    if (savedRows > 0) {
+      revalidatePath("/admin/padron")
+      await writeAuditLog({
+        actorId: admin.id,
+        actorRole: admin.role,
+        action: "athlete.bulk_import",
+        targetType: "Athlete",
+        success: false,
+        ipHash: await getRequestIpHash(),
+        metadata: { rows: rows.length, created, updated, saved: savedRows },
+      })
     }
 
-    // Contar creados vs actualizados de forma aproximada no es fiable tras el
-    // upsert; recontamos contra lo que existía antes no vale la pena. Reportamos
-    // el total procesado como "importados".
-    created = rows.length
-    updated = 0
-  } catch (error) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      return { success: false, error: "Conflicto de documentos duplicados." }
+    return {
+      success: false,
+      created,
+      updated,
+      error:
+        savedRows === 0
+          ? `No se guardó ninguna fila: ${cause}. Vuelve a analizar el archivo e inténtalo de nuevo.`
+          : `Se guardaron ${plural(savedRows, "fila", "filas")} (${created} ${created === 1 ? "nueva" : "nuevas"} y ${updated} ${updated === 1 ? "actualizada" : "actualizadas"}), pero ${cause}${failedRow ? ` desde la fila ${failedRow} del Excel` : ""} y de ahí en adelante no se guardó nada. Vuelve a analizar el archivo: lo ya guardado aparecerá como «Actualizará».`,
     }
-    console.error("commitPadronImport error:", error)
-    return { success: false, error: "Error al guardar. Ninguna fila fue importada parcialmente en el lote fallido." }
   }
 
   revalidatePath("/admin/padron")
@@ -270,26 +342,31 @@ export async function commitPadronImport(rowsJson: string): Promise<ImportCommit
     action: "athlete.bulk_import",
     targetType: "Athlete",
     ipHash: await getRequestIpHash(),
-    metadata: { rows: rows.length },
+    metadata: { rows: rows.length, created, updated },
   })
   return { success: true, created, updated }
 }
 
 const athleteSchema = z.object({
   id: z.string().min(1),
-  firstNames: z.string().trim().min(1, "Nombres requeridos"),
-  lastNames: z.string().trim().min(1, "Apellidos requeridos"),
-  docType: z.enum(["DNI", "CE", "PASAPORTE", "OTROS"]),
+  firstNames: z.string().trim().min(1, "Escribe los nombres."),
+  lastNames: z.string().trim().min(1, "Escribe los apellidos."),
+  docType: z.enum(["DNI", "CE", "PASAPORTE", "OTROS"], {
+    error: "Elige el tipo de documento.",
+  }),
   docNumber: z
     .string()
     .trim()
-    .regex(/^[a-zA-Z0-9-]{4,20}$/, "Documento inválido"),
-  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida"),
-  sex: z.enum(["M", "F"]),
-  clubId: z.string().min(1, "Selecciona un club"),
+    .regex(
+      /^[a-zA-Z0-9-]{4,20}$/,
+      "El N.º de documento debe tener de 4 a 20 letras, números o guiones."
+    ),
+  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Elige la fecha de nacimiento."),
+  sex: z.enum(["M", "F"], { error: "Elige el sexo." }),
+  clubId: z.string().min(1, "Elige el club."),
   disciplines: z
     .array(z.enum(DISCIPLINE_VALUES))
-    .min(1, "Selecciona al menos una disciplina"),
+    .min(1, "Marca al menos una disciplina."),
 })
 
 export async function saveAthlete(formData: FormData): Promise<ActionResult> {
@@ -324,25 +401,38 @@ export async function saveAthlete(formData: FormData): Promise<ActionResult> {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
-      return { success: false, error: "Ya existe otro deportista con ese documento." }
+      return {
+        success: false,
+        error: "Ya hay otro deportista con ese N.º de documento. Revisa el número.",
+      }
     }
     console.error("saveAthlete error:", error)
-    return { success: false, error: "No se pudo guardar." }
+    return {
+      success: false,
+      error: "No se pudieron guardar los datos del deportista. Inténtalo de nuevo.",
+    }
   }
 
   revalidatePath("/admin/padron")
   return { success: true }
 }
 
-export async function toggleAthleteActive(athleteId: string): Promise<ActionResult> {
+// Estado explícito, no un conmutador: la pantalla confirma «Dar de baja» y el
+// servidor aplica exactamente eso.
+export async function setAthleteActive(
+  athleteId: string,
+  isActive: boolean
+): Promise<ActionResult> {
   await requireAdmin()
 
   const athlete = await prisma.athlete.findUnique({ where: { id: athleteId } })
-  if (!athlete) return { success: false, error: "Deportista no encontrado." }
+  if (!athlete) {
+    return { success: false, error: "Ese deportista ya no existe. Recarga la página." }
+  }
 
   await prisma.athlete.update({
     where: { id: athleteId },
-    data: { isActive: !athlete.isActive },
+    data: { isActive },
   })
 
   revalidatePath("/admin/padron")

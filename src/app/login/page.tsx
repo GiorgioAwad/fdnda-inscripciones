@@ -39,7 +39,7 @@ export default async function LoginPage({
             </span>
             <div>
               <p className="font-heading text-sm font-bold tracking-[0.12em]">FDNDA</p>
-              <p className="text-xs text-fdnda-sky">Portal institucional</p>
+              <p className="text-xs text-fdnda-sky">{FEDERATION_NAME}</p>
             </div>
           </div>
 
@@ -47,15 +47,10 @@ export default async function LoginPage({
             {/* El andarivel de marca, ahora la firma del sistema en vez de dos
                 barras sueltas puestas a mano. */}
             <div className="lane-rope mb-6 h-1.5 w-24 rounded-full" aria-hidden="true" />
-            <p className="mb-3 text-eyebrow uppercase text-fdnda-sky">
-              {FEDERATION_NAME}
-            </p>
-            <h1 className="font-heading max-w-lg text-4xl leading-[1.05] lg:text-display">
-              La gestión deportiva, en un solo lugar.
-            </h1>
-            <p className="mt-5 max-w-lg text-sm leading-relaxed text-white/75 sm:text-base">
-              Gestiona la afiliación de tu club y sus deportistas, y prepara sus
-              inscripciones para las competencias oficiales.
+            {/* El h1 de la página es «Iniciar sesión»: este es el lema, no un
+                encabezado, y dice qué se hace en el portal en vez de un eslogan. */}
+            <p className="font-heading max-w-lg text-4xl leading-[1.05] lg:text-display">
+              Afiliaciones e inscripciones de tu club.
             </p>
           </div>
 
@@ -65,9 +60,9 @@ export default async function LoginPage({
               se comía el ancho hasta cortar «Competencias». Sin él caben, y
               unidas por una divisoria se leen como el recorrido que son. */}
           <ol className="hidden overflow-hidden rounded-surface border border-white/15 lg:grid lg:grid-cols-3 lg:gap-px lg:bg-white/15">
-            <LoginStep number="01" label="Afiliación" />
-            <LoginStep number="02" label="Deportistas" />
-            <LoginStep number="03" label="Competencias" />
+            <LoginStep number="01" label="Afilia a tu club" />
+            <LoginStep number="02" label="Registra y afilia deportistas" />
+            <LoginStep number="03" label="Inscríbelos en competencias" />
           </ol>
         </div>
       </section>
@@ -85,21 +80,21 @@ export default async function LoginPage({
             className="mb-7 h-24 w-auto"
             priority
           />
-          <p className="text-eyebrow uppercase text-fdnda-turquoise-deep">
-            Acceso institucional
-          </p>
-          <h2
+          <h1
             id="login-title"
-            className="font-heading mt-2 text-3xl text-fdnda-navy"
+            className="font-heading text-3xl text-fdnda-navy"
           >
             Iniciar sesión
-          </h2>
+          </h1>
           <p className="mt-2 text-sm leading-relaxed text-fdnda-muted">
-            Ingresa con las credenciales asignadas a tu club.
+            Entra con tu usuario de acceso. Cada club recibe el suyo de la FDNDA.
           </p>
           {passwordChanged === "1" ? (
-            <p className="mt-4 rounded-surface border border-fdnda-success-ring bg-fdnda-success-soft p-3 text-sm font-semibold text-fdnda-success">
-              Contraseña actualizada. Inicia sesión nuevamente.
+            <p
+              role="status"
+              className="mt-4 rounded-surface border border-fdnda-success-ring bg-fdnda-success-soft p-3 text-sm font-semibold text-fdnda-success"
+            >
+              Contraseña actualizada. Entra con tu nueva contraseña.
             </p>
           ) : null}
 
@@ -111,7 +106,8 @@ export default async function LoginPage({
         </div>
 
         <p className="mx-auto mt-auto w-full max-w-md break-words pt-10 text-xs leading-relaxed text-fdnda-muted">
-          ¿Necesitas acceso? Contacta a la federación para obtener el usuario de tu club.
+          ¿Olvidaste tu contraseña o tu club aún no tiene usuario? La FDNDA crea y
+          restablece los usuarios de acceso de cada club.
         </p>
       </section>
     </main>
@@ -122,7 +118,7 @@ function LoginStep({ number, label }: { number: string; label: string }) {
   return (
     <li className="min-w-0 bg-fdnda-navy-deep/60 px-4 py-3.5 backdrop-blur-sm">
       <p className="num text-[0.7rem] font-semibold text-fdnda-sky">{number}</p>
-      <p className="font-heading mt-0.5 text-base font-bold text-white">{label}</p>
+      <p className="font-heading mt-0.5 text-sm font-bold leading-snug text-white">{label}</p>
     </li>
   )
 }

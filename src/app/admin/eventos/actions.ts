@@ -17,17 +17,17 @@ import {
   parseLevelCategories,
   withLevelPrefix,
 } from "@/lib/artistic-levels"
-import { DISCIPLINE_VALUES, disciplineLabel } from "@/lib/disciplines"
+import { DISCIPLINE_VALUES } from "@/lib/disciplines"
 import { parseCategorySpecs } from "@/lib/event-categories"
 import { DISCIPLINE_PRESETS } from "@/lib/event-presets"
 import {
   disciplineConfigFor,
   isAgeRuleConfigurationValid,
-  isPricingConfigurationValid,
 } from "@/lib/event-pricing"
+import { eventReadiness, readinessModalityFrom } from "@/lib/event-readiness"
 import { leagueEntryPrice, parseLeagueTeamCounts } from "@/lib/league"
 import { buildModalityRows } from "@/lib/modality-rows"
-import { slugify } from "@/lib/utils"
+import { formatDateOnly, plural, slugify } from "@/lib/utils"
 
 // Tope por lote del generador: evita que una matriz enorme (pruebas × categorías
 // × sexos) tumbe la pantalla o la transacción.
@@ -37,6 +37,8 @@ export interface ActionResult {
   success: boolean
   error?: string
   eventId?: string
+  /** Solo al crear una competencia: cuántas pruebas nacieron con ella. */
+  createdModalities?: number
 }
 
 function parseFee(value: string | undefined): number | null | "invalid" {
@@ -68,10 +70,13 @@ function parseLimaDateTime(value: string): Date | null {
 // conservan su arreglo y se editan sin tocar `disciplines`.
 const eventSchema = z.object({
   id: z.string().optional(),
-  seasonId: z.string().min(1, "Selecciona una temporada"),
-  name: z.string().trim().min(5, "El nombre debe tener al menos 5 caracteres"),
+  seasonId: z.string().min(1, "Selecciona la temporada de la competencia."),
+  name: z
+    .string({ error: "Escribe el nombre de la competencia." })
+    .trim()
+    .min(5, "El nombre de la competencia debe tener al menos 5 caracteres."),
   discipline: z.enum(DISCIPLINE_VALUES, {
-    message: "Selecciona la disciplina del evento",
+    message: "Selecciona la disciplina de la competencia.",
   }),
   chargesEntry: z.boolean(),
   chargesAthleteFee: z.boolean(),
@@ -79,12 +84,16 @@ const eventSchema = z.object({
   isLevelChampionship: z.boolean(),
   athleteFee: z.string().optional(),
   ageRuleMode: z.enum(["RANGE", "MAX_AGE_ONLY"]),
-  venue: z.string().trim().max(120).optional(),
-  city: z.string().trim().max(60).optional(),
+  venue: z.string().trim().max(120, "La sede admite hasta 120 caracteres.").optional(),
+  city: z.string().trim().max(60, "La ciudad admite hasta 60 caracteres.").optional(),
   startDate: z.string(),
   endDate: z.string(),
   registrationDeadline: z.string(),
-  description: z.string().trim().max(2000).optional(),
+  description: z
+    .string()
+    .trim()
+    .max(2000, "La descripción admite hasta 2000 caracteres.")
+    .optional(),
   // Solo al crear: pruebas iniciales a generar desde el preset de la disciplina.
   presetModalities: z.array(z.string()).optional(),
   presetCategoriesText: z.string().optional(),
@@ -129,12 +138,17 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
   const discipline = parsed.data.discipline as Discipline
   const athleteFee = parseFee(parsed.data.athleteFee)
   if (athleteFee === "invalid") {
-    return { success: false, error: "Cuota por deportista inválida." }
+    return {
+      success: false,
+      error:
+        "Escribe la cuota de competencia por deportista en soles, por ejemplo 80.00.",
+    }
   }
   if (!parsed.data.chargesEntry && !parsed.data.chargesAthleteFee) {
     return {
       success: false,
-      error: "El evento debe cobrar al menos un concepto.",
+      error:
+        "Marca al menos un concepto de cobro: precio por formación o cuota de competencia por deportista.",
     }
   }
   if (
@@ -143,20 +157,20 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
   ) {
     return {
       success: false,
-      error: "La cuota por deportista debe ser mayor que cero.",
+      error: "La cuota de competencia por deportista debe ser mayor que S/ 0.",
     }
   }
   if (parsed.data.isLeague && discipline !== "WATER_POLO") {
     return {
       success: false,
-      error: "Solo un evento de polo acuático puede ser una liga.",
+      error: "Solo una competencia de Polo Acuático puede ser una liga.",
     }
   }
   if (parsed.data.isLevelChampionship && discipline !== "ARTISTIC_SWIMMING") {
     return {
       success: false,
       error:
-        "Solo un evento de natación artística puede ser un campeonato de niveles.",
+        "Solo una competencia de Natación Artística puede ser un campeonato de niveles.",
     }
   }
 
@@ -165,26 +179,41 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
   const registrationDeadline = parseLimaDateTime(parsed.data.registrationDeadline)
 
   if (!startDate || !endDate) {
-    return { success: false, error: "Fechas del evento inválidas." }
+    return { success: false, error: "Completa la fecha de inicio y la fecha de fin." }
   }
   if (endDate < startDate) {
-    return { success: false, error: "La fecha de fin no puede ser anterior al inicio." }
+    return {
+      success: false,
+      error: "La fecha de fin no puede ser anterior a la fecha de inicio.",
+    }
   }
   if (!registrationDeadline) {
-    return { success: false, error: "Fecha límite de inscripción inválida." }
+    return {
+      success: false,
+      error: "Completa el cierre de inscripciones: fecha y hora.",
+    }
   }
 
   const season = await prisma.season.findUnique({
     where: { id: parsed.data.seasonId },
-    select: { id: true, year: true, startDate: true, endDate: true },
+    select: {
+      id: true,
+      name: true,
+      year: true,
+      startDate: true,
+      endDate: true,
+    },
   })
   if (!season) {
-    return { success: false, error: "La temporada seleccionada ya no existe." }
+    return {
+      success: false,
+      error: "La temporada elegida ya no existe. Elige otra temporada.",
+    }
   }
   if (season.startDate > startDate || season.endDate < endDate) {
     return {
       success: false,
-      error: "La temporada debe cubrir todas las fechas de la competencia.",
+      error: `Las fechas de la competencia deben caer dentro de «${season.name}» (${formatDateOnly(season.startDate)} – ${formatDateOnly(season.endDate)}).`,
     }
   }
 
@@ -226,7 +255,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       return {
         success: false,
         error:
-          "La temporada no puede cambiar porque el evento ya tiene inscripciones en una orden.",
+          "La temporada ya no puede cambiar: la competencia tiene inscripciones en órdenes.",
       }
     }
     // Cambiar de disciplina dejaría huérfanas las pruebas ya inscritas.
@@ -234,14 +263,14 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       return {
         success: false,
         error:
-          "La disciplina no puede cambiar porque el evento ya tiene inscripciones en una orden.",
+          "La disciplina ya no puede cambiar: la competencia tiene inscripciones en órdenes.",
       }
     }
     if (hasLockedEntries && existing.isLeague !== parsed.data.isLeague) {
       return {
         success: false,
         error:
-          "El formato de liga no puede cambiar porque el evento ya tiene inscripciones en una orden.",
+          "El formato de liga ya no puede cambiar: la competencia tiene inscripciones en órdenes.",
       }
     }
     if (
@@ -251,7 +280,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       return {
         success: false,
         error:
-          "El formato de niveles no puede cambiar porque el evento ya tiene inscripciones en una orden.",
+          "El formato de niveles ya no puede cambiar: la competencia tiene inscripciones en órdenes.",
       }
     }
   }
@@ -311,7 +340,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       return {
         success: false,
         error:
-          "La configuración de la disciplina no puede cambiar porque ya hay inscripciones en una orden.",
+          "El cobro y la forma de medir las edades ya no pueden cambiar: la competencia tiene inscripciones en órdenes.",
       }
     }
   }
@@ -355,7 +384,12 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         ? parseFee(parsed.data.presetPrice)
         : 0
       if (unitPrice === "invalid" || unitPrice === null) {
-        return { success: false, error: "Indica el precio de las pruebas." }
+        return {
+          success: false,
+          error: parsed.data.isLeague
+            ? "Escribe el precio por partido de las pruebas."
+            : "Escribe el precio por formación de las pruebas.",
+        }
       }
 
       // Los dos caminos leen las categorías de campos distintos, así que cada
@@ -370,13 +404,17 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
           parsed.data.presetLevelCategories?.trim() || "[]"
         )
         if (levelCategories === null) {
-          return { success: false, error: "Categorías por nivel inválidas." }
+          return {
+            success: false,
+            error:
+              "Revisa las categorías por nivel: cada una necesita nombre y años de nacimiento entre 1950 y 2050, con «Nacidos desde» menor o igual que «Nacidos hasta».",
+          }
         }
         const groups = levelCategoriesToSpecs(levelCategories)
         if (groups.length === 0) {
           return {
             success: false,
-            error: "Agrega las categorías de al menos un nivel.",
+            error: "Agrega al menos una categoría en algún nivel, o desmarca todas las pruebas.",
           }
         }
         // Un nivel por llamada, con el sortOrder corrido: las pruebas nacen
@@ -430,7 +468,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
           return {
             success: false,
             error:
-              "Indica cuántos equipos y cuántos partidos por equipo tiene la fase preliminar.",
+              "Indica los partidos por plantel y los planteles esperados de cada categoría.",
           }
         }
 
@@ -474,7 +512,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       if (modalityRows.length > MAX_BULK_MODALITIES) {
         return {
           success: false,
-          error: `La combinación genera ${modalityRows.length} pruebas (máximo ${MAX_BULK_MODALITIES}).`,
+          error: `La combinación genera ${modalityRows.length} pruebas y el máximo es ${MAX_BULK_MODALITIES}. Quita categorías o pruebas.`,
         }
       }
     }
@@ -491,10 +529,17 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       },
     })
     revalidatePath("/admin/eventos")
-    return { success: true, eventId: created.id }
+    return {
+      success: true,
+      eventId: created.id,
+      createdModalities: modalityRows.length,
+    }
   } catch (error) {
     console.error("saveEvent error:", error)
-    return { success: false, error: "No se pudo guardar el evento." }
+    return {
+      success: false,
+      error: "No se pudo guardar la competencia. Vuelve a intentarlo en unos segundos.",
+    }
   }
 }
 
@@ -505,97 +550,51 @@ export async function setEventStatus(
   await requireAdmin()
 
   if (!["DRAFT", "OPEN", "CLOSED"].includes(status)) {
-    return { success: false, error: "Estado inválido." }
+    return {
+      success: false,
+      error: "No se reconoce ese estado de la competencia. Recarga la página.",
+    }
   }
 
   if (status === "OPEN") {
+    // Las reglas viven en lib/event-readiness: son las mismas que pinta la
+    // tarjeta de requisitos del detalle, así que el botón nunca queda
+    // habilitado para algo que el servidor rechaza, ni al revés.
     const event = await prisma.event.findUnique({
       where: { id: eventId },
       include: {
-        season: { include: { fees: true } },
-        modalities: { where: { isActive: true } },
+        season: { include: { fees: { select: { discipline: true } } } },
+        modalities: true,
         disciplineConfigs: true,
       },
     })
-    if (!event) return { success: false, error: "Evento no encontrado." }
-    if (!event.seasonId || !event.season) {
-      return { success: false, error: "Asigna una temporada antes de abrir." }
-    }
-    if (event.registrationDeadline <= new Date()) {
-      return { success: false, error: "El cierre de inscripciones ya venció." }
-    }
-    if (event.modalities.length === 0) {
-      return { success: false, error: "Agrega al menos una prueba activa antes de abrir." }
-    }
-
-    const badLeagueModality = event.isLeague
-      ? event.modalities.find(
-          (modality) =>
-            modality.pricePerMatch === null ||
-            modality.matchesPerTeam === null ||
-            modality.matchesPerTeam < 1 ||
-            modality.matchesPerTeam > 40 ||
-            modality.expectedTeams === null ||
-            modality.expectedTeams < 1 ||
-            modality.expectedTeams > 40 ||
-            Number(modality.price) !==
-              leagueEntryPrice({
-                pricePerMatch: Number(modality.pricePerMatch),
-                matchesPerTeam: modality.matchesPerTeam,
-              })
-        )
-      : null
-    if (badLeagueModality) {
+    if (!event) {
       return {
         success: false,
-        error: `Completa el precio por partido y el fixture de «${badLeagueModality.name}» antes de abrir.`,
+        error: "Esta competencia ya no existe. Vuelve a la lista de competencias.",
       }
     }
-
-    // Una disciplina que cobra cuota fija sin monto no puede vender nada.
-    const misconfigured = event.disciplines.find(
-      (discipline) =>
-        !isPricingConfigurationValid(
-          disciplineConfigFor(event.disciplineConfigs, discipline)
-        )
-    )
-    if (misconfigured) {
-      return {
-        success: false,
-        error: `La cuota fija por deportista de ${disciplineLabel(misconfigured)} debe ser mayor que cero.`,
-      }
-    }
-
-    // En «Sub-N» la prueba solo puede tener piso de año, o quedar sin ambos
-    // límites cuando es Open. Un tope superior excluiría a los más jóvenes.
-    const badAgeRule = event.modalities.find(
-      (modality) =>
-        !isAgeRuleConfigurationValid(
-          modality,
-          disciplineConfigFor(event.disciplineConfigs, modality.discipline)
-        )
-    )
-    if (badAgeRule) {
-      return {
-        success: false,
-        error: `«${badAgeRule.name}» usa categorías Sub-N/Open: deja vacío el año 'hasta'.`,
-      }
-    }
-
-    const fees = new Set(event.season.fees.map((fee) => fee.discipline))
-    const invalid = event.modalities.find(
-      (modality) =>
-        !event.disciplines.includes(modality.discipline) ||
-        !fees.has(modality.discipline) ||
-        (modality.allowsCategoryUpgrade &&
-          (modality.discipline !== "ARTISTIC_SWIMMING" ||
-            modality.categoryUpgradeBirthYear === null))
-    )
-    if (invalid) {
+    const readiness = eventReadiness({
+      registrationDeadline: event.registrationDeadline,
+      isLeague: event.isLeague,
+      disciplines: event.disciplines,
+      disciplineConfigs: event.disciplineConfigs,
+      season: event.season
+        ? {
+            name: event.season.name,
+            feeDisciplines: event.season.fees.map((fee) => fee.discipline),
+          }
+        : null,
+      modalities: event.modalities.map(readinessModalityFrom),
+    })
+    if (!readiness.ready) {
+      const [first, ...rest] = readiness.missing
       return {
         success: false,
         error:
-          "Hay pruebas cuya disciplina, cuota o regla de categoría no coincide con la temporada.",
+          rest.length > 0
+            ? `${first.problem} Faltan además ${plural(rest.length, "requisito", "requisitos")}: revisa la lista de requisitos.`
+            : first.problem!,
       }
     }
   }
@@ -603,7 +602,10 @@ export async function setEventStatus(
   try {
     await prisma.event.update({ where: { id: eventId }, data: { status } })
   } catch {
-    return { success: false, error: "Evento no encontrado." }
+    return {
+      success: false,
+      error: "Esta competencia ya no existe. Vuelve a la lista de competencias.",
+    }
   }
 
   revalidatePath(`/admin/eventos/${eventId}`)
@@ -615,38 +617,79 @@ export async function setEventStatus(
 export async function deleteEvent(eventId: string): Promise<ActionResult> {
   await requireAdmin()
 
+  // Cualquier inscripción, incluso una que sigue en el carrito de un club,
+  // impide borrar: el borrado arrastra en cascada pruebas e inscripciones.
   const registrations = await prisma.registration.count({
     where: { modality: { eventId } },
   })
   if (registrations > 0) {
     return {
       success: false,
-      error: "El evento ya tiene inscripciones; ciérralo en lugar de eliminarlo.",
+      error: `La competencia tiene ${plural(registrations, "inscripción", "inscripciones")}: cierra las inscripciones en lugar de eliminarla.`,
     }
   }
 
-  await prisma.event.delete({ where: { id: eventId } })
+  try {
+    await prisma.event.delete({ where: { id: eventId } })
+  } catch (error) {
+    console.error("deleteEvent error:", error)
+    return {
+      success: false,
+      error: "No se pudo eliminar la competencia. Vuelve a intentarlo en unos segundos.",
+    }
+  }
   revalidatePath("/admin/eventos")
   return { success: true }
 }
 
 // ==================== MODALIDADES ====================
 
+// Campos que comparten la prueba suelta y el generador en lote. Cada regla
+// lleva su mensaje: sin él, zod responde en inglés («Too small: expected…»).
+const eventIdField = z.string().min(1, "Falta la competencia de la prueba. Recarga la página.")
+const disciplineField = z.enum(DISCIPLINE_VALUES, {
+  message: "Elige la disciplina de la prueba.",
+})
+const sexRuleValues = ["MALE", "FEMALE", "MIXED", "ANY"] as const
+
+function athleteCountField(which: "mínimos" | "máximos") {
+  return z.coerce
+    .number({ error: `Escribe los integrantes ${which} como un número.` })
+    .int(`Los integrantes ${which} deben ser un número entero.`)
+    .min(1, `Los integrantes ${which} deben ser al menos 1.`)
+    .max(20, "Una formación admite hasta 20 integrantes.")
+}
+
+const priceField = z.coerce
+  .number({ error: "Escribe el precio por formación en soles, por ejemplo 60.00." })
+  .min(0, "El precio por formación no puede ser negativo.")
+  .max(100000, "El precio por formación no puede superar S/ 100 000.")
+
 const modalitySchema = z.object({
   id: z.string().optional(),
-  eventId: z.string().min(1),
-  discipline: z.enum(DISCIPLINE_VALUES),
-  name: z.string().trim().min(2, "Nombre de la prueba requerido"),
-  category: z.string().trim().max(80).optional(),
-  sexRule: z.enum(["MALE", "FEMALE", "MIXED", "ANY"]),
+  eventId: eventIdField,
+  discipline: disciplineField,
+  name: z
+    .string({ error: "Escribe el nombre de la prueba." })
+    .trim()
+    .min(2, "El nombre de la prueba debe tener al menos 2 caracteres."),
+  category: z
+    .string()
+    .trim()
+    .max(80, "La categoría admite hasta 80 caracteres.")
+    .optional(),
+  sexRule: z.enum(sexRuleValues, { message: "Elige el sexo de la prueba." }),
   birthYearFrom: z.string().optional(),
   birthYearTo: z.string().optional(),
   allowsCategoryUpgrade: z.boolean(),
   /** Nivel del campeonato de niveles de artística. Vacío = sin nivel. */
   level: z.string().optional(),
-  minAthletes: z.coerce.number().int().min(1).max(20),
-  maxAthletes: z.coerce.number().int().min(1).max(20),
-  price: z.coerce.number().min(0).max(100000),
+  minAthletes: athleteCountField("mínimos"),
+  maxAthletes: athleteCountField("máximos"),
+  // Sin precio por formación (la disciplina cobra solo cuota de competencia por
+  // deportista) el diálogo no muestra el campo y envía 0 o el precio que ya
+  // tenía la prueba: 0 es un valor válido.
+  price: priceField,
   pricePerMatch: z.string().optional(),
   matchesPerTeam: z.string().optional(),
   expectedTeams: z.string().optional(),
@@ -691,13 +734,22 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
   const birthYearFrom = parseYear(parsed.data.birthYearFrom)
   const birthYearTo = parseYear(parsed.data.birthYearTo)
   if (birthYearFrom === "invalid" || birthYearTo === "invalid") {
-    return { success: false, error: "Años de nacimiento inválidos (ej. 2012)." }
+    return {
+      success: false,
+      error: "Escribe los años de nacimiento con 4 dígitos, entre 1950 y 2050 (por ejemplo, 2012).",
+    }
   }
   if (birthYearFrom !== null && birthYearTo !== null && birthYearFrom > birthYearTo) {
-    return { success: false, error: "El año 'desde' no puede ser mayor que 'hasta'." }
+    return {
+      success: false,
+      error: "«Nacidos desde» no puede ser un año posterior a «Nacidos hasta».",
+    }
   }
   if (parsed.data.minAthletes > parsed.data.maxAthletes) {
-    return { success: false, error: "Mín. de deportistas no puede superar el máx." }
+    return {
+      success: false,
+      error: "Los integrantes mínimos no pueden ser más que los máximos.",
+    }
   }
   // El año que sube es birthYearTo + 1: sin tope no hay categoría inferior que
   // pueda subir y la casilla no significaría nada.
@@ -705,7 +757,7 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     return {
       success: false,
       error:
-        "«Sube de categoría» necesita un año de nacimiento 'hasta': es el tope de la categoría.",
+        "«Sube de categoría» necesita el año «Nacidos hasta»: es el tope de la categoría.",
     }
   }
 
@@ -717,11 +769,16 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
       disciplineConfigs: true,
     },
   })
-  if (!event) return { success: false, error: "Evento no encontrado." }
+  if (!event) {
+    return {
+      success: false,
+      error: "Esta competencia ya no existe. Vuelve a la lista de competencias.",
+    }
+  }
   if (!event.disciplines.includes(parsed.data.discipline as Discipline)) {
     return {
       success: false,
-      error: "La disciplina de la prueba no está habilitada en este evento.",
+      error: "La disciplina de la prueba no es una disciplina de esta competencia.",
     }
   }
   if (
@@ -730,7 +787,7 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
   ) {
     return {
       success: false,
-      error: "«Sube de categoría» solo aplica a natación artística.",
+      error: "«Sube de categoría» solo aplica a Natación Artística.",
     }
   }
   // Las mismas tres guardas del generador masivo: el selector solo se dibuja
@@ -738,18 +795,22 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
   const level = parsed.data.level?.trim() ? parsed.data.level.trim() : null
   if (level !== null) {
     if (!isArtisticLevel(level)) {
-      return { success: false, error: "Nivel inválido." }
+      return {
+        success: false,
+        error: "Elige el nivel: Básico, Intermedio o Avanzado.",
+      }
     }
     if (parsed.data.discipline !== "ARTISTIC_SWIMMING") {
       return {
         success: false,
-        error: "El nivel solo aplica a natación artística.",
+        error: "El nivel solo aplica a Natación Artística.",
       }
     }
     if (!event.isLevelChampionship) {
       return {
         success: false,
-        error: "Este evento no es un campeonato de niveles.",
+        error:
+          "Esta competencia no es un campeonato de niveles: marca «Es un campeonato de niveles» en sus datos para usar niveles.",
       }
     }
   }
@@ -766,7 +827,7 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     return {
       success: false,
       error:
-        "Esta disciplina usa categorías Sub-N/Open: deja vacío el año de nacimiento 'hasta'.",
+        "Esta disciplina usa categorías Sub-N u Open: deja vacío «Nacidos hasta».",
     }
   }
 
@@ -775,7 +836,7 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     if (!event.season) {
       return {
         success: false,
-        error: "Asigna una temporada al evento para configurar el ascenso.",
+        error: "Asigna una temporada a la competencia para usar «Sube de categoría».",
       }
     }
     categoryUpgradeBirthYear = birthYearTo + 1
@@ -789,7 +850,7 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     if (!adjacent) {
       return {
         success: false,
-        error: `La temporada no define una categoría inferior contigua para el año ${categoryUpgradeBirthYear}.`,
+        error: `«Sube de categoría» necesita una categoría de la temporada que empiece en ${categoryUpgradeBirthYear} y no existe. Desmarca la opción o crea esa categoría en Temporadas.`,
       }
     }
   }
@@ -797,7 +858,10 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
   const capacityText = (parsed.data.capacity ?? "").trim()
   const capacity = capacityText ? Number(capacityText) : null
   if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1)) {
-    return { success: false, error: "Cupo inválido." }
+    return {
+      success: false,
+      error: "El cupo debe ser un número entero mayor que 0. Déjalo vacío para no limitarlo.",
+    }
   }
 
   let price = parsed.data.price
@@ -824,7 +888,7 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
       return {
         success: false,
         error:
-          "Indica el precio por partido, los partidos por equipo y los equipos esperados.",
+          "Completa el precio por partido, los partidos por plantel (1 a 40) y los planteles esperados (1 a 40).",
       }
     }
     price = leagueEntryPrice({ pricePerMatch, matchesPerTeam })
@@ -882,7 +946,10 @@ export async function saveModality(formData: FormData): Promise<ActionResult> {
     }
   } catch (error) {
     console.error("saveModality error:", error)
-    return { success: false, error: "No se pudo guardar la prueba." }
+    return {
+      success: false,
+      error: "No se pudo guardar la prueba. Vuelve a intentarlo en unos segundos.",
+    }
   }
 
   revalidatePath(`/admin/eventos/${parsed.data.eventId}`)
@@ -893,7 +960,12 @@ export async function toggleModalityActive(modalityId: string): Promise<ActionRe
   await requireAdmin()
 
   const modality = await prisma.eventModality.findUnique({ where: { id: modalityId } })
-  if (!modality) return { success: false, error: "Prueba no encontrada." }
+  if (!modality) {
+    return {
+      success: false,
+      error: "Esta prueba ya no existe. Recarga la página.",
+    }
+  }
 
   await prisma.eventModality.update({
     where: { id: modalityId },
@@ -911,16 +983,29 @@ export async function deleteModality(modalityId: string): Promise<ActionResult> 
     where: { id: modalityId },
     include: { _count: { select: { registrations: true } } },
   })
-  if (!modality) return { success: false, error: "Prueba no encontrada." }
+  if (!modality) {
+    return {
+      success: false,
+      error: "Esta prueba ya no existe. Recarga la página.",
+    }
+  }
 
   if (modality._count.registrations > 0) {
     return {
       success: false,
-      error: "La prueba tiene inscripciones; desactívala en lugar de eliminarla.",
+      error: `La prueba tiene ${plural(modality._count.registrations, "inscripción", "inscripciones")}: desactívala en lugar de eliminarla.`,
     }
   }
 
-  await prisma.eventModality.delete({ where: { id: modalityId } })
+  try {
+    await prisma.eventModality.delete({ where: { id: modalityId } })
+  } catch (error) {
+    console.error("deleteModality error:", error)
+    return {
+      success: false,
+      error: "No se pudo eliminar la prueba. Vuelve a intentarlo en unos segundos.",
+    }
+  }
   revalidatePath(`/admin/eventos/${modality.eventId}`)
   return { success: true }
 }
@@ -928,16 +1013,18 @@ export async function deleteModality(modalityId: string): Promise<ActionResult> 
 // ==================== GENERADOR MASIVO ====================
 
 const bulkSchema = z.object({
-  eventId: z.string().min(1),
-  discipline: z.enum(DISCIPLINE_VALUES),
-  namesText: z.string().trim().min(1, "Ingresa al menos una prueba"),
+  eventId: eventIdField,
+  discipline: disciplineField,
+  namesText: z.string().trim().min(1, "Escribe el nombre de al menos una prueba."),
   categoriesText: z.string().trim(),
-  sexRules: z.array(z.enum(["MALE", "FEMALE", "MIXED", "ANY"])).min(1, "Selecciona al menos un sexo"),
+  sexRules: z
+    .array(z.enum(sexRuleValues))
+    .min(1, "Marca al menos un sexo para generar las pruebas."),
   allowsCategoryUpgrade: z.boolean(),
   level: z.string().optional(),
-  minAthletes: z.coerce.number().int().min(1).max(20),
-  maxAthletes: z.coerce.number().int().min(1).max(20),
-  price: z.coerce.number().min(0).max(100000),
+  minAthletes: athleteCountField("mínimos"),
+  maxAthletes: athleteCountField("máximos"),
+  price: priceField,
   pricePerMatch: z.string().optional(),
   matchesPerTeam: z.string().optional(),
   expectedTeams: z.string().optional(),
@@ -973,7 +1060,10 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
     return { success: false, error: parsed.error.issues[0].message }
   }
   if (parsed.data.minAthletes > parsed.data.maxAthletes) {
-    return { success: false, error: "Mín. de deportistas no puede superar el máx." }
+    return {
+      success: false,
+      error: "Los integrantes mínimos no pueden ser más que los máximos.",
+    }
   }
 
   const event = await prisma.event.findUnique({
@@ -983,11 +1073,16 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
       disciplineConfigs: true,
     },
   })
-  if (!event) return { success: false, error: "Evento no encontrado." }
+  if (!event) {
+    return {
+      success: false,
+      error: "Esta competencia ya no existe. Vuelve a la lista de competencias.",
+    }
+  }
   if (!event.disciplines.includes(parsed.data.discipline as Discipline)) {
     return {
       success: false,
-      error: "La disciplina no está habilitada en este evento.",
+      error: "Esa disciplina no es una disciplina de esta competencia.",
     }
   }
   if (
@@ -996,31 +1091,35 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
   ) {
     return {
       success: false,
-      error: "«Sube de categoría» solo aplica a natación artística.",
+      error: "«Sube de categoría» solo aplica a Natación Artística.",
     }
   }
   const level = parsed.data.level?.trim() ? parsed.data.level.trim() : null
   if (level !== null) {
     if (!isArtisticLevel(level)) {
-      return { success: false, error: "Nivel inválido." }
+      return {
+        success: false,
+        error: "Elige el nivel: Básico, Intermedio o Avanzado.",
+      }
     }
     if (parsed.data.discipline !== "ARTISTIC_SWIMMING") {
       return {
         success: false,
-        error: "El nivel solo aplica a natación artística.",
+        error: "El nivel solo aplica a Natación Artística.",
       }
     }
     if (!event.isLevelChampionship) {
       return {
         success: false,
-        error: "Este evento no es un campeonato de niveles.",
+        error:
+          "Esta competencia no es un campeonato de niveles: marca «Es un campeonato de niveles» en sus datos para usar niveles.",
       }
     }
   }
   if (!event.season) {
     return {
       success: false,
-      error: "Asigna una temporada al evento antes de generar sus pruebas.",
+      error: "Asigna una temporada a la competencia antes de generar sus pruebas.",
     }
   }
 
@@ -1047,7 +1146,7 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
       return {
         success: false,
         error:
-          "Indica el precio por partido, los partidos por equipo y los equipos esperados.",
+          "Completa el precio por partido, los partidos por plantel (1 a 40) y los planteles esperados (1 a 40).",
       }
     }
     generatedPrice = leagueEntryPrice({ pricePerMatch, matchesPerTeam })
@@ -1091,7 +1190,7 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
       if (!adjacent) {
         return {
           success: false,
-          error: `La temporada no define una categoría inferior contigua para el año ${upgradeYear}.`,
+          error: `«Sube de categoría» necesita una categoría de la temporada que empiece en ${upgradeYear} y no existe. Desmarca la opción o crea esa categoría en Temporadas.`,
         }
       }
     }
@@ -1127,16 +1226,27 @@ export async function bulkGenerateModalities(formData: FormData): Promise<BulkRe
   }))
 
   if (rows.length === 0) {
-    return { success: false, error: "La combinación no genera ninguna prueba." }
+    return {
+      success: false,
+      error: "Esta combinación no crea ninguna prueba: escribe al menos un nombre y marca al menos un sexo.",
+    }
   }
   if (rows.length > MAX_BULK_MODALITIES) {
     return {
       success: false,
-      error: `La combinación genera ${rows.length} pruebas (máximo ${MAX_BULK_MODALITIES} por lote).`,
+      error: `La combinación genera ${rows.length} pruebas y el máximo por lote es ${MAX_BULK_MODALITIES}. Genéralas en varios lotes.`,
     }
   }
 
-  await prisma.eventModality.createMany({ data: rows })
+  try {
+    await prisma.eventModality.createMany({ data: rows })
+  } catch (error) {
+    console.error("bulkGenerateModalities error:", error)
+    return {
+      success: false,
+      error: "No se pudieron generar las pruebas. Vuelve a intentarlo en unos segundos.",
+    }
+  }
 
   revalidatePath(`/admin/eventos/${event.id}`)
   return { success: true, created: rows.length }

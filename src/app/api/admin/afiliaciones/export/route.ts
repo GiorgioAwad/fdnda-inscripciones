@@ -22,12 +22,18 @@ function stateLabel(state: string): string {
 export async function GET() {
   const user = await getCurrentUser()
   if (!user || user.role !== "ADMIN") {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    return NextResponse.json(
+      { error: "Inicia sesión como administrador para descargar las afiliaciones." },
+      { status: 401 }
+    )
   }
 
   const season = await getCurrentSeason()
   if (!season) {
-    return NextResponse.json({ error: "No hay temporada vigente" }, { status: 404 })
+    return NextResponse.json(
+      { error: "No hay temporada vigente: haz vigente una para descargar sus afiliaciones." },
+      { status: 404 }
+    )
   }
 
   const [{ clubs }, athletes] = await Promise.all([
@@ -51,12 +57,13 @@ export async function GET() {
         CODIGO: club.clubCode,
         DISCIPLINA: disciplineLabel(row.discipline),
         ESTADO_AFILIACION: stateLabel(row.clubState),
-        CUOTA: row.fee ?? "",
+        // Mismos nombres que las columnas del panel de afiliaciones.
+        CUOTA_AFILIACION_CLUB: row.fee ?? "",
         VIGENCIA_HASTA: row.validTo ? formatDateOnly(row.validTo) : "",
         DEPORTISTAS: row.athletesTotal,
-        ACTIVAS: row.athletesActive,
-        PENDIENTES: row.athletesPending,
-        SIN_VIGENCIA: row.athletesExpiredOrMissing,
+        VIGENTES: row.athletesActive,
+        PENDIENTES_DE_PAGO: row.athletesPending,
+        VENCIDOS_O_SIN_AFILIAR: row.athletesExpiredOrMissing,
       }))
     ),
     athleteRows: athletes.flatMap((athlete) =>
@@ -71,7 +78,7 @@ export async function GET() {
           CLUB: athlete.club.name,
           DISCIPLINA: disciplineLabel(discipline),
           ESTADO_AFILIACION: stateLabel(affiliationState(affiliation)),
-          CUOTA: affiliation ? toAmount(affiliation.fee) : "",
+          CUOTA_AFILIACION: affiliation ? toAmount(affiliation.fee) : "",
           VIGENCIA_HASTA: affiliation ? formatDateOnly(affiliation.validTo) : "",
         }
       })

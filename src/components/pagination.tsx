@@ -11,6 +11,10 @@ interface PaginationProps {
   query?: Record<string, QueryValue>
   pageParam?: string
   className?: string
+  // Opcionales: con los dos, la paginación dice qué tramo se está viendo
+  // («Mostrando 26–50 de 312»). Sin ellos se comporta como siempre.
+  pageSize?: number
+  totalItems?: number
 }
 
 function visiblePages(currentPage: number, totalPages: number) {
@@ -28,8 +32,18 @@ export function Pagination({
   query = {},
   pageParam = "page",
   className,
+  pageSize,
+  totalItems,
 }: PaginationProps) {
   if (totalPages <= 1) return null
+
+  const range =
+    pageSize && totalItems !== undefined && totalItems > 0
+      ? {
+          from: (currentPage - 1) * pageSize + 1,
+          to: Math.min(currentPage * pageSize, totalItems),
+        }
+      : null
 
   const pageHref = (page: number) => ({
     pathname,
@@ -47,6 +61,11 @@ export function Pagination({
       aria-label="Paginación"
       className={cn("flex flex-wrap items-center justify-center gap-1.5 text-sm", className)}
     >
+      {range ? (
+        <p className="num w-full text-center text-xs font-semibold text-fdnda-muted">
+          Mostrando {range.from}–{range.to} de {totalItems}
+        </p>
+      ) : null}
       <Link
         href={pageHref(Math.max(1, currentPage - 1))}
         aria-disabled={currentPage === 1}

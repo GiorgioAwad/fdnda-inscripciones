@@ -7,11 +7,13 @@ import { getRequestIpHash, writeAuditLog } from "@/lib/security"
 
 export const runtime = "nodejs"
 
+// Las mismas etiquetas que ORDER_STATUS_BADGE en pantalla. CANCELLED solo lo
+// escribe expireStaleOrders: una orden que venció sin pagarse.
 const ORDER_STATUS_ES: Record<string, string> = {
   PENDING: "Pendiente",
   PAID: "Pagada",
-  FAILED: "Fallida",
-  CANCELLED: "Cancelada",
+  FAILED: "Pago rechazado",
+  CANCELLED: "Expirada",
 }
 
 export async function GET(
@@ -26,7 +28,7 @@ export async function GET(
   const { id } = await params
   const report = await getEventReport(id)
   if (!report) {
-    return NextResponse.json({ error: "Evento no encontrado" }, { status: 404 })
+    return NextResponse.json({ error: "Competencia no encontrada" }, { status: 404 })
   }
 
   const buffer = buildEventReportWorkbook({
@@ -73,11 +75,11 @@ export async function GET(
     })),
     orderRows: report.orderRows.map((order) => ({
       CODIGO: order.code,
-      LEGADO: order.isLegacy ? "SÍ" : "",
+      INCLUYE_OTRAS_COMPETENCIAS: order.isLegacy ? "SÍ" : "",
       CLUB: order.clubName,
       FECHA: formatDateTimeLima(order.createdAt),
       INSCRIPCIONES: order.itemCount,
-      MONTO_EVENTO: order.eventAmount,
+      MONTO_COMPETENCIA: order.eventAmount,
       PROVEEDOR: order.provider,
       ESTADO: ORDER_STATUS_ES[order.status] ?? order.status,
     })),

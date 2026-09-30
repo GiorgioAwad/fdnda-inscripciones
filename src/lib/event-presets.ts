@@ -27,7 +27,11 @@ export interface DisciplinePreset {
   pricingHint: string
   /** Explica cómo se escriben las categorías de esta disciplina. */
   categoryHint: string
-  /** Placeholder del textarea de categorías del generador masivo. */
+  /**
+   * Ejemplo para el campo «Nombre de la categoría». Antes era el texto
+   * «Nombre|desde|hasta» del generador en lote; las categorías ahora se cargan
+   * en filas con un campo por dato.
+   */
   categoryPlaceholder: string
   modalities: ModalityPreset[]
 }
@@ -44,9 +48,9 @@ export const DISCIPLINE_PRESETS: Record<DisciplineValue, DisciplinePreset> = {
     defaultChargesAthleteFee: true,
     defaultAgeRuleMode: "RANGE",
     pricingHint:
-      "Cada clavadista paga una cuota fija por todo el evento, sin importar cuántas pruebas haga.",
-    categoryHint: "Grupos por rango de año de nacimiento (Grupo A, B, C…).",
-    categoryPlaceholder: "Grupo D|2015|2017\nGrupo C|2013|2014\nGrupo B|2011|2012",
+      "Cada clavadista paga una cuota de competencia fija por toda la competencia, sin importar cuántas pruebas haga.",
+    categoryHint: "Categorías por rango de años de nacimiento (Grupo A, B, C…).",
+    categoryPlaceholder: "Grupo D",
     modalities: [
       { name: "Trampolín 1m", sexRules: ["FEMALE", "MALE"], ...INDIVIDUAL },
       { name: "Trampolín 3m", sexRules: ["FEMALE", "MALE"], ...INDIVIDUAL },
@@ -64,11 +68,10 @@ export const DISCIPLINE_PRESETS: Record<DisciplineValue, DisciplinePreset> = {
     defaultChargesAthleteFee: false,
     defaultAgeRuleMode: "RANGE",
     pricingHint:
-      "Cada prueba tiene su propio precio y se cobra una vez por formación (un solo, un dueto, un equipo).",
+      "Cada prueba tiene su precio por formación: lo paga una vez cada solo, dueto o equipo.",
     categoryHint:
-      "Categorías por rango de año de nacimiento. Solo acá aplica «sube de categoría».",
-    categoryPlaceholder:
-      "Juvenil|2010|2012\nInfantil A|2013|2014\nInfantil B|2015|2016",
+      "Categorías por rango de años de nacimiento. Solo en esta disciplina existe «Sube de categoría».",
+    categoryPlaceholder: "Infantil A",
     modalities: [
       { name: "Solo Libre", sexRules: ["FEMALE"], ...INDIVIDUAL },
       { name: "Figuras", sexRules: ["FEMALE"], ...INDIVIDUAL },
@@ -92,10 +95,10 @@ export const DISCIPLINE_PRESETS: Record<DisciplineValue, DisciplinePreset> = {
     defaultChargesAthleteFee: true,
     defaultAgeRuleMode: "RANGE",
     pricingHint:
-      "Se cobra la inscripción del plantel y además una cuota por cada jugador. El club elige cuáles paga.",
+      "Se cobra el precio por formación de cada plantel y además una cuota de competencia por cada jugador. Cada club elige en su planilla cuál paga, o ambos.",
     categoryHint:
-      "Categorías por rango de año de nacimiento, igual que en las demás disciplinas.",
-    categoryPlaceholder: "Sub 14|2013|2016\nSub 16|2011|2012\nSub 18|2009|2010",
+      "Categorías por rango de años de nacimiento, igual que en las demás disciplinas.",
+    categoryPlaceholder: "Sub-16",
     modalities: [
       {
         name: "Plantel",

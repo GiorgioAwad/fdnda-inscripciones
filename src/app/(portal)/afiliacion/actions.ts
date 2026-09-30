@@ -16,6 +16,11 @@ import { prisma } from "@/lib/prisma"
 
 export type { ActionResult } from "@/lib/orders"
 
+// requireClubUser falla sin sesión, con un usuario que no es de club o con la
+// contraseña temporal sin cambiar: en los tres casos la salida es volver a entrar.
+const SESSION_ERROR =
+  "Tu sesión expiró o no tiene acceso a este club. Vuelve a iniciar sesión."
+
 // Todas las acciones toman el club de la sesión: el cliente nunca lo elige.
 export async function addAffiliationsAction(input: {
   clubDisciplines?: DisciplineValue[]
@@ -25,7 +30,7 @@ export async function addAffiliationsAction(input: {
   try {
     user = await requireClubUser()
   } catch {
-    return { success: false, error: "No autorizado." }
+    return { success: false, error: SESSION_ERROR }
   }
 
   const requested = [
@@ -33,7 +38,7 @@ export async function addAffiliationsAction(input: {
     ...(input.athletes ?? []).map((row) => row.discipline),
   ]
   if (!requested.every((discipline) => canAccessDiscipline(user, discipline))) {
-    return { success: false, error: "No autorizado para una de las disciplinas." }
+    return { success: false, error: "Tu usuario no tiene acceso a una de esas disciplinas." }
   }
   const result = await addAffiliationsToCart({ ...input, clubId: user.clubId })
 
@@ -53,7 +58,7 @@ export async function removeAffiliationAction(input: {
   try {
     user = await requireClubUser()
   } catch {
-    return { success: false, error: "No autorizado." }
+    return { success: false, error: SESSION_ERROR }
   }
 
   const affiliation =
@@ -67,7 +72,7 @@ export async function removeAffiliationAction(input: {
           select: { discipline: true },
         })
   if (!affiliation || !canAccessDiscipline(user, affiliation.discipline)) {
-    return { success: false, error: "No autorizado para esta afiliación." }
+    return { success: false, error: "Tu usuario no tiene acceso a esa afiliación." }
   }
   const result = await removeAffiliationFromCart({ ...input, clubId: user.clubId })
 
@@ -89,7 +94,7 @@ export async function checkoutAffiliationAction(): Promise<ActionResult> {
     userId = user.id
     disciplineAccess = explicitDisciplineAccess(user)
   } catch {
-    return { success: false, error: "No autorizado." }
+    return { success: false, error: SESSION_ERROR }
   }
 
   const result = await checkoutAffiliationCart({ clubId, userId, disciplineAccess })

@@ -311,7 +311,7 @@ async function editablePlan(
         success: false,
         code: "PLAN_NOT_EDITABLE",
         currentRevision: plan.revision,
-        error: "La planilla ya está asociada a una orden o fue pagada.",
+        error: "Esta planilla ya tiene una orden o está pagada, así que no se puede editar.",
       },
     }
   }
@@ -322,7 +322,7 @@ async function editablePlan(
         success: false,
         code: "REVISION_CONFLICT",
         currentRevision: plan.revision,
-        error: "La planilla cambió en otra pestaña. Recarga antes de continuar.",
+        error: "Tu último cambio no se guardó: esta planilla se modificó en otra pestaña o por otra persona. Recárgala y repite el cambio.",
       },
     }
   }
@@ -403,7 +403,7 @@ export async function createOrResumeRegistrationPlan(input: {
         return {
           success: false,
           code: "INVALID_ATHLETES",
-          error: "Uno o más deportistas no pertenecen a tu club o están inactivos.",
+          error: "Algún deportista ya no está en el padrón de tu club. Recarga la planilla.",
         }
       }
 
@@ -464,7 +464,7 @@ export async function replaceRegistrationPlanRoster(input: {
         return {
           success: false,
           code: "INVALID_ATHLETES",
-          error: "Uno o más deportistas no pertenecen a tu club o están inactivos.",
+          error: "Algún deportista ya no está en el padrón de tu club. Recarga la planilla.",
         }
       }
 
@@ -511,7 +511,7 @@ export async function replaceRegistrationPlanRoster(input: {
       code: isRetryableRegistrationPlanTransactionError(error)
         ? "CONCURRENT_CHANGE"
         : "UNEXPECTED_ERROR",
-      error: "No se pudo guardar la nómina. Vuelve a intentarlo.",
+      error: "No se pudo guardar la lista de deportistas de la planilla. Vuelve a intentarlo.",
     }
   }
 }
@@ -550,7 +550,7 @@ export async function setRegistrationPlanAthleteSelection(input: {
           return {
             success: false,
             code: "INVALID_ATHLETES",
-            error: "El deportista no pertenece a tu club o está inactivo.",
+            error: "Este deportista ya no está en el padrón de tu club. Recarga la planilla.",
           }
         }
         const rosterCount = await tx.registrationPlanAthlete.count({
@@ -669,7 +669,7 @@ export async function selectRegistrationPlanEvent(input: {
         return {
           success: false,
           code: "INVALID_EVENT",
-          error: "La competencia todavía no tiene una temporada configurada.",
+          error: "Esta competencia aún no tiene temporada asignada. Avisa a la FDNDA.",
         }
       }
       // El listado ya viene filtrado, pero la competencia también puede llegar
@@ -796,7 +796,7 @@ export async function saveRegistrationPlanEntry(input: {
     return {
       success: false,
       code: "INVALID_ATHLETES",
-      error: "La formación contiene demasiados deportistas.",
+      error: "La formación supera el máximo de integrantes de la prueba.",
     }
   }
   const chosen = new Set(athleteIds)
@@ -807,7 +807,7 @@ export async function saveRegistrationPlanEntry(input: {
     return {
       success: false,
       code: "INVALID_ATHLETES",
-      error: "La lista de reservas no es válida.",
+      error: "Solo puedes marcar como reserva a un integrante de la formación.",
     }
   }
 
@@ -888,7 +888,7 @@ export async function saveRegistrationPlanEntry(input: {
           return {
             success: false,
             code: "INVALID_MODALITY",
-            error: `Una planilla admite como máximo ${MAX_PLAN_ENTRIES} formaciones.`,
+            error: `Una planilla admite como máximo ${MAX_PLAN_ENTRIES} inscripciones en pruebas.`,
           }
         }
         registrationId = randomUUID()
@@ -909,7 +909,7 @@ export async function saveRegistrationPlanEntry(input: {
           return {
             success: false,
             code: "DUPLICATE_ENTRY",
-            error: `${duplicate.athlete.firstNames} ${duplicate.athlete.lastNames} ya aparece en esta prueba.`,
+            error: `${duplicate.athlete.lastNames}, ${duplicate.athlete.firstNames} ya está en otra formación de esta prueba.`,
           }
         }
       }
@@ -1029,7 +1029,7 @@ export async function toggleRegistrationPlanIndividualEntry(input: {
         return {
           success: false,
           code: "INVALID_MODALITY",
-          error: "Esta prueba es de equipo: usa el editor de formaciones.",
+          error: "Esta prueba es de equipo: inscríbela con «Armar formación».",
         }
       }
 
@@ -1060,7 +1060,7 @@ export async function toggleRegistrationPlanIndividualEntry(input: {
         return {
           success: false,
           code: "INVALID_ATHLETES",
-          error: "El deportista no pertenece a tu club o está inactivo.",
+          error: "Este deportista ya no está en el padrón de tu club. Recarga la planilla.",
         }
       }
 
@@ -1112,7 +1112,7 @@ export async function toggleRegistrationPlanIndividualEntry(input: {
         return {
           success: false,
           code: "INVALID_MODALITY",
-          error: `Una planilla admite como máximo ${MAX_PLAN_ENTRIES} formaciones.`,
+          error: `Una planilla admite como máximo ${MAX_PLAN_ENTRIES} inscripciones en pruebas.`,
         }
       }
 
@@ -1272,7 +1272,7 @@ export async function setRegistrationPlanCharges(input: {
       code: isRetryableRegistrationPlanTransactionError(error)
         ? "CONCURRENT_CHANGE"
         : "UNEXPECTED_ERROR",
-      error: "No se pudo guardar la forma de pago. Vuelve a intentarlo.",
+      error: "No se pudo guardar qué paga tu club. Vuelve a intentarlo.",
     }
   }
 }
@@ -1363,9 +1363,13 @@ export async function listRegistrationPlans(
         select: {
           id: true,
           name: true,
+          slug: true,
           startDate: true,
           endDate: true,
           disciplines: true,
+          // Para avisar en la lista que un borrador ya no se puede pagar.
+          status: true,
+          registrationDeadline: true,
         },
       },
       _count: { select: { athletes: true, registrations: true } },
@@ -1380,6 +1384,43 @@ export async function listRegistrationPlans(
     skip: options?.skip,
     take: options?.take,
   })
+}
+
+/**
+ * Disciplinas en las que cada deportista tiene una afiliación que cubre todas las
+ * fechas de la competencia. Es el mismo criterio con el que plan-validation.ts
+ * emite ATHLETE_AFFILIATION_REQUIRED; acá solo informa a la pantalla antes de
+ * la revisión y no decide nada. Devuelve null si la competencia no tiene
+ * temporada (no hay contra qué comparar).
+ */
+export async function athleteDisciplinesCoveringEvent(input: {
+  clubId: string
+  eventId: string
+  athleteIds: readonly string[]
+}): Promise<Map<string, string[]> | null> {
+  const event = await prisma.event.findUnique({
+    where: { id: input.eventId },
+    select: { seasonId: true, startDate: true, endDate: true },
+  })
+  if (!event?.seasonId) return null
+  const covered = new Map<string, string[]>()
+  const athleteIds = [...new Set(input.athleteIds)]
+  if (athleteIds.length === 0) return covered
+  const rows = await prisma.athleteAffiliation.findMany({
+    where: {
+      clubId: input.clubId,
+      seasonId: event.seasonId,
+      athleteId: { in: athleteIds },
+      status: "ACTIVE",
+      validFrom: { lte: event.startDate },
+      validTo: { gte: event.endDate },
+    },
+    select: { athleteId: true, discipline: true },
+  })
+  for (const row of rows) {
+    covered.set(row.athleteId, [...(covered.get(row.athleteId) ?? []), row.discipline])
+  }
+  return covered
 }
 
 export async function searchClubAthletesForPlan(input: {
@@ -1707,7 +1748,7 @@ export async function checkoutRegistrationPlan(input: {
           success: false,
           code: "REVISION_CONFLICT",
           currentRevision: basicPlan.revision,
-          error: "La planilla cambió en otra pestaña. Recarga antes de pagar.",
+          error: "Esta planilla se modificó en otra pestaña o por otra persona. Recárgala y revísala antes de pagar.",
         }
       }
 

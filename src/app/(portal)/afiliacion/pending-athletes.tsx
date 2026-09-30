@@ -1,9 +1,10 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ShoppingBag } from "lucide-react"
+import { DisciplineIcon } from "@/components/discipline-icon"
 import { Button } from "@/components/ui/button"
 import { AFFILIATION_STATE_BADGE, Badge } from "@/components/ui/badge"
 import {
@@ -19,7 +20,7 @@ import {
   TR,
 } from "@/components/ui/table"
 import { DISCIPLINES, type DisciplineValue } from "@/lib/disciplines"
-import { cn, formatMoney } from "@/lib/utils"
+import { formatMoney, plural } from "@/lib/utils"
 import { addAffiliationsAction } from "./actions"
 
 export interface PendingAthleteRow {
@@ -29,7 +30,9 @@ export interface PendingAthleteRow {
   docLabel: string
   birthDateLabel: string
   categoryLabel: string
-  fee: number
+  // null = la FDNDA todavía no fijó la cuota de esa disciplina: no se puede
+  // agregar al carrito (addAffiliationsToCart lo rechazaría).
+  fee: number | null
   state: string
   inCart: boolean
   awaitingPayment: boolean
@@ -42,35 +45,45 @@ function keyOf(row: { athleteId: string; discipline: DisciplineValue }): string 
   return `${row.athleteId}:${row.discipline}`
 }
 
+function isLocked(row: PendingAthleteRow): boolean {
+  return row.inCart || row.awaitingPayment || row.fee === null
+}
+
+function historyLabel(row: PendingAthleteRow): string {
+  return row.previousSeasonYear
+    ? `Reafiliación · última en ${row.previousSeasonYear}`
+    : "Primera afiliación con tu club"
+}
+
+// Estado que se muestra: el carrito y la orden mandan sobre el estado base.
+function StateBadge({ row, seasonYear }: { row: PendingAthleteRow; seasonYear: number }) {
+  if (row.inCart) return <Badge variant="info">En el carrito</Badge>
+  if (row.awaitingPayment) return <Badge variant="warning">Orden por pagar</Badge>
+  if (row.fee === null) return <Badge variant="neutral">Sin cuota {seasonYear}</Badge>
+  const badge = AFFILIATION_STATE_BADGE[row.state] ?? AFFILIATION_STATE_BADGE.SIN_AFILIAR
+  return <Badge variant={badge.variant}>{badge.label}</Badge>
+}
+
 export function PendingAthletes({
   rows,
   seasonYear,
+  multiPage,
 }: {
   rows: PendingAthleteRow[]
   seasonYear: number
+  // Con varias páginas la selección solo alcanza a la página visible.
+  multiPage: boolean
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [filter, setFilter] = useState<DisciplineValue | "ALL">("ALL")
 
-  // Disciplinas presentes en la lista: no se ofrecen filtros vacíos.
-  const availableDisciplines = useMemo(
-    () => [...new Set(rows.map((row) => row.discipline))],
-    [rows]
-  )
-
-  const visible = useMemo(
-    () => (filter === "ALL" ? rows : rows.filter((row) => row.discipline === filter)),
-    [rows, filter]
-  )
-
-  const selectable = visible.filter((row) => !row.inCart && !row.awaitingPayment)
+  const selectable = rows.filter((row) => !isLocked(row))
   const allSelected =
     selectable.length > 0 && selectable.every((row) => selected.has(keyOf(row)))
 
   const selectedRows = rows.filter((row) => selected.has(keyOf(row)))
-  const selectedTotal = selectedRows.reduce((sum, row) => sum + row.fee, 0)
+  const selectedTotal = selectedRows.reduce((sum, row) => sum + (row.fee ?? 0), 0)
 
   const toggle = (row: PendingAthleteRow) => {
     setSelected((prev) => {
@@ -104,12 +117,18 @@ export function PendingAthletes({
         })),
       })
       if (result.success) {
-        toast.success(`${count} afiliación(es) agregadas al carrito`, {
-          action: {
-            label: "Ir al carrito",
-            onClick: () => router.push("/afiliacion/carrito"),
-          },
-        })
+        const added = result.added ?? count
+        toast.success(
+          added === 1
+            ? "1 afiliación agregada al carrito"
+            : `${added} afiliaciones agregadas al carrito`,
+          {
+            action: {
+              label: "Pagar carrito",
+              onClick: () => router.push("/afiliacion/carrito"),
+            },
+          }
+        )
         setSelected(new Set())
         router.refresh()
       } else {
@@ -118,37 +137,12 @@ export function PendingAthletes({
     })
   }
 
+  const selectAllLabel = multiPage
+    ? `Seleccionar las ${selectable.length} de esta página`
+    : `Seleccionar todas (${selectable.length})`
+
   return (
     <div className="space-y-4">
-      {availableDisciplines.length > 1 ? (
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar por disciplina">
-          {(["ALL", ...availableDisciplines] as const).map((value) => {
-            const active = filter === value
-            return (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setFilter(value)}
-                aria-pressed={active}
-                className={cn(
-                  "inline-flex min-h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ring-1 ring-inset transition-colors",
-                  active
-                    ? "bg-fdnda-navy text-white ring-fdnda-navy"
-                    : "bg-white text-fdnda-muted ring-fdnda-border hover:text-fdnda-navy"
-                )}
-              >
-                {value === "ALL" ? "Todas" : DISCIPLINES[value].label}
-                <span className="num text-xs opacity-70">
-                  {value === "ALL"
-                    ? rows.length
-                    : rows.filter((row) => row.discipline === value).length}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
-
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-surface border border-fdnda-border bg-fdnda-surface px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           {/* «Seleccionar todas» vive aquí y no en la cabecera de la tabla: en
@@ -162,16 +156,26 @@ export function PendingAthletes({
               disabled={selectable.length === 0}
               onChange={toggleAll}
             />
-            Seleccionar todas las visibles
+            {selectAllLabel}
           </label>
-          <p className="text-sm text-fdnda-muted">
-            Seleccionadas: <strong className="num text-fdnda-ink">{selectedRows.length}</strong>{" "}
-            · Total <strong className="num text-fdnda-navy">{formatMoney(selectedTotal)}</strong>
+          <p className="text-sm text-fdnda-muted" aria-live="polite">
+            {selectedRows.length === 0 ? (
+              "Ninguna seleccionada"
+            ) : (
+              <>
+                <strong className="num text-fdnda-ink">
+                  {plural(selectedRows.length, "seleccionada", "seleccionadas")}
+                </strong>{" "}
+                · Total <strong className="num text-fdnda-navy">{formatMoney(selectedTotal)}</strong>
+              </>
+            )}
           </p>
         </div>
         <Button onClick={handleAdd} loading={isPending} disabled={selectedRows.length === 0}>
           <ShoppingBag className="h-4 w-4" aria-hidden="true" />
-          Agregar al carrito de afiliación
+          {selectedRows.length === 0
+            ? "Agregar al carrito"
+            : `Agregar ${plural(selectedRows.length, "afiliación", "afiliaciones")} al carrito`}
         </Button>
       </div>
 
@@ -179,10 +183,7 @@ export function PendingAthletes({
           octava: seleccionar obligaba a ir y volver. Aquí el área de selección
           es la tarjeta entera. */}
       <TableCards>
-        {visible.map((row) => {
-          const badge =
-            AFFILIATION_STATE_BADGE[row.state] ?? AFFILIATION_STATE_BADGE.SIN_AFILIAR
-          const locked = row.inCart || row.awaitingPayment
+        {rows.map((row) => {
           const style = DISCIPLINES[row.discipline]
 
           return (
@@ -195,8 +196,9 @@ export function PendingAthletes({
                     type="checkbox"
                     className="mt-0.5 h-5 w-5 shrink-0 accent-fdnda-navy"
                     checked={selected.has(keyOf(row))}
-                    disabled={locked}
+                    disabled={isLocked(row)}
                     onChange={() => toggle(row)}
+                    aria-label={`Seleccionar ${style.label} de ${row.fullName}`}
                   />
                   <span>{row.fullName}</span>
                 </label>
@@ -206,39 +208,28 @@ export function PendingAthletes({
                   {style.short} · <span className="num">{row.docLabel}</span>
                 </span>
               }
-              badges={
-                row.inCart ? (
-                  <Badge variant="info">En el carrito</Badge>
-                ) : row.awaitingPayment ? (
-                  <Badge variant="warning">Orden en curso</Badge>
-                ) : (
-                  <Badge variant={badge.variant}>{badge.label}</Badge>
-                )
-              }
+              badges={<StateBadge row={row} seasonYear={seasonYear} />}
             >
               <TableField
                 label="F. nacimiento"
                 value={<span className="num">{row.birthDateLabel}</span>}
               />
               <TableField label="Categoría" value={row.categoryLabel} />
-              <TableField
-                label="Situación"
-                value={
-                  row.previousSeasonYear
-                    ? `Reafiliación (última: ${row.previousSeasonYear})`
-                    : "Nuevo en el club"
-                }
-              />
+              <TableField label="Situación" value={historyLabel(row)} />
               <TableField
                 label={`Cuota ${seasonYear}`}
-                value={<span className="num font-semibold">{formatMoney(row.fee)}</span>}
+                value={
+                  <span className="num font-semibold">
+                    {row.fee === null ? "Sin fijar" : formatMoney(row.fee)}
+                  </span>
+                }
               />
             </TableCard>
           )
         })}
       </TableCards>
 
-      <TableContainer className="hidden md:block">
+      <TableContainer className="hidden md:block" aria-label="Deportistas por afiliar">
         <Table>
           <THead>
             <TR>
@@ -250,17 +241,13 @@ export function PendingAthletes({
               <TH>Documento</TH>
               <TH>F. nacimiento</TH>
               <TH>Categoría</TH>
-              <TH>Situación</TH>
+              <TH>Estado</TH>
               <TH className="text-right">Cuota {seasonYear}</TH>
             </TR>
           </THead>
           <TBody>
-            {visible.map((row, index) => {
-              const badge =
-                AFFILIATION_STATE_BADGE[row.state] ?? AFFILIATION_STATE_BADGE.SIN_AFILIAR
-              const locked = row.inCart || row.awaitingPayment
+            {rows.map((row, index) => {
               const style = DISCIPLINES[row.discipline]
-              const Icon = style.icon
 
               return (
                 <TR key={keyOf(row)}>
@@ -269,7 +256,7 @@ export function PendingAthletes({
                       type="checkbox"
                       className="h-5 w-5 accent-fdnda-navy"
                       checked={selected.has(keyOf(row))}
-                      disabled={locked}
+                      disabled={isLocked(row)}
                       onChange={() => toggle(row)}
                       aria-label={`Seleccionar ${style.label} de ${row.fullName}`}
                     />
@@ -285,7 +272,11 @@ export function PendingAthletes({
                       <span
                         className={`flex h-6 w-6 items-center justify-center rounded-control text-white ${style.chip}`}
                       >
-                        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                        <DisciplineIcon
+                          discipline={row.discipline}
+                          tone="light"
+                          className="h-3.5 w-3.5"
+                        />
                       </span>
                       {style.short}
                     </span>
@@ -294,22 +285,18 @@ export function PendingAthletes({
                   <TD className="text-xs">{row.birthDateLabel}</TD>
                   <TD className="text-xs">{row.categoryLabel}</TD>
                   <TD>
-                    {row.inCart ? (
-                      <Badge variant="info">En el carrito</Badge>
-                    ) : row.awaitingPayment ? (
-                      <Badge variant="warning">Orden en curso</Badge>
+                    <div className="flex flex-col items-start gap-1">
+                      <StateBadge row={row} seasonYear={seasonYear} />
+                      <span className="text-xs text-fdnda-muted">{historyLabel(row)}</span>
+                    </div>
+                  </TD>
+                  <TD className="text-right font-semibold">
+                    {row.fee === null ? (
+                      <span className="text-xs font-normal text-fdnda-muted">Sin fijar</span>
                     ) : (
-                      <div className="flex flex-col items-start gap-1">
-                        <Badge variant={badge.variant}>{badge.label}</Badge>
-                        <span className="text-xs text-fdnda-muted">
-                          {row.previousSeasonYear
-                            ? `Reafiliación (última: ${row.previousSeasonYear})`
-                            : "Nuevo en el club"}
-                        </span>
-                      </div>
+                      formatMoney(row.fee)
                     )}
                   </TD>
-                  <TD className="text-right font-semibold">{formatMoney(row.fee)}</TD>
                 </TR>
               )
             })}

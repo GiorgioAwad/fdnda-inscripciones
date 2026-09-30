@@ -12,15 +12,15 @@ export type { ActionResult } from "@/lib/orders"
 // El delegado solo edita los datos de contacto: nombre, código y región los
 // administra la federación.
 const contactSchema = z.object({
-  contactName: z.string().trim().max(80),
-  contactPhone: z.string().trim().max(20),
+  contactName: z.string().trim().max(80, "Acorta el nombre de contacto a 80 caracteres."),
+  contactPhone: z.string().trim().max(20, "Acorta el teléfono a 20 caracteres."),
   contactEmail: z
     .string()
     .trim()
-    .max(80)
+    .max(80, "Acorta el correo electrónico a 80 caracteres.")
     .refine(
       (value) => value === "" || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value),
-      "Email inválido"
+      "Revisa el correo electrónico: falta la @ o el dominio."
     ),
 })
 
@@ -31,12 +31,15 @@ export async function updateClubContact(formData: FormData): Promise<ActionResul
     if (!isClubCoordinator(user)) {
       return {
         success: false,
-        error: "Solo el coordinador general puede editar los datos compartidos del club.",
+        error: "Solo el coordinador del club puede editar el contacto.",
       }
     }
     clubId = user.clubId
   } catch {
-    return { success: false, error: "No autorizado." }
+    return {
+      success: false,
+      error: "Tu sesión expiró o no tiene acceso a este club. Vuelve a iniciar sesión.",
+    }
   }
 
   const parsed = contactSchema.safeParse({

@@ -11,7 +11,7 @@ import {
   type DisciplinePricingSummary,
   type PlanPricing,
 } from "./event-pricing"
-import { birthYearOf, toAmount } from "./utils"
+import { birthYearOf, formatDateTimeLima, plural, toAmount } from "./utils"
 
 export type PlanIssueSeverity = "ERROR" | "WARNING"
 
@@ -164,12 +164,13 @@ function issue(
   return { code, severity, message, action, ...context }
 }
 
+// Mismo formato que la planilla en pantalla: «Apellidos, Nombres».
 function athleteName(athlete: { firstNames: string; lastNames: string }): string {
-  return `${athlete.firstNames} ${athlete.lastNames}`
+  return `${athlete.lastNames}, ${athlete.firstNames}`
 }
 
 function modalityName(modality: { name: string; category: string | null }): string {
-  return [modality.name, modality.category].filter(Boolean).join(" — ")
+  return [modality.name, modality.category].filter(Boolean).join(" · ")
 }
 
 function otherPlanFilter(planId: string) {
@@ -352,7 +353,7 @@ export async function validateRegistrationPlanInTransaction(
     issues.push(
       issue(
         "REVISION_CONFLICT",
-        "La planilla cambió en otra pestaña. Recarga antes de continuar.",
+        "Esta planilla se modificó en otra pestaña o por otra persona. Recárgala para ver la última versión.",
         "RELOAD"
       )
     )
@@ -370,7 +371,7 @@ export async function validateRegistrationPlanInTransaction(
     issues.push(
       issue(
         "PLAN_ABANDONED",
-        "Esta planilla fue reemplazada por otra y ya no puede utilizarse.",
+        "Esta planilla fue reemplazada por otra de la misma competencia y ya no se usa.",
         "RELOAD"
       )
     )
@@ -379,7 +380,7 @@ export async function validateRegistrationPlanInTransaction(
     issues.push(
       issue(
         "PLAN_NOT_EDITABLE",
-        "La planilla ya está asociada a una orden o fue pagada.",
+        "Esta planilla ya tiene una orden de pago y no se puede modificar.",
         "RELOAD"
       )
     )
@@ -389,7 +390,7 @@ export async function validateRegistrationPlanInTransaction(
     issues.push(
       issue(
         "EVENT_REQUIRED",
-        "Selecciona la competencia antes de validar la planilla.",
+        "Elige la competencia de esta planilla.",
         "SELECT_EVENT"
       )
     )
@@ -398,7 +399,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "EVENT_CLOSED",
-          "La competencia no tiene inscripciones abiertas.",
+          "Las inscripciones de esta competencia están cerradas. Esta planilla ya no se puede pagar.",
           "SELECT_EVENT"
         )
       )
@@ -407,7 +408,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "DEADLINE_PASSED",
-          "El plazo de inscripción de la competencia ya cerró.",
+          `El cierre de inscripciones fue el ${formatDateTimeLima(plan.event.registrationDeadline)}. Esta planilla ya no se puede pagar.`,
           "CONTACT_FEDERATION"
         )
       )
@@ -416,7 +417,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "EVENT_SEASON_REQUIRED",
-          "La competencia no tiene una temporada configurada.",
+          "La competencia aún no tiene temporada asignada. Avisa a la FDNDA.",
           "CONTACT_FEDERATION"
         )
       )
@@ -427,7 +428,7 @@ export async function validateRegistrationPlanInTransaction(
     issues.push(
       issue(
         "EMPTY_ROSTER",
-        "Selecciona al menos un deportista para la planilla.",
+        "Agrega al menos un deportista a la planilla.",
         "SELECT_ATHLETES"
       )
     )
@@ -436,7 +437,7 @@ export async function validateRegistrationPlanInTransaction(
     issues.push(
       issue(
         "EMPTY_PLAN",
-        "Asigna al menos una prueba o formación antes de pagar.",
+        "Inscribe al menos una prueba antes de pagar.",
         "EDIT_ENTRY"
       )
     )
@@ -449,7 +450,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "ATHLETE_NOT_AVAILABLE",
-          `${athleteName(row.athlete)} ya no está activo en tu club.`,
+          `${athleteName(row.athlete)} ya no está en el padrón de tu club. Quítalo de la planilla.`,
           "SELECT_ATHLETES",
           { athleteId: row.athleteId }
         )
@@ -478,7 +479,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "ENTRY_NOT_EDITABLE",
-          `${modalityName(modality)} ya pertenece a una orden en curso o pagada.`,
+          `${modalityName(modality)} ya está en una orden pendiente o pagada.`,
           "RELOAD",
           { modalityId: modality.id, registrationId: registration.id }
         )
@@ -489,7 +490,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "MODALITY_NOT_AVAILABLE",
-          `${modalityName(modality)} ya no está disponible.`,
+          `${modalityName(modality)} ya no está disponible en esta competencia. Quítala de la planilla.`,
           "REMOVE_ENTRY",
           { modalityId: modality.id, registrationId: registration.id }
         )
@@ -499,7 +500,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "MODALITY_EVENT_MISMATCH",
-          `${modalityName(modality)} no pertenece a la competencia seleccionada.`,
+          `${modalityName(modality)} no pertenece a esta competencia. Quítala de la planilla.`,
           "REMOVE_ENTRY",
           { modalityId: modality.id, registrationId: registration.id }
         )
@@ -509,7 +510,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "DISCIPLINE_MISMATCH",
-          `${modalityName(modality)} no corresponde a una disciplina habilitada en la competencia.`,
+          `${modalityName(modality)} es de una disciplina que esta competencia no incluye. Quítala de la planilla.`,
           "REMOVE_ENTRY",
           { modalityId: modality.id, registrationId: registration.id }
         )
@@ -527,7 +528,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "AGE_RULE_INVALID",
-          `${modalityName(modality)} usa categorías Sub-N/Open pero su rango de años no lo refleja. Avisa a la federación.`,
+          `No se puede inscribir en ${modalityName(modality)}: la competencia tiene mal configuradas las edades de esa prueba. Avisa a la FDNDA.`,
           "CONTACT_FEDERATION",
           { modalityId: modality.id, registrationId: registration.id }
         )
@@ -543,7 +544,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "UPGRADE_CONFIGURATION_INVALID",
-          `${modalityName(modality)} tiene una regla de subida de categoría que no coincide con la temporada.`,
+          `No se puede inscribir en ${modalityName(modality)}: su regla de ascenso de categoría no coincide con la temporada. Avisa a la FDNDA.`,
           "CONTACT_FEDERATION",
           { modalityId: modality.id, registrationId: registration.id }
         )
@@ -557,7 +558,7 @@ export async function validateRegistrationPlanInTransaction(
         issues.push(
           issue(
             "ATHLETE_NOT_IN_ROSTER",
-            `${athleteName(row.athlete)} no está en la nómina de esta planilla.`,
+            `${athleteName(row.athlete)} no figura entre los deportistas de esta planilla.`,
             "SELECT_ATHLETES",
             {
               athleteId: row.athleteId,
@@ -632,7 +633,7 @@ export async function validateRegistrationPlanInTransaction(
       issues.push(
         issue(
           "ATHLETE_WITHOUT_ENTRY",
-          `${athleteName(row.athlete)} todavía no tiene una prueba asignada.`,
+          `${athleteName(row.athlete)} todavía no tiene pruebas marcadas.`,
           "EDIT_ENTRY",
           { athleteId: row.athleteId },
           "WARNING"
@@ -764,7 +765,9 @@ export async function validateRegistrationPlanInTransaction(
         issues.push(
           issue(
             "CAPACITY_EXCEEDED",
-            `${modalityName(modality)} solo tiene ${Math.max(0, modality.capacity - taken)} cupo(s) disponible(s).`,
+            modality.capacity - taken <= 0
+              ? `${modalityName(modality)} ya no tiene cupos disponibles. Desmarca esa prueba.`
+              : `${modalityName(modality)} solo tiene ${plural(modality.capacity - taken, "cupo disponible", "cupos disponibles")}.`,
             "SELECT_ANOTHER_MODALITY",
             { modalityId: modality.id, registrationId: registration.id }
           )
@@ -789,10 +792,13 @@ export async function validateRegistrationPlanInTransaction(
       })
       for (const duplicate of duplicates) {
         if (!pairOwner.has(`${duplicate.modalityId}:${duplicate.athleteId}`)) continue
+        const duplicated = plan.registrations.find(
+          (row) => row.modalityId === duplicate.modalityId
+        )?.modality
         issues.push(
           issue(
             "DUPLICATE_CONFIRMED_ENTRY",
-            `${athleteName(duplicate.athlete)} ya está inscrito en esa prueba mediante otra orden.`,
+            `${athleteName(duplicate.athlete)} ya tiene inscripción en ${duplicated ? modalityName(duplicated) : "esa prueba"} en otra orden. Desmarca esa prueba.`,
             "EDIT_ENTRY",
             {
               athleteId: duplicate.athleteId,
@@ -830,7 +836,7 @@ export async function validateRegistrationPlanInTransaction(
     issues.push(
       issue(
         "CHARGE_SELECTION_REQUIRED",
-        "Elige al menos una forma de pago: la inscripción del equipo o la cuota por deportista.",
+        "Marca al menos un concepto en «Qué paga tu club»: precio por formación o cuota de competencia por deportista.",
         "EDIT_ENTRY"
       )
     )
@@ -841,7 +847,7 @@ export async function validateRegistrationPlanInTransaction(
     issues.push(
       issue(
         "DISCIPLINE_PRICING_INVALID",
-        `La cuota por deportista de ${disciplineLabel(discipline)} no está configurada. Avisa a la federación.`,
+        `La cuota de competencia por deportista de ${disciplineLabel(discipline)} aún no tiene precio. Avisa a la FDNDA.`,
         "CONTACT_FEDERATION"
       )
     )
@@ -854,7 +860,7 @@ export async function validateRegistrationPlanInTransaction(
     issues.push(
       issue(
         "ATHLETE_FEE_ALREADY_PAID",
-        `${line.athleteName} ya tiene pagada la cuota de ${disciplineLabel(line.discipline)} de esta competencia${line.coveredByOrderCode ? ` (orden ${line.coveredByOrderCode})` : ""}: no se vuelve a cobrar.`,
+        `${line.athleteName} ya tiene pagada la cuota de competencia de ${disciplineLabel(line.discipline)}${line.coveredByOrderCode ? ` (orden ${line.coveredByOrderCode})` : ""}: no se vuelve a cobrar.`,
         "EDIT_ENTRY",
         { athleteId: line.athleteId },
         "WARNING"

@@ -1,5 +1,3 @@
-import { Sparkles, Volleyball, Waves, type LucideIcon } from "lucide-react"
-
 // Fuente única de las disciplinas de la federación. Antes la etiqueta, el icono y
 // el color de cada una estaban repetidos con cuatro formas distintas (utils,
 // eventos, inscripciones, modalities-manager) y agregar una disciplina obligaba
@@ -17,7 +15,16 @@ export interface DisciplineStyle {
   label: string
   // Etiqueta corta para chips, pestañas y columnas estrechas.
   short: string
-  icon: LucideIcon
+  // Pictograma oficial FDNDA. Conservamos sus proporciones intrínsecas para que
+  // los cinco gráficos compartan altura sin deformarse.
+  pictogram: {
+    src: string
+    width: number
+    height: number
+  }
+  // En las etiquetas sobre navy algunas superficies son claras y otra es roja;
+  // el pictograma cambia de tinta para conservar contraste.
+  onNavyPictogramTone: "brand" | "light"
   // Fondo sólido con texto blanco (avatares, cabeceras de sección).
   chip: string
   // Color de texto para precios y títulos sobre fondo claro.
@@ -35,7 +42,8 @@ export const DISCIPLINES: Record<DisciplineValue, DisciplineStyle> = {
   DIVING: {
     label: "Clavados",
     short: "Clavados",
-    icon: Waves,
+    pictogram: { src: "/pictograms/diving.png", width: 44, height: 46 },
+    onNavyPictogramTone: "brand",
     chip: "bg-fdnda-navy",
     accent: "text-fdnda-navy",
     onNavy: "bg-white text-fdnda-navy",
@@ -44,7 +52,12 @@ export const DISCIPLINES: Record<DisciplineValue, DisciplineStyle> = {
   ARTISTIC_SWIMMING: {
     label: "Natación Artística",
     short: "Artística",
-    icon: Sparkles,
+    pictogram: {
+      src: "/pictograms/artistic-swimming.png",
+      width: 68,
+      height: 48,
+    },
+    onNavyPictogramTone: "light",
     chip: "bg-fdnda-red",
     accent: "text-fdnda-red-deep",
     onNavy: "bg-fdnda-red text-white",
@@ -57,7 +70,8 @@ export const DISCIPLINES: Record<DisciplineValue, DisciplineStyle> = {
     // así que ahí lo que cambia es la tinta: navy profundo sobre turquesa, 4.51:1.
     label: "Polo Acuático",
     short: "Polo",
-    icon: Volleyball,
+    pictogram: { src: "/pictograms/water-polo.png", width: 57, height: 46 },
+    onNavyPictogramTone: "brand",
     chip: "bg-fdnda-turquoise-deep",
     accent: "text-fdnda-turquoise-deep",
     onNavy: "bg-fdnda-turquoise text-fdnda-navy-deep",

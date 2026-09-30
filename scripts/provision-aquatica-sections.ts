@@ -33,7 +33,7 @@ const accounts: Array<{
     disciplineAccess: [],
   },
   {
-    username: "aquatica-polo",
+    username: "aquatica-waterpolo",
     name: "Delegado Aquatica · Polo Acuático",
     disciplineAccess: ["WATER_POLO"],
   },
@@ -158,7 +158,7 @@ async function main() {
       { maxWait: 10_000, timeout: 30_000 }
     )
 
-    console.log("Aquatica separado en coordinador, Polo y Natación Artística.")
+    console.log("Aquatica separado en coordinador, Polo Acuático y Natación Artística.")
     console.log("La credencial expuesta del coordinador fue rotada.")
     console.log(`Credenciales entregables: ${next.credentials.length} (${credentialsPath})`)
   } catch (error) {

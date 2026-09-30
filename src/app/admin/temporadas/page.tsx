@@ -26,12 +26,11 @@ export default async function TemporadasPage() {
     <div className="space-y-6">
       <PageHeader
         icon={CalendarRange}
-        eyebrow="Afiliaciones"
         title="Temporadas y cuotas"
         description={
           current
-            ? `Temporada vigente: ${current.name}. Define las cuotas anuales por disciplina y las categorías por edad.`
-            : "No hay temporada vigente: los clubes no pueden afiliarse ni inscribir hasta que marques una."
+            ? `${current.name} está vigente: sus cuotas y categorías son las que usan el panel de afiliaciones, el padrón y el portal de los clubes.`
+            : "No hay temporada vigente: los clubes no pueden afiliarse hasta que hagas vigente una."
         }
       />
 

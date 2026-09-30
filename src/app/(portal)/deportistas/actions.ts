@@ -6,7 +6,7 @@ import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { requireClubUser } from "@/lib/auth"
 import { getCurrentSeason, getSeasonFees } from "@/lib/affiliations"
-import { DISCIPLINE_VALUES } from "@/lib/disciplines"
+import { DISCIPLINE_VALUES, disciplineLabel } from "@/lib/disciplines"
 import type { ActionResult } from "@/lib/orders"
 import { canAccessDiscipline, isClubCoordinator } from "@/lib/club-access"
 import {
@@ -17,15 +17,23 @@ import {
 
 export type { ActionResult } from "@/lib/orders"
 
+// requireClubUser falla sin sesión, con un usuario que no es de club o con la
+// contraseña temporal sin cambiar: en los tres casos la salida es volver a entrar.
+const SESSION_ERROR =
+  "Tu sesión expiró o no tiene acceso a este club. Vuelve a iniciar sesión."
+
 const docNumberSchema = z
   .string()
   .trim()
-  .regex(/^[a-zA-Z0-9-]{4,20}$/, "Documento inválido")
+  .regex(
+    /^[a-zA-Z0-9-]{4,20}$/,
+    "Revisa el N.º de documento: debe tener de 4 a 20 letras, números o guiones."
+  )
 
 export type DocumentLookup =
   | { status: "INVALID"; message: string }
   // Ya está en la lista del club: no hay nada que crear.
-  | { status: "OWN_CLUB"; athleteId: string; fullName: string }
+  | { status: "OWN_CLUB"; athleteId: string; fullName: string; disciplines: string[] }
   // Pertenece a otro club: el traspaso lo resuelve la federación.
   | { status: "OTHER_CLUB" }
   | { status: "AVAILABLE"; docNumber: string }
@@ -35,14 +43,14 @@ export async function lookupDocument(rawDocNumber: string): Promise<DocumentLook
   try {
     user = await requireClubUser()
   } catch {
-    return { status: "INVALID", message: "No autorizado." }
+    return { status: "INVALID", message: SESSION_ERROR }
   }
 
   const parsed = docNumberSchema.safeParse(rawDocNumber)
   if (!parsed.success) {
     return {
       status: "INVALID",
-      message: "Ingresa un documento válido (4 a 20 caracteres).",
+      message: "Revisa el N.º de documento: debe tener de 4 a 20 letras, números o guiones.",
     }
   }
 
@@ -71,7 +79,10 @@ export async function lookupDocument(rawDocNumber: string): Promise<DocumentLook
       success: false,
       ipHash,
     })
-    return { status: "INVALID", message: "Demasiadas consultas. Intenta más tarde." }
+    return {
+      status: "INVALID",
+      message: "Hiciste demasiadas búsquedas seguidas. Espera 5 minutos y vuelve a buscar.",
+    }
   }
 
   const docNumber = parsed.data
@@ -97,11 +108,17 @@ export async function lookupDocument(rawDocNumber: string): Promise<DocumentLook
       isClubCoordinator(user) ||
       existing.disciplines.some((discipline) => canAccessDiscipline(user, discipline))
     ) {
-      return { status: "OWN_CLUB", athleteId: existing.id, fullName }
+      return {
+        status: "OWN_CLUB",
+        athleteId: existing.id,
+        fullName,
+        disciplines: existing.disciplines.map((discipline) => disciplineLabel(discipline)),
+      }
     }
     return {
       status: "INVALID",
-      message: "El documento ya pertenece a otra sección del club.",
+      message:
+        "Este deportista ya está en el padrón de tu club, en una disciplina a la que tu usuario no tiene acceso. Pídele al coordinador del club que lo revise.",
     }
   }
 
@@ -117,28 +134,36 @@ export async function lookupDocument(rawDocNumber: string): Promise<DocumentLook
 }
 
 const newAthleteSchema = z.object({
-  firstNames: z.string().trim().min(1, "Nombres requeridos"),
-  lastNames: z.string().trim().min(1, "Apellidos requeridos"),
-  docType: z.enum(["DNI", "CE", "PASAPORTE", "OTROS"]),
+  firstNames: z.string().trim().min(1, "Escribe los nombres del deportista."),
+  lastNames: z.string().trim().min(1, "Escribe los apellidos del deportista."),
+  docType: z.enum(["DNI", "CE", "PASAPORTE", "OTROS"], {
+    error: "Elige el tipo de documento.",
+  }),
   docNumber: docNumberSchema,
-  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de nacimiento inválida"),
-  sex: z.enum(["M", "F"]),
+  birthDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Escribe la fecha de nacimiento completa."),
+  sex: z.enum(["M", "F"], { error: "Elige el sexo del deportista." }),
   disciplines: z
     .array(z.enum(DISCIPLINE_VALUES))
-    .min(1, "Selecciona al menos una disciplina"),
+    .min(1, "Marca al menos una disciplina que practique."),
   privacyAccepted: z.literal("on", {
-    error: "Debes confirmar la autorización para registrar los datos.",
+    error: "Confirma que tienes autorización para registrar sus datos personales.",
   }),
 })
 
 // Alta directa: el deportista entra al padrón y queda pendiente de afiliación.
-// El club sale de la sesión, nunca del formulario.
-export async function createClubAthlete(formData: FormData): Promise<ActionResult> {
+// El club sale de la sesión, nunca del formulario. `added` cuenta las cuotas
+// que entraron al carrito: sin temporada o sin cuota fijada no entra ninguna,
+// y el portal no debe decir lo contrario.
+export async function createClubAthlete(
+  formData: FormData
+): Promise<ActionResult & { added?: number; seasonOpen?: boolean; fullName?: string }> {
   let user: Awaited<ReturnType<typeof requireClubUser>>
   try {
     user = await requireClubUser()
   } catch {
-    return { success: false, error: "No autorizado." }
+    return { success: false, error: SESSION_ERROR }
   }
 
   const parsed = newAthleteSchema.safeParse({
@@ -157,7 +182,7 @@ export async function createClubAthlete(formData: FormData): Promise<ActionResul
   }
 
   if (!parsed.data.disciplines.every((discipline) => canAccessDiscipline(user, discipline))) {
-    return { success: false, error: "No autorizado para una de las disciplinas." }
+    return { success: false, error: "Tu usuario no tiene acceso a una de esas disciplinas." }
   }
 
   const { birthDate, disciplines } = parsed.data
@@ -173,13 +198,17 @@ export async function createClubAthlete(formData: FormData): Promise<ActionResul
   const currentYear = new Date().getUTCFullYear()
 
   if (y < 1900 || y > currentYear) {
-    return { success: false, error: "Revisa el año de nacimiento." }
+    return {
+      success: false,
+      error: `Revisa el año de nacimiento: debe estar entre 1900 y ${currentYear}.`,
+    }
   }
 
   const season = await getCurrentSeason()
   // Una cuota por disciplina practicada; las que no tienen tarifa este año
   // quedan sin afiliación hasta que la federación la fije.
   const fees = season ? await getSeasonFees(season.id) : null
+  let added = 0
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -200,6 +229,7 @@ export async function createClubAthlete(formData: FormData): Promise<ActionResul
       if (season && fees) {
         const billable = disciplines.filter((discipline) => fees.has(discipline))
         if (billable.length > 0) {
+          added = billable.length
           await tx.athleteAffiliation.createMany({
             data: billable.map((discipline) => ({
               athleteId: athlete.id,
@@ -221,15 +251,23 @@ export async function createClubAthlete(formData: FormData): Promise<ActionResul
     ) {
       return {
         success: false,
-        error: "Ya existe un deportista con ese documento. Consulta a la federación.",
+        error: "Ese documento ya está registrado. Vuelve a buscarlo para ver en qué club está.",
       }
     }
     console.error("createClubAthlete error:", error)
-    return { success: false, error: "No se pudo registrar al deportista." }
+    return {
+      success: false,
+      error: "No pudimos registrar al deportista. Vuelve a intentarlo; tus datos siguen en el formulario.",
+    }
   }
 
   revalidatePath("/deportistas")
   revalidatePath("/afiliacion", "layout")
   revalidatePath("/inicio")
-  return { success: true }
+  return {
+    success: true,
+    added,
+    seasonOpen: Boolean(season),
+    fullName: `${data.lastNames}, ${data.firstNames}`,
+  }
 }

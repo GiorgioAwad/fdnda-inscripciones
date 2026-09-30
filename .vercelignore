@@ -1,0 +1,14 @@
+# Local secrets and private imports must never enter a deployment bundle.
+.env
+.env.*
+.private-imports/
+
+# Source design toolkit; only /public/pictograms is used by the application.
+PICTOGRAMAS FDNDA/
+
+# Local build and dependency outputs.
+.next/
+node_modules/
+
+# The scheduled Worker deploys separately to Cloudflare.
+scheduler/

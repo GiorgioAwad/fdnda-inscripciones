@@ -1,5 +1,6 @@
 import Link from "next/link"
 import {
+  AlertTriangle,
   ArrowRight,
   CalendarDays,
   CalendarX2,
@@ -11,19 +12,25 @@ import {
   Users,
 } from "lucide-react"
 import { redirect } from "next/navigation"
+import { DisciplineIcon } from "@/components/discipline-icon"
 import { EmptyState } from "@/components/empty-state"
 import { PageHeader } from "@/components/page-header"
 import { Pagination } from "@/components/pagination"
 import { explicitDisciplineAccess } from "@/lib/club-access"
-import { Badge, type BadgeVariant } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import {
+  Badge,
+  EVENT_DEADLINE_PASSED_BADGE,
+  type BadgeVariant,
+} from "@/components/ui/badge"
+import { buttonClasses } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { getCurrentUser } from "@/lib/auth"
 import { clubEventWhere, getClubEventScope } from "@/lib/club-events"
 import { disciplineLabel, disciplineStyle } from "@/lib/disciplines"
 import { prisma } from "@/lib/prisma"
 import { listRegistrationPlans } from "@/lib/registration-plans"
-import { formatDateOnly, formatDateTimeLima, formatMoney } from "@/lib/utils"
+import { formatDateOnly, formatDateTimeLima, formatMoney, plural } from "@/lib/utils"
+import { openPlanErrorMessage } from "./open-plan-errors"
 
 export const dynamic = "force-dynamic"
 
@@ -32,22 +39,45 @@ const PLANS_PAGE_SIZE = 12
 const statusMeta: Record<string, { label: string; variant: BadgeVariant }> = {
   DRAFT: { label: "Borrador", variant: "neutral" },
   AWAITING_PAYMENT: { label: "Pago pendiente", variant: "warning" },
-  PAID: { label: "Inscripción pagada", variant: "success" },
+  PAID: { label: "Pagada", variant: "success" },
 }
 
-function daysUntil(date: Date): number {
-  return Math.ceil((date.getTime() - Date.now()) / (24 * 3600 * 1000))
+const limaDay = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Lima",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+})
+const limaTime = new Intl.DateTimeFormat("es-PE", {
+  timeZone: "America/Lima",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+})
+
+// Días de calendario de Lima entre hoy y el cierre. Con horas corridas
+// (Math.ceil) un cierre de mañana a las 9:00 visto hoy a las 18:00 decía
+// «Cierra hoy».
+function calendarDaysUntil(date: Date, now: Date): number {
+  const day = (value: Date) => Date.parse(`${limaDay.format(value)}T00:00:00Z`)
+  return Math.round((day(date) - day(now)) / (24 * 3600 * 1000))
+}
+
+function deadlineLabel(deadline: Date, now: Date): string {
+  const days = calendarDaysUntil(deadline, now)
+  if (days <= 0) return `Cierra hoy a las ${limaTime.format(deadline)}`
+  if (days === 1) return `Cierra mañana a las ${limaTime.format(deadline)}`
+  return `Cierra en ${days} días`
 }
 
 export default async function RegistrationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>
+  searchParams: Promise<{ page?: string; error?: string }>
 }) {
-  const requestedPage = Math.max(
-    1,
-    Math.trunc(Number((await searchParams).page) || 1)
-  )
+  const params = await searchParams
+  const requestedPage = Math.max(1, Math.trunc(Number(params.page) || 1))
+  const errorMessage = openPlanErrorMessage(params.error)
   const user = await getCurrentUser()
   if (!user) redirect("/login")
   if (!user.clubId) redirect("/admin")
@@ -81,7 +111,18 @@ export default async function RegistrationsPage({
         eventId: { not: null },
         ...eventAccessWhere,
       },
-      select: { id: true, eventId: true, status: true },
+      select: {
+        id: true,
+        eventId: true,
+        status: true,
+        // La orden por pagar: con ella la tarjeta lleva directo al pago.
+        orders: {
+          where: { status: "PENDING" },
+          select: { id: true },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
       orderBy: { updatedAt: "desc" },
     }),
     getClubEventScope(user.clubId, access),
@@ -102,41 +143,41 @@ export default async function RegistrationsPage({
         })
 
   // Un evento con trabajo pendiente lleva directo a ese trabajo. Si la última
-  // inscripción ya fue pagada, el mismo evento permite iniciar un suplemento.
+  // planilla ya fue pagada, el mismo evento permite iniciar una suplementaria.
   const activePlanByEventId = new Map<string, (typeof activePlans)[number]>()
   for (const plan of activePlans) {
-    if (
-      plan.eventId &&
-      (plan.status === "DRAFT" || plan.status === "AWAITING_PAYMENT") &&
-      !activePlanByEventId.has(plan.eventId)
-    ) {
+    if (plan.eventId && !activePlanByEventId.has(plan.eventId)) {
       activePlanByEventId.set(plan.eventId, plan)
     }
   }
-  const visiblePlans = plans
+  const now = new Date()
 
   return (
     <div className="space-y-8">
       <PageHeader
         icon={ClipboardList}
-        eyebrow="Competencias"
         lanes={scope.disciplines}
         title="Inscripciones"
-        description="Elige una competencia para empezar o retoma una inscripción en curso. Todo queda guardado automáticamente."
+        description="Elige una competencia para inscribir a tus deportistas o retoma una planilla. Cada cambio se guarda solo."
       />
 
+      {errorMessage ? (
+        <Card
+          role="alert"
+          className="flex items-start gap-2 border-fdnda-danger-ring bg-fdnda-danger-soft p-4 text-sm font-semibold text-fdnda-danger"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <p>No pudimos abrir la planilla. {errorMessage}</p>
+        </Card>
+      ) : null}
+
       <section className="space-y-4" aria-labelledby="open-events-title">
-        <div>
-          <h2
-            id="open-events-title"
-            className="font-heading text-2xl text-fdnda-navy"
-          >
-            Competencias abiertas
-          </h2>
-          <p className="mt-1 text-sm text-fdnda-muted">
-            Selecciona una competencia para inscribir a tus deportistas.
-          </p>
-        </div>
+        <h2
+          id="open-events-title"
+          className="scroll-mt-24 font-heading text-2xl text-fdnda-navy"
+        >
+          Competencias abiertas
+        </h2>
 
         {scope.disciplines.length === 0 ? (
           <Card>
@@ -144,46 +185,72 @@ export default async function RegistrationsPage({
               icon={ShieldAlert}
               title={
                 scope.season
-                  ? "Todavía no tienes afiliaciones de esta temporada"
-                  : "La temporada aún no está habilitada"
+                  ? `Tu club no tiene afiliaciones vigentes en ${scope.season.year}`
+                  : "La temporada de afiliaciones aún no está habilitada"
+              }
+              action={
+                scope.season ? (
+                  <Link href="/afiliacion" className={buttonClasses()}>
+                    Afiliar a mi club
+                  </Link>
+                ) : null
               }
             >
-              <p>
-                {scope.season
-                  ? `Afilia a tu club en la temporada ${scope.season.year} para ver las competencias disponibles.`
-                  : "La federación todavía no habilitó la temporada de afiliaciones. Comunícate con la FDNDA."}
-              </p>
-              {scope.season ? (
-                <Link href="/afiliacion" className="mt-4 inline-block">
-                  <Button>Ir a afiliación</Button>
-                </Link>
-              ) : null}
+              {scope.season
+                ? "Solo puedes inscribir en competencias de las disciplinas en las que tu club está afiliado."
+                : "La FDNDA todavía no habilitó la temporada. Cuando lo haga, podrás afiliar a tu club e inscribir a tus deportistas."}
             </EmptyState>
           </Card>
         ) : events.length === 0 ? (
           <Card>
-            <EmptyState icon={CalendarX2} title="No hay competencias abiertas">
-              Por el momento no hay convocatorias de {scope.disciplines
-                .map(disciplineLabel)
-                .join(", ")} con el plazo de inscripción vigente.
+            <EmptyState
+              icon={CalendarX2}
+              title="No hay competencias con inscripción abierta"
+              action={
+                <Link
+                  href="/afiliacion?tab=deportistas"
+                  className={buttonClasses({ variant: "outline" })}
+                >
+                  Revisar afiliación de deportistas
+                </Link>
+              }
+            >
+              Cuando la FDNDA abra inscripciones de{" "}
+              {scope.disciplines.map(disciplineLabel).join(", ")}, aparecerán aquí.
+              Mientras tanto, revisa que tus deportistas estén afiliados.
             </EmptyState>
           </Card>
         ) : (
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
             {events.map((event) => {
               const activePlan = activePlanByEventId.get(event.id)
-              const days = daysUntil(event.registrationDeadline)
-              const href = activePlan
-                ? `/inscripciones/${activePlan.id}`
-                : `/inscripciones/nueva?evento=${encodeURIComponent(event.slug)}`
-              const action = activePlan ? "Continuar inscripción" : "Inscribir deportistas"
+              const pendingOrderId =
+                activePlan?.status === "AWAITING_PAYMENT"
+                  ? activePlan.orders[0]?.id
+                  : undefined
+              const days = calendarDaysUntil(event.registrationDeadline, now)
+              const href = pendingOrderId
+                ? `/pago/${pendingOrderId}`
+                : activePlan
+                  ? `/inscripciones/${activePlan.id}`
+                  : `/inscripciones/nueva?evento=${encodeURIComponent(event.slug)}`
+              const action = pendingOrderId
+                ? "Pagar orden pendiente"
+                : activePlan
+                  ? activePlan.status === "DRAFT"
+                    ? "Continuar planilla"
+                    : "Ver planilla"
+                  : "Inscribir deportistas"
+              const titleId = `event-${event.id}-title`
+              const deadlineId = `event-${event.id}-deadline`
+              const actionId = `event-${event.id}-action`
 
               return (
                 <Link
                   key={event.id}
                   href={href}
                   className="group block h-full rounded-surface focus-visible:outline-none"
-                  aria-label={`${action} en ${event.name}`}
+                  aria-labelledby={`${actionId} ${titleId} ${deadlineId}`}
                 >
                   <Card
                     lanes={event.disciplines}
@@ -192,13 +259,16 @@ export default async function RegistrationsPage({
                     <div className="wave-field flex min-h-20 flex-wrap items-end gap-2 bg-fdnda-navy px-5 pb-4 pt-5">
                       {event.disciplines.map((discipline) => {
                         const style = disciplineStyle(discipline)
-                        const Icon = style.icon
                         return (
                           <span
                             key={discipline}
                             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${style.onNavy}`}
                           >
-                            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                            <DisciplineIcon
+                              discipline={discipline}
+                              tone={style.onNavyPictogramTone}
+                              className="h-3.5 w-3.5"
+                            />
                             {style.label}
                           </span>
                         )
@@ -207,12 +277,15 @@ export default async function RegistrationsPage({
 
                     <article className="flex flex-1 flex-col p-5 sm:p-6">
                       <div className="flex items-start justify-between gap-3">
-                        <h3 className="font-heading text-xl leading-snug text-fdnda-navy transition-colors group-hover:text-fdnda-turquoise-deep">
+                        <h3
+                          id={titleId}
+                          className="font-heading text-xl leading-snug text-fdnda-navy transition-colors group-hover:text-fdnda-turquoise-deep"
+                        >
                           {event.name}
                         </h3>
                         {activePlan ? (
-                          <Badge variant={activePlan.status === "DRAFT" ? "neutral" : "warning"}>
-                            {activePlan.status === "DRAFT" ? "En curso" : "Pago pendiente"}
+                          <Badge variant={statusMeta[activePlan.status].variant}>
+                            {statusMeta[activePlan.status].label}
                           </Badge>
                         ) : null}
                       </div>
@@ -244,6 +317,7 @@ export default async function RegistrationsPage({
                       <div className="mt-5 border-t border-fdnda-border pt-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <span
+                            id={deadlineId}
                             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ring-inset ${
                               days <= 3
                                 ? "bg-fdnda-red-soft text-fdnda-red-deep ring-fdnda-red/20"
@@ -251,11 +325,12 @@ export default async function RegistrationsPage({
                             }`}
                           >
                             <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
-                            {days <= 1
-                              ? `Cierra hoy · ${formatDateTimeLima(event.registrationDeadline)}`
-                              : `Cierra en ${days} días`}
+                            {deadlineLabel(event.registrationDeadline, now)}
                           </span>
-                          <span className="inline-flex items-center gap-1.5 text-sm font-extrabold text-fdnda-navy">
+                          <span
+                            id={actionId}
+                            className="inline-flex items-center gap-1.5 text-sm font-extrabold text-fdnda-navy"
+                          >
                             {action}
                             <ArrowRight
                               className="h-4 w-4 transition-transform group-hover:translate-x-0.5"
@@ -264,7 +339,7 @@ export default async function RegistrationsPage({
                           </span>
                         </div>
                         <p className="mt-2 text-xs text-fdnda-muted">
-                          {event._count.modalities} pruebas disponibles
+                          {plural(event._count.modalities, "prueba disponible", "pruebas disponibles")}
                         </p>
                       </div>
                     </article>
@@ -277,29 +352,43 @@ export default async function RegistrationsPage({
       </section>
 
       <section className="space-y-4" aria-labelledby="registrations-title">
-        <div>
-          <h2
-            id="registrations-title"
-            className="font-heading text-2xl text-fdnda-navy"
-          >
-            Tus inscripciones
-          </h2>
-          <p className="mt-1 text-sm text-fdnda-muted">
-            Revisa borradores, pagos pendientes e inscripciones completadas.
-          </p>
-        </div>
+        <h2
+          id="registrations-title"
+          className="font-heading text-2xl text-fdnda-navy"
+        >
+          Tus planillas
+        </h2>
 
-        {visiblePlans.length === 0 ? (
+        {plans.length === 0 ? (
           <Card>
-            <EmptyState icon={Users} title="Aún no has iniciado una inscripción">
-              Elige una competencia abierta para comenzar.
+            <EmptyState
+              icon={Users}
+              title="Aún no tienes planillas"
+              action={
+                events.length > 0 ? (
+                  <Link
+                    href="#open-events-title"
+                    className={buttonClasses({ variant: "outline" })}
+                  >
+                    Elegir una competencia abierta
+                  </Link>
+                ) : null
+              }
+            >
+              Una planilla reúne a los deportistas que inscribes en una competencia
+              y sus pruebas. Se crea al elegir una competencia abierta.
             </EmptyState>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {visiblePlans.map((plan) => {
+            {plans.map((plan) => {
               const status = statusMeta[plan.status] ?? statusMeta.DRAFT
               const order = plan.orders[0]
+              const closed =
+                plan.status === "DRAFT" &&
+                plan.event !== null &&
+                (plan.event.status !== "OPEN" || plan.event.registrationDeadline < now)
+              const eventName = plan.event?.name ?? "Planilla sin competencia"
               return (
                 <Card
                   key={plan.id}
@@ -308,63 +397,113 @@ export default async function RegistrationsPage({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-eyebrow uppercase text-fdnda-turquoise-deep">
-                        {plan.event
-                          ? formatDateOnly(plan.event.startDate)
-                          : "Competencia pendiente"}
-                      </p>
-                      <h3 className="mt-1 font-heading text-xl text-fdnda-navy">
-                        {plan.event?.name ?? "Inscripción sin competencia"}
-                      </h3>
+                      <h3 className="font-heading text-xl text-fdnda-navy">{eventName}</h3>
+                      {plan.event ? (
+                        <p className="mt-1 text-sm text-fdnda-muted">
+                          {formatDateOnly(plan.event.startDate)} –{" "}
+                          {formatDateOnly(plan.event.endDate)}
+                          {plan.status === "DRAFT" && !closed
+                            ? ` · Inscripción hasta el ${formatDateTimeLima(plan.event.registrationDeadline)}`
+                            : ""}
+                        </p>
+                      ) : null}
                     </div>
-                    <Badge variant={status.variant}>{status.label}</Badge>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge variant={status.variant}>{status.label}</Badge>
+                      {closed ? (
+                        <Badge variant={EVENT_DEADLINE_PASSED_BADGE.variant}>
+                          {EVENT_DEADLINE_PASSED_BADGE.label}
+                        </Badge>
+                      ) : null}
+                    </div>
                   </div>
                   {/* Las tres métricas separadas por divisoria en vez de una caja
                       gris: son cifras, y las cifras del sistema se dicen en mono. */}
                   <dl className="mt-4 grid grid-cols-3 divide-x divide-fdnda-border rounded-control border border-fdnda-border">
                     <div className="px-3 py-2.5">
-                      <dt className="text-eyebrow uppercase text-fdnda-muted">
-                        Deportistas
-                      </dt>
+                      <dt className="text-xs font-semibold text-fdnda-muted">Deportistas</dt>
                       <dd className="num mt-0.5 text-xl font-bold text-fdnda-navy">
                         {plan._count.athletes}
                       </dd>
                     </div>
                     <div className="px-3 py-2.5">
-                      <dt className="text-eyebrow uppercase text-fdnda-muted">Pruebas</dt>
+                      <dt className="text-xs font-semibold text-fdnda-muted">
+                        Pruebas inscritas
+                      </dt>
                       <dd className="num mt-0.5 text-xl font-bold text-fdnda-navy">
                         {plan._count.registrations}
                       </dd>
                     </div>
                     <div className="px-3 py-2.5">
-                      <dt className="text-eyebrow uppercase text-fdnda-muted">Total</dt>
-                      <dd className="num mt-0.5 text-xl font-bold text-fdnda-navy">
-                        {order ? formatMoney(order.totalAmount) : "—"}
+                      <dt className="text-xs font-semibold text-fdnda-muted">Total</dt>
+                      <dd
+                        className={
+                          order
+                            ? "num mt-0.5 text-xl font-bold text-fdnda-navy"
+                            : "mt-1 text-xs font-semibold text-fdnda-muted"
+                        }
+                      >
+                        {order ? formatMoney(order.totalAmount) : "Se calcula al revisar"}
                       </dd>
                     </div>
                   </dl>
+                  {closed ? (
+                    <p className="mt-3 text-xs font-semibold text-fdnda-ink">
+                      Las inscripciones de esta competencia cerraron: esta planilla ya no
+                      se puede pagar.
+                    </p>
+                  ) : null}
                   <div className="mt-5 flex flex-wrap gap-2">
-                    <Link
-                      href={`/inscripciones/${plan.id}`}
-                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-control border border-fdnda-navy bg-fdnda-navy px-4 text-sm font-semibold text-white hover:bg-fdnda-navy/90"
-                    >
-                      {plan.status === "DRAFT" ? "Continuar inscripción" : "Ver inscripción"}
-                    </Link>
-                    {order ? (
+                    {plan.status === "AWAITING_PAYMENT" && order ? (
+                      <>
+                        <Link
+                          href={`/pago/${order.id}`}
+                          className={buttonClasses({ className: "flex-1" })}
+                        >
+                          Pagar orden
+                        </Link>
+                        <Link
+                          href={`/inscripciones/${plan.id}`}
+                          className={buttonClasses({ variant: "outline" })}
+                        >
+                          Ver planilla
+                        </Link>
+                      </>
+                    ) : plan.status === "PAID" && order ? (
+                      <>
+                        <Link
+                          href={`/pago/${order.id}`}
+                          className={buttonClasses({ className: "flex-1" })}
+                        >
+                          Ver constancia
+                        </Link>
+                        <Link
+                          href={`/inscripciones/${plan.id}`}
+                          className={buttonClasses({ variant: "outline" })}
+                        >
+                          Ver planilla
+                        </Link>
+                      </>
+                    ) : (
                       <Link
-                        href={`/pago/${order.id}`}
-                        className="inline-flex min-h-11 items-center justify-center rounded-control border border-fdnda-navy/35 bg-white px-4 text-sm font-semibold text-fdnda-navy hover:bg-fdnda-sky/20"
+                        href={`/inscripciones/${plan.id}`}
+                        className={buttonClasses({
+                          variant: closed ? "outline" : "default",
+                          className: "flex-1",
+                        })}
                       >
-                        {order.status === "PAID" ? "Ver pago" : "Continuar pago"}
+                        {closed || plan.status !== "DRAFT" ? "Ver planilla" : "Continuar planilla"}
                       </Link>
-                    ) : null}
-                    {plan.eventId ? (
+                    )}
+                    {plan.eventId && order ? (
                       <a
                         href={`/api/club/eventos/${plan.eventId}/export`}
                         download
-                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-control border border-fdnda-border bg-white px-4 text-sm font-semibold text-fdnda-navy hover:bg-fdnda-surface"
+                        title={`Todas las inscripciones de tu club en ${eventName}`}
+                        className={buttonClasses({ variant: "ghost" })}
                       >
-                        <Download className="h-4 w-4" aria-hidden="true" /> Excel
+                        <Download className="h-4 w-4" aria-hidden="true" /> Descargar
+                        reporte (Excel)
                       </a>
                     ) : null}
                   </div>

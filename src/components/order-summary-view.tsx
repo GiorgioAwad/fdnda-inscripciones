@@ -1,8 +1,9 @@
 import { CalendarDays, MapPin, Users } from "lucide-react"
+import { DisciplineIcon } from "@/components/discipline-icon"
 import { disciplineStyle } from "@/lib/disciplines"
 import { entryChargeNoteLabel } from "@/lib/entry-charge-note"
 import type { OrderSummaryView as OrderSummary } from "@/lib/order-summary"
-import { formatDateOnly, formatMoney, SEX_RULE_LABELS } from "@/lib/utils"
+import { formatDateOnly, formatMoney, plural, SEX_LABELS, SEX_RULE_LABELS } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 
@@ -16,6 +17,10 @@ export function OrderSummaryView({
   summary: OrderSummary
   total: unknown
 }) {
+  // Sin competencia no hay un h2 por encima: las disciplinas suben de nivel
+  // para no dejar un h3 colgando directamente del h1 de la página.
+  const SectionHeading = summary.event ? "h3" : "h2"
+
   return (
     <div className="space-y-4">
       {summary.event ? (
@@ -43,34 +48,40 @@ export function OrderSummaryView({
               ) : null}
             </div>
           </div>
-          <dl className="grid grid-cols-2 divide-x divide-fdnda-border sm:grid-cols-4">
+          {/* El total ya va al pie del comprobante: repetirlo aquí era ruido. */}
+          <dl className="grid grid-cols-3 divide-x divide-fdnda-border">
             <Metric label="Deportistas" value={summary.totals.athleteCount} />
-            <Metric label="Formaciones" value={summary.totals.entryCount} />
-            <Metric label="Cuotas" value={summary.totals.athleteFeeCount} />
-            <Metric label="Total" value={formatMoney(total)} />
+            <Metric label="Pruebas inscritas" value={summary.totals.entryCount} />
+            <Metric
+              label="Cuotas de competencia"
+              value={summary.totals.athleteFeeCount}
+            />
           </dl>
         </Card>
       ) : null}
 
       {summary.disciplines.map((discipline) => {
         const style = disciplineStyle(discipline.discipline)
-        const Icon = style.icon
         return (
           <Card key={discipline.discipline} className="overflow-hidden break-inside-avoid">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-fdnda-border bg-fdnda-surface px-5 py-3">
-              <h3 className="inline-flex items-center gap-2 font-heading font-bold text-fdnda-navy">
+              <SectionHeading className="inline-flex items-center gap-2 font-heading font-bold text-fdnda-navy">
                 <span
                   className={`flex h-7 w-7 items-center justify-center rounded-control text-white ${style.chip}`}
                   aria-hidden="true"
                 >
-                  <Icon className="h-4 w-4" />
+                  <DisciplineIcon
+                    discipline={discipline.discipline}
+                    tone="light"
+                    className="h-4 w-4"
+                  />
                 </span>
                 {discipline.label}
-              </h3>
+              </SectionHeading>
               <p className="text-sm">
                 <span className="text-fdnda-muted">
-                  {discipline.athleteCount} deportista(s) ·{" "}
-                  {discipline.entryCount} prueba(s) ·{" "}
+                  {plural(discipline.athleteCount, "deportista", "deportistas")} ·{" "}
+                  {plural(discipline.entryCount, "prueba inscrita", "pruebas inscritas")} ·{" "}
                 </span>
                 <strong className="text-fdnda-navy">
                   {formatMoney(discipline.subtotal)}
@@ -81,7 +92,7 @@ export function OrderSummaryView({
             {discipline.athleteFees.length > 0 ? (
               <div className="border-b border-fdnda-border px-5 py-3">
                 <p className="text-xs font-bold uppercase tracking-wide text-fdnda-muted">
-                  Cuota por deportista (cubre todo el evento)
+                  Cuota de competencia por deportista · se paga una vez por competencia y disciplina
                 </p>
                 <ul className="mt-2 space-y-1.5">
                   {discipline.athleteFees.map((fee) => (
@@ -122,7 +133,7 @@ export function OrderSummaryView({
                           </span>
                           <span className="text-xs">
                             {athlete.docType} {athlete.docNumber} · {athlete.birthYear}{" "}
-                            · {athlete.sex === "F" ? "Damas" : "Varones"}
+                            · {SEX_LABELS[athlete.sex] ?? athlete.sex}
                           </span>
                         </li>
                       ))}
@@ -193,7 +204,9 @@ export function OrderSummaryView({
       {summary.legacyItems.length > 0 ? (
         <Card className="overflow-hidden">
           <div className="border-b border-fdnda-border bg-fdnda-surface px-5 py-3">
-            <h3 className="font-heading font-bold text-fdnda-navy">Otros conceptos</h3>
+            <SectionHeading className="font-heading font-bold text-fdnda-navy">
+              Otros conceptos
+            </SectionHeading>
           </div>
           <ul className="divide-y divide-fdnda-border">
             {summary.legacyItems.map((item) => (

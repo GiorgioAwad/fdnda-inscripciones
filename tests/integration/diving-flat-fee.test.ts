@@ -57,6 +57,8 @@ beforeAll(async () => {
           {
             discipline: "DIVING",
             pricingMode: "PER_ATHLETE",
+            chargesEntry: false,
+            chargesAthleteFee: true,
             athleteFee: ATHLETE_FEE,
             ageRuleMode: "RANGE",
           },

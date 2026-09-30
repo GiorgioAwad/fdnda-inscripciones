@@ -18,14 +18,20 @@ import { SideNav, type SideNavGroup } from "@/components/side-nav"
 export function PortalNav({
   clubName,
   userName,
+  roleLabel,
   affiliationCartCount,
   pendingAffiliations,
+  guideAction,
   signOutAction,
 }: {
   clubName: string
   userName: string
+  // «Coordinador del club» o «Delegado de Clavados»: antes todos veían
+  // «Delegado», incluido el coordinador que ve el club entero.
+  roleLabel: string
   affiliationCartCount: number
   pendingAffiliations: number
+  guideAction: ReactNode
   signOutAction: ReactNode
 }) {
   const groups: SideNavGroup[] = [
@@ -41,13 +47,15 @@ export function PortalNav({
           icon: BadgeCheck,
           exact: true,
           badge: pendingAffiliations,
+          badgeLabel: "por afiliar",
         },
-        { href: "/deportistas", label: "Deportistas", icon: Users },
+        { href: "/deportistas", label: "Padrón", icon: Users },
         {
           href: "/afiliacion/carrito",
           label: "Carrito de afiliación",
           icon: ShoppingBag,
           badge: affiliationCartCount,
+          badgeLabel: "en el carrito",
         },
       ],
     },
@@ -57,7 +65,7 @@ export function PortalNav({
     },
     {
       links: [
-        { href: "/pagos", label: "Pagos y comprobantes", icon: Receipt },
+        { href: "/pagos", label: "Pagos y constancias", icon: Receipt },
         { href: "/club", label: "Mi club", icon: Building2 },
       ],
     },
@@ -67,11 +75,12 @@ export function PortalNav({
     <SideNav
       groups={groups}
       userName={userName}
+      guideAction={guideAction}
       signOutAction={signOutAction}
       homeHref="/inicio"
       subtitle={clubName}
-      homeLabel="Ir al panel del club"
-      accountLabel="Delegado"
+      homeLabel={`Inicio de ${clubName}`}
+      accountLabel={roleLabel}
       menuLabel="Abrir menú del club"
     />
   )

@@ -12,6 +12,11 @@ export interface AthleteView {
   birthDate: string
   sex: "M" | "F"
   disciplines: string[]
+  /**
+   * Disciplinas con una afiliación que cubre toda la competencia de la
+   * planilla. null = no se consultó (planilla sin competencia o sin temporada).
+   */
+  coveredDisciplines: string[] | null
 }
 
 export interface EventView {
@@ -23,6 +28,11 @@ export interface EventView {
   startDate: string
   endDate: string
   registrationDeadline: string
+  /**
+   * Cierre de inscripciones con fecha y hora de Lima, ya formateado en el
+   * servidor: formatear horas en el cliente puede diferir del HTML del servidor.
+   */
+  registrationDeadlineLabel: string
   disciplines: string[]
   seasonName: string | null
 }
@@ -51,6 +61,8 @@ export interface ModalityView {
   /** Qué cobra el evento en la disciplina de esta prueba. Pueden ser los dos. */
   chargesEntry: boolean
   chargesAthleteFee: boolean
+  /** Cuota de competencia por deportista de su disciplina; null si no se cobra. */
+  athleteFee: number | null
 }
 
 export interface EntryView {
@@ -87,7 +99,17 @@ export interface PlanView {
   event: EventView | null
   roster: AthleteView[]
   entries: EntryView[]
-  activeOrder: { id: string; status: string } | null
+  activeOrder: {
+    id: string
+    code: string
+    status: string
+    totalAmount: number
+  } | null
+  /**
+   * Por qué la planilla ya no se puede pagar aunque siga en borrador. Se calcula
+   * en el servidor para no leer el reloj durante el render del cliente.
+   */
+  closedReason: "DEADLINE" | "CLOSED" | null
   /** Conceptos que el club eligió pagar. null = lo que diga el evento. */
   paysEntry: boolean | null
   paysAthleteFee: boolean | null

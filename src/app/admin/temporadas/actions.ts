@@ -14,23 +14,27 @@ const seasonSchema = z
   .object({
     id: z.string().optional(),
     year: z.coerce
-      .number()
-      .int()
-      .min(2000, "Año inválido")
-      .max(2100, "Año inválido"),
-    name: z.string().trim().min(3, "Ingresa el nombre de la temporada"),
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de inicio inválida"),
-    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de fin inválida"),
+      .number({ error: "El año debe estar entre 2000 y 2100." })
+      .int("El año debe ser un número entero.")
+      .min(2000, "El año debe estar entre 2000 y 2100.")
+      .max(2100, "El año debe estar entre 2000 y 2100."),
+    name: z.string().trim().min(3, "Escribe el nombre de la temporada."),
+    startDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Elige la fecha de inicio de la vigencia."),
+    endDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Elige la fecha de fin de la vigencia."),
   })
   .refine((data) => data.startDate <= data.endDate, {
-    message: "La vigencia termina antes de empezar",
+    error: "La fecha de fin de la vigencia es anterior a la de inicio.",
   })
 
 // Tarifa opcional por disciplina: dejar ambos campos en blanco significa que esa
 // disciplina no se afilia esta temporada.
 const feeSchema = z.union([
   z.literal(""),
-  z.coerce.number().min(0, "Las cuotas no pueden ser negativas"),
+  z.coerce.number().min(0, "Las cuotas no pueden ser negativas."),
 ])
 
 function dateFromISO(iso: string): Date {
@@ -60,11 +64,13 @@ function parseFees(
     const athlete = feeSchema.safeParse(rawAthlete)
 
     if (!club.success || !athlete.success) {
-      return { error: `Revisa las cuotas de ${disciplineLabel(discipline)}.` }
+      return {
+        error: `Las cuotas de ${disciplineLabel(discipline)} deben ser montos en soles, de 0 o más.`,
+      }
     }
     if (club.data === "" || athlete.data === "") {
       return {
-        error: `${disciplineLabel(discipline)} necesita las dos cuotas (club y deportista) o ninguna.`,
+        error: `${disciplineLabel(discipline)} necesita las dos cuotas (del club y por deportista) o ninguna.`,
       }
     }
 
@@ -74,7 +80,11 @@ function parseFees(
   return { fees }
 }
 
-export async function saveSeason(formData: FormData): Promise<ActionResult> {
+// `makeCurrent` solo se acepta al crear y cuando no hay otra vigente: la
+// pantalla lo ofrece como «Hacerla vigente al crearla».
+export async function saveSeason(
+  formData: FormData
+): Promise<ActionResult & { isCurrent?: boolean }> {
   await requireAdmin()
 
   const parsed = seasonSchema.safeParse({
@@ -96,11 +106,13 @@ export async function saveSeason(formData: FormData): Promise<ActionResult> {
   if (feeResult.fees.length === 0) {
     return {
       success: false,
-      error: "Fija la cuota de al menos una disciplina.",
+      error: "Fija las cuotas de al menos una disciplina.",
     }
   }
 
   const { id, startDate, endDate, ...data } = parsed.data
+  const makeCurrent = !id && formData.get("makeCurrent") === "on"
+  let isCurrent = false
 
   try {
     const payload = {
@@ -110,9 +122,14 @@ export async function saveSeason(formData: FormData): Promise<ActionResult> {
     }
 
     await prisma.$transaction(async (tx) => {
+      // Se vuelve a mirar dentro de la transacción: si otro admin hizo vigente
+      // una temporada mientras tanto, la nueva se crea sin tocar la vigente.
+      const setCurrent =
+        makeCurrent && (await tx.season.count({ where: { isCurrent: true } })) === 0
       const season = id
         ? await tx.season.update({ where: { id }, data: payload })
-        : await tx.season.create({ data: payload })
+        : await tx.season.create({ data: { ...payload, isCurrent: setCurrent } })
+      isCurrent = setCurrent
 
       // Las cuotas ya emitidas guardan su snapshot en cada afiliación: cambiar
       // el tarifario acá no altera lo que un club ya pagó.
@@ -141,14 +158,25 @@ export async function saveSeason(formData: FormData): Promise<ActionResult> {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
-      return { success: false, error: "Ya existe una temporada para ese año." }
+      return {
+        success: false,
+        error: `Ya existe una temporada ${data.year}. Edítala en vez de crear otra.`,
+      }
     }
     console.error("saveSeason error:", error)
-    return { success: false, error: "No se pudo guardar la temporada." }
+    return {
+      success: false,
+      error: "No se pudo guardar la temporada. Inténtalo de nuevo.",
+    }
   }
 
   revalidatePath("/admin/temporadas")
-  return { success: true }
+  if (isCurrent) {
+    revalidatePath("/admin/afiliaciones")
+    revalidatePath("/admin/padron")
+    revalidatePath("/admin/clubes")
+  }
+  return { success: true, isCurrent }
 }
 
 // Solo una temporada puede estar vigente: se apaga el resto en la misma
@@ -157,7 +185,9 @@ export async function setCurrentSeason(seasonId: string): Promise<ActionResult> 
   await requireAdmin()
 
   const season = await prisma.season.findUnique({ where: { id: seasonId } })
-  if (!season) return { success: false, error: "Temporada no encontrada." }
+  if (!season) {
+    return { success: false, error: "Esa temporada ya no existe. Recarga la página." }
+  }
 
   await prisma.$transaction([
     prisma.season.updateMany({
@@ -169,22 +199,36 @@ export async function setCurrentSeason(seasonId: string): Promise<ActionResult> 
 
   revalidatePath("/admin/temporadas")
   revalidatePath("/admin/afiliaciones")
+  revalidatePath("/admin/padron")
+  revalidatePath("/admin/clubes")
   return { success: true }
 }
+
+const BIRTH_YEAR_ERROR = "Los años de nacimiento deben estar entre 1900 y 2100."
+const birthYear = z.coerce
+  .number({ error: BIRTH_YEAR_ERROR })
+  .int(BIRTH_YEAR_ERROR)
+  .min(1900, BIRTH_YEAR_ERROR)
+  .max(2100, BIRTH_YEAR_ERROR)
 
 const categorySchema = z
   .object({
     id: z.string().optional(),
     seasonId: z.string().min(1),
     discipline: z.enum(DISCIPLINE_VALUES),
-    name: z.string().trim().min(2, "Ingresa el nombre de la categoría"),
+    name: z.string().trim().min(2, "Escribe el nombre de la categoría."),
     birthYearFrom: z
-      .union([z.coerce.number().int().min(1900).max(2100), z.literal("")])
+      .union([z.literal(""), birthYear], { error: BIRTH_YEAR_ERROR })
       .optional(),
     birthYearTo: z
-      .union([z.coerce.number().int().min(1900).max(2100), z.literal("")])
+      .union([z.literal(""), birthYear], { error: BIRTH_YEAR_ERROR })
       .optional(),
-    sortOrder: z.coerce.number().int().min(0).max(999).default(0),
+    sortOrder: z.coerce
+      .number({ error: "La posición debe ser un número de 0 a 999." })
+      .int("La posición debe ser un número entero.")
+      .min(0, "La posición debe ser un número de 0 a 999.")
+      .max(999, "La posición debe ser un número de 0 a 999.")
+      .default(0),
   })
   .refine(
     (data) =>
@@ -193,7 +237,7 @@ const categorySchema = z
       data.birthYearFrom === undefined ||
       data.birthYearTo === undefined ||
       data.birthYearFrom <= data.birthYearTo,
-    { message: "El año inicial debe ser menor o igual al final" }
+    { error: "«Año desde» debe ser menor o igual que «Año hasta»." }
   )
 
 export async function saveCategory(formData: FormData): Promise<ActionResult> {
@@ -234,11 +278,14 @@ export async function saveCategory(formData: FormData): Promise<ActionResult> {
     ) {
       return {
         success: false,
-        error: "Ya existe una categoría con ese nombre en esa disciplina.",
+        error: "Esa disciplina ya tiene una categoría con ese nombre. Usa otro.",
       }
     }
     console.error("saveCategory error:", error)
-    return { success: false, error: "No se pudo guardar la categoría." }
+    return {
+      success: false,
+      error: "No se pudo guardar la categoría. Inténtalo de nuevo.",
+    }
   }
 
   revalidatePath("/admin/temporadas")
@@ -252,7 +299,10 @@ export async function deleteCategory(categoryId: string): Promise<ActionResult> 
     await prisma.category.delete({ where: { id: categoryId } })
   } catch (error) {
     console.error("deleteCategory error:", error)
-    return { success: false, error: "No se pudo eliminar la categoría." }
+    return {
+      success: false,
+      error: "No se pudo eliminar la categoría. Recarga la página e inténtalo de nuevo.",
+    }
   }
 
   revalidatePath("/admin/temporadas")

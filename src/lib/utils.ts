@@ -31,6 +31,10 @@ export function formatDateOnly(date: Date | string): string {
   }).format(d)
 }
 
+// Reloj de 24 horas («12 oct. 2026, 19:00»). El de 12 horas terminaba en
+// «p. m.», y cada frase que cerraba con un plazo salía con doble punto
+// («…hasta el 12 oct. 2026, 07:00 p. m..»); además, en un cierre de
+// inscripciones «19:00» no se confunde con la mañana.
 export function formatDateTimeLima(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date
   return new Intl.DateTimeFormat("es-PE", {
@@ -39,6 +43,7 @@ export function formatDateTimeLima(date: Date | string): string {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
     timeZone: "America/Lima",
   }).format(d)
 }
@@ -55,12 +60,21 @@ export const SEX_RULE_LABELS: Record<string, string> = {
   MALE: "Varones",
   FEMALE: "Damas",
   MIXED: "Mixto",
-  ANY: "Libre",
+  // No «Libre»: en natación y artística «libre» es un estilo y una rutina
+  // (Solo Libre, Equipo Libre), y la etiqueta se leía como parte de la prueba.
+  ANY: "Cualquier sexo",
 }
 
 export const SEX_LABELS: Record<string, string> = {
   M: "Masculino",
   F: "Femenino",
+}
+
+// «1 orden», «3 órdenes». Sustituye al «orden(es)» que obligaba a leer las dos
+// formas a la vez. Recibe el plural explícito porque en español no se deriva
+// con fiabilidad (orden → órdenes, afiliación → afiliaciones, país → países).
+export function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`
 }
 
 export function slugify(value: string): string {

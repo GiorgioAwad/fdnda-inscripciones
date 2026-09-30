@@ -71,7 +71,7 @@ function parseRangeCategories(lines: string[]): CategoryParseResult {
       .split("|")
       .map((part) => part?.trim() ?? "")
     if (!label) {
-      return { ok: false, error: `Línea de categoría inválida: "${line}"` }
+      return { ok: false, error: `Revisa la categoría «${line}»: falta su nombre o sus años.` }
     }
     const from = parseYear(fromText)
     const to = parseYear(toText)
@@ -79,11 +79,11 @@ function parseRangeCategories(lines: string[]): CategoryParseResult {
     if (from === "invalid" || to === "invalid" || maleFrom === "invalid") {
       return {
         ok: false,
-        error: `Años inválidos en la categoría "${label}" (formato: Nombre|2013|2014, y opcionalmente |2012 para varones).`,
+        error: `Revisa los años de «${label}»: escríbelos con 4 dígitos, por ejemplo 2013.`,
       }
     }
     if (from !== null && to !== null && from > to) {
-      return { ok: false, error: `En "${label}" el año 'desde' es mayor que 'hasta'.` }
+      return { ok: false, error: `En «${label}», «Nacidos desde» no puede ser posterior a «Nacidos hasta».` }
     }
     // El año extra de los varones siempre está del lado viejo del rango, así
     // que nunca puede ser posterior al 'hasta'. Mismo control que
@@ -91,7 +91,7 @@ function parseRangeCategories(lines: string[]): CategoryParseResult {
     if (maleFrom !== null && to !== null && maleFrom > to) {
       return {
         ok: false,
-        error: `En "${label}" el año 'desde' de varones es mayor que 'hasta'.`,
+        error: `En «${label}», «Varones nacidos desde» no puede ser posterior a «Nacidos hasta».`,
       }
     }
     categories.push({
@@ -115,7 +115,7 @@ function parseMaxAgeCategories(
       .split("|")
       .map((part) => part.trim())
     if (!label) {
-      return { ok: false, error: `Línea de categoría inválida: "${line}"` }
+      return { ok: false, error: `Revisa la categoría «${line}»: falta su nombre o sus años.` }
     }
     if (ageText.toUpperCase() === "OPEN") {
       categories.push({
@@ -131,7 +131,7 @@ function parseMaxAgeCategories(
     if (maxAge === null) {
       return {
         ok: false,
-        error: `No pude leer la edad máxima de "${line}". Escribe por ejemplo «Sub 13».`,
+        error: `No se entiende la edad máxima de «${line}». Escríbela como «Sub-13» u «Open».`,
       }
     }
     categories.push({

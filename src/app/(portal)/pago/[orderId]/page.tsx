@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import {
+  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   Clock3,
@@ -18,7 +19,7 @@ import { registrationOrderItemView } from "@/lib/registration-snapshots"
 import { formatDateTimeLima, formatMoney } from "@/lib/utils"
 import { Card } from "@/components/ui/card"
 import { Badge, ORDER_STATUS_BADGE } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { buttonClasses } from "@/components/ui/button"
 import { OrderSummaryView } from "@/components/order-summary-view"
 import { PrintButton } from "@/components/print-button"
 import { PrintSheetFooter, PrintSheetHeader } from "@/components/print-sheet"
@@ -62,7 +63,6 @@ export default async function PagoPage({
     }
   }
 
-  const badge = ORDER_STATUS_BADGE[order.status]
   const paymentsMode = getPaymentsMode()
   const itemViews = order.items.map((item) => ({
     id: item.id,
@@ -76,19 +76,32 @@ export default async function PagoPage({
     summary && summary.disciplines.length > 0 ? summary : null
   const frozenClubName =
     summary?.clubName ?? itemViews.find((item) => item.snapshot)?.snapshot?.club.name
-  const plansHref = order.registrationPlanId
-    ? `/inscripciones/${order.registrationPlanId}`
-    : "/inscripciones"
-  const returnHref = order.kind === "REGISTRATION" ? plansHref : "/afiliacion"
+  const isRegistration = order.kind === "REGISTRATION"
+  const returnHref = isRegistration
+    ? order.registrationPlanId
+      ? `/inscripciones/${order.registrationPlanId}`
+      : "/inscripciones"
+    : "/afiliacion"
+  const returnLabel = isRegistration
+    ? order.registrationPlanId
+      ? "Volver a la planilla"
+      : "Volver a Inscripciones"
+    : "Volver a Estado de afiliación"
+  const retryHref = isRegistration ? returnHref : "/afiliacion/carrito"
+
+  // expireStaleOrders ya canceló las vencidas sin intento de pago. Si una sigue
+  // PENDING con el plazo cumplido, tuvo un intento con Izipay y quedó reservada
+  // para conciliación: ofrecer pagarla otra vez arriesga un doble cobro.
+  const inReview = order.status === "PENDING" && order.expiresAt < new Date()
+  const badge = inReview
+    ? { label: "Por conciliar", variant: "warning" as const }
+    : ORDER_STATUS_BADGE[order.status]
+  const failed = order.status === "FAILED" || order.status === "CANCELLED"
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <PrintSheetHeader
-        title={
-          order.kind === "REGISTRATION"
-            ? "Constancia de inscripción"
-            : "Constancia de afiliación"
-        }
+        title={isRegistration ? "Constancia de inscripción" : "Constancia de afiliación"}
         eventName={summary?.event?.name ?? undefined}
         clubName={frozenClubName ?? order.club.name}
         disciplines={detailedSummary?.disciplines.map((row) => row.discipline) ?? []}
@@ -102,12 +115,14 @@ export default async function PagoPage({
       />
 
       <div className="animate-fade-up">
-        <Link
-          href="/inscripciones"
-          className="print-hidden mb-2 inline-flex min-h-11 items-center gap-2 rounded-control px-1 text-sm font-bold text-fdnda-muted underline-offset-4 hover:text-fdnda-navy hover:underline"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Planillas
-        </Link>
+        {user.role !== "ADMIN" ? (
+          <Link
+            href={returnHref}
+            className="print-hidden mb-2 inline-flex min-h-11 items-center gap-2 rounded-control px-1 text-sm font-bold text-fdnda-muted underline-offset-4 hover:text-fdnda-navy hover:underline"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {returnLabel}
+          </Link>
+        ) : null}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-control bg-fdnda-navy text-white">
             <Receipt className="h-5 w-5" aria-hidden="true" />
@@ -119,20 +134,37 @@ export default async function PagoPage({
               </h1>
               <Badge variant={badge.variant}>{badge.label}</Badge>
               {order.isLegacy ? (
-                <Badge variant="warning">Legado multicompetencia</Badge>
+                <Badge variant="warning">Varias competencias</Badge>
               ) : null}
             </div>
             <p className="text-sm font-medium text-fdnda-muted">
+              {isRegistration ? "Inscripción" : "Afiliación"} ·{" "}
               {frozenClubName ?? order.club.name}
             </p>
           </div>
         </div>
       </div>
 
-      {message ? (
-        <div role="status" className="rounded-surface border border-fdnda-red/25 bg-fdnda-red-soft px-4 py-4 text-sm font-semibold text-fdnda-red-deep">
-          {message}
-        </div>
+      {/* El mensaje llega de la pasarela en la URL. Una vez pagada la orden ya
+          no aplica; y solo es un error si la orden falló o expiró. */}
+      {message && order.status !== "PAID" && !inReview ? (
+        failed ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-surface border border-fdnda-red/25 bg-fdnda-red-soft px-4 py-4 text-sm font-semibold text-fdnda-red-deep"
+          >
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            {message}
+          </div>
+        ) : (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-surface border border-fdnda-border bg-white px-4 py-4 text-sm font-semibold text-fdnda-navy"
+          >
+            <Clock3 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            {message}
+          </div>
+        )
       ) : null}
 
       {/* Resumen de items. Las inscripciones tienen snapshot congelado y se
@@ -175,39 +207,41 @@ export default async function PagoPage({
               <CheckCircle2 className="h-9 w-9" aria-hidden="true" />
             </div>
             <p className="flex items-center gap-2 text-lg font-extrabold text-fdnda-navy">
-              {order.kind === "REGISTRATION"
-                ? "¡Pago confirmado! Inscripciones registradas."
-                : "¡Pago confirmado! Afiliaciones registradas."}
+              {isRegistration
+                ? "¡Pago confirmado! Tus inscripciones quedaron confirmadas."
+                : "¡Pago confirmado! Las afiliaciones ya están vigentes."}
               <PartyPopper className="h-5 w-5 text-fdnda-red" aria-hidden="true" />
             </p>
             <p className="max-w-md text-sm text-fdnda-muted">
               {order.paidAt ? `Pagado el ${formatDateTimeLima(order.paidAt)}. ` : ""}
-              Esta página sirve como constancia de pago.
+              Esta página es tu constancia de pago: imprímela o vuelve a ella desde
+              Pagos y constancias.
             </p>
             <div className="mt-1 flex flex-wrap justify-center gap-2">
               <PrintButton />
-              {order.kind === "REGISTRATION" && order.eventId ? (
+              {isRegistration && order.eventId ? (
                 <a
                   href={`/api/club/eventos/${order.eventId}/export`}
                   download
-                  className="print-hidden"
+                  className={buttonClasses({ variant: "outline", className: "print-hidden" })}
                 >
-                  <Button variant="outline">
-                    <Download className="h-4 w-4" aria-hidden="true" /> Descargar Excel
-                  </Button>
+                  <Download className="h-4 w-4" aria-hidden="true" /> Descargar inscripciones en Excel
                 </a>
               ) : null}
-              <Link href={returnHref} className="print-hidden">
-                <Button variant="outline">
-                  {order.kind === "REGISTRATION" ? "Ver planilla" : "Ver afiliaciones"}
-                </Button>
-              </Link>
+              {user.role !== "ADMIN" ? (
+                <Link
+                  href={returnHref}
+                  className={buttonClasses({ variant: "outline", className: "print-hidden" })}
+                >
+                  {returnLabel}
+                </Link>
+              ) : null}
             </div>
           </div>
         </div>
       ) : null}
 
-      {order.status === "FAILED" || order.status === "CANCELLED" ? (
+      {failed ? (
         <Card className="animate-fade-up border-fdnda-red/25 bg-fdnda-red-soft">
           <div className="flex flex-col items-center gap-2.5 px-6 py-9 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-fdnda-red ring-1 ring-inset ring-fdnda-red/20">
@@ -215,44 +249,57 @@ export default async function PagoPage({
             </div>
             <p className="text-base font-extrabold text-fdnda-red-deep">
               {order.status === "FAILED"
-                ? "El pago no se completó."
-                : "La orden expiró sin pagarse."}
+                ? "El pago fue rechazado."
+                : "La orden venció sin pagarse."}
             </p>
             <p className="text-sm text-fdnda-red-deep">
-              {order.kind === "REGISTRATION"
-                ? "La planilla volvió a borrador y liberó sus cupos para que puedas reintentar."
-                : "Las afiliaciones volvieron al carrito para que puedas reintentar."}
+              {isRegistration
+                ? "La planilla volvió a borrador y liberó sus cupos: puedes pagarla de nuevo desde ahí."
+                : "Las afiliaciones volvieron al carrito: puedes pagarlas de nuevo desde ahí."}
             </p>
-            <Link
-              href={order.kind === "REGISTRATION" ? plansHref : "/afiliacion/carrito"}
-              className="mt-2"
-            >
-              <Button>
-                {order.kind === "REGISTRATION" ? "Volver a la planilla" : "Volver al carrito"}
-              </Button>
-            </Link>
+            {user.role !== "ADMIN" ? (
+              <Link href={retryHref} className={buttonClasses({ className: "mt-2" })}>
+                {isRegistration ? "Reintentar desde la planilla" : "Reintentar desde el carrito"}
+              </Link>
+            ) : null}
           </div>
         </Card>
       ) : null}
 
-      {order.status === "PENDING" ? (
+      {order.status === "PENDING" && inReview ? (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-surface border border-fdnda-warning-ring/70 bg-fdnda-warning-soft px-4 py-4 text-sm font-semibold text-fdnda-warning"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            Estamos confirmando un intento de pago con Izipay. No vuelvas a pagar esta
+            orden: la FDNDA la conciliará y esta página mostrará el resultado.
+          </span>
+        </div>
+      ) : null}
+
+      {order.status === "PENDING" && !inReview ? (
         <>
           <PendingOrderPoller expiresAt={order.expiresAt.toISOString()} />
           <div className="flex items-start gap-2 rounded-surface border border-fdnda-border bg-white px-4 py-3 text-xs font-medium leading-5 text-fdnda-muted">
             <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-fdnda-navy" aria-hidden="true" />
-            La orden expira el {formatDateTimeLima(order.expiresAt)}. Si no se paga,
-            {order.kind === "REGISTRATION"
-              ? " la planilla vuelve a borrador y sus cupos se liberan."
-              : " las afiliaciones vuelven al carrito."}
+            <span>
+              Paga antes del {formatDateTimeLima(order.expiresAt)}. Si la orden vence sin
+              pagarse,
+              {isRegistration
+                ? " la planilla vuelve a borrador y sus cupos se liberan."
+                : " las afiliaciones vuelven al carrito."}
+            </span>
           </div>
           {user.role === "ADMIN" ? (
             <p className="text-sm text-fdnda-muted">
-              (Vista de administrador: el pago lo realiza el club.)
+              Estás viendo la orden como administrador: el pago lo hace el club.
             </p>
           ) : paymentsMode === "mock" ? (
             <MockPaymentPanel orderId={order.id} />
           ) : (
-            <IzipayCheckout orderId={order.id} />
+            <IzipayCheckout orderId={order.id} totalLabel={formatMoney(order.totalAmount)} />
           )}
         </>
       ) : null}

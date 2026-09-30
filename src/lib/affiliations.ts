@@ -222,7 +222,7 @@ export async function getRegistrationEligibility(
     clubIsAffiliated,
     clubReason: clubIsAffiliated
       ? ""
-      : `Tu club no tiene la afiliación ${season.year} de ${label} vigente. Regularízala para poder inscribir.`,
+      : `Tu club no tiene la afiliación ${season.year} de ${label} vigente. Afilia a tu club en ${label} para poder inscribir.`,
     affiliatedAthleteIds: new Set(
       athleteAffiliations
         .filter((affiliation) => valid(affiliation))
@@ -329,6 +329,8 @@ export interface DisciplinePanel {
   clubPaidAt: Date | null
   clubInCart: boolean
   clubAwaitingPayment: boolean
+  // Orden viva que cubre la cuota del club: el portal enlaza directo a pagarla.
+  clubActiveOrderId: string | null
   // Deportistas del club que practican esta disciplina.
   counts: AffiliationCounts
 }
@@ -472,6 +474,8 @@ export async function getClubAffiliationPanel(
         affiliation?.status === "PENDING" && affiliation.activeOrderId === null,
       clubAwaitingPayment:
         affiliation?.status === "PENDING" && affiliation.activeOrderId !== null,
+      clubActiveOrderId:
+        affiliation?.status === "PENDING" ? affiliation.activeOrderId : null,
       counts: countsByDiscipline.get(discipline) ?? emptyCounts(),
     }
   })
@@ -844,7 +848,7 @@ export async function addAffiliationsToCart(input: {
     if (existing?.activeOrderId) {
       return {
         success: false,
-        error: `Ya existe una orden en curso para la afiliación de ${label}.`,
+        error: `La afiliación del club en ${label} ya está en una orden por pagar. Págala o espera a que venza para volver a agregarla.`,
       }
     }
     if (!existing) {
@@ -873,7 +877,8 @@ export async function addAffiliationsToCart(input: {
     if (athletes.length !== athleteIds.length) {
       return {
         success: false,
-        error: "Uno o más deportistas no pertenecen a tu club o están inactivos.",
+        error:
+          "Uno o más deportistas ya no están en el padrón de tu club. Recarga la página para ver la lista actual.",
       }
     }
 
@@ -891,7 +896,10 @@ export async function addAffiliationsToCart(input: {
     if (notPractised.length > 0) {
       return {
         success: false,
-        error: `${notPractised.length} deportista(s) no tienen registrada esa disciplina. Edítala en el padrón antes de afiliarlos.`,
+        error:
+          notPractised.length === 1
+            ? "1 deportista no tiene esa disciplina en el padrón. Solo la FDNDA puede agregársela."
+            : `${notPractised.length} deportistas no tienen esa disciplina en el padrón. Solo la FDNDA puede agregársela.`,
       }
     }
 
@@ -915,7 +923,10 @@ export async function addAffiliationsToCart(input: {
     if (blocked.length > 0) {
       return {
         success: false,
-        error: `${blocked.length} afiliación(es) ya están pagadas o en una orden en curso.`,
+        error:
+          blocked.length === 1
+            ? "1 afiliación ya está pagada o en una orden por pagar. Recarga la página para ver su estado."
+            : `${blocked.length} afiliaciones ya están pagadas o en una orden por pagar. Recarga la página para ver su estado.`,
       }
     }
 
@@ -962,7 +973,10 @@ export async function removeAffiliationFromCart(input: {
       : await prisma.athleteAffiliation.deleteMany({ where })
 
   if (deleted.count === 0) {
-    return { success: false, error: "Esa afiliación ya no está en el carrito." }
+    return {
+      success: false,
+      error: "Esa afiliación ya no está en el carrito. Recarga la página para ver su estado.",
+    }
   }
   return { success: true }
 }
@@ -1013,6 +1027,14 @@ export async function getAffiliationCart(
   return { season, clubs, athletes, total }
 }
 
+// Distingue la carrera real (otra pestaña tomó parte del carrito) de cualquier
+// otro fallo, para no culpar al carrito de un error que no tiene que ver.
+class CartChangedError extends Error {
+  constructor() {
+    super("El carrito cambió mientras se creaba la orden.")
+  }
+}
+
 export async function checkoutAffiliationCart(input: {
   clubId: string
   userId: string
@@ -1027,7 +1049,10 @@ export async function checkoutAffiliationCart(input: {
     }
   }
   if (cart.clubs.length === 0 && cart.athletes.length === 0) {
-    return { success: false, error: "Tu carrito de afiliaciones está vacío." }
+    return {
+      success: false,
+      error: "Tu carrito está vacío: agrega una afiliación antes de pagar.",
+    }
   }
 
   const season = cart.season
@@ -1095,7 +1120,7 @@ export async function checkoutAffiliationCart(input: {
         clubTaken !== clubAffiliationIds.length ||
         athletesTaken !== athleteAffiliationIds.length
       ) {
-        throw new Error("El carrito cambió mientras se creaba la orden.")
+        throw new CartChangedError()
       }
 
       return created
@@ -1106,7 +1131,10 @@ export async function checkoutAffiliationCart(input: {
     console.error("checkoutAffiliationCart error:", error)
     return {
       success: false,
-      error: "El carrito cambió mientras se creaba la orden. Vuelve a intentarlo.",
+      error:
+        error instanceof CartChangedError
+          ? "El carrito cambió mientras se creaba la orden. Revisa lo que quedó y vuelve a pagar."
+          : "No pudimos crear la orden. Vuelve a intentarlo; tu carrito no cambió.",
     }
   }
 }

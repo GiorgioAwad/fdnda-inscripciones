@@ -1,17 +1,16 @@
 # Despliegue en Vercel
 
 Ruta de despliegue elegida para esta aplicación. Vercel resuelve ejecución,
-HTTPS, dominio, despliegues inmutables, rollback y el programador de
-mantenimiento. La base sigue siendo Neon, externa.
+HTTPS, dominio, despliegues inmutables y rollback. El programador de
+mantenimiento vive en Cloudflare Workers. La base sigue siendo Neon, externa.
 
 `docs/AWS_DEPLOYMENT.md` describe la alternativa evaluada con App Runner y no
 está en uso.
 
 ## Plan y límites que afectan a esta aplicación
 
-- **El cron por minuto exige plan Pro.** En Hobby los cron jobs se limitan a una
-  ejecución diaria, insuficiente para expirar órdenes de pago. Confirmar el plan
-  antes de abrir pagos reales.
+- **Cron externo.** El equipo usa Hobby; el mantenimiento por minuto se ejecuta
+  mediante Cloudflare Workers. Ver [`scheduler/`](../scheduler/README.md).
 - **Cuerpo de petición: 4,5 MB.** [`next.config.ts`](../next.config.ts) ya fija
   `bodySizeLimit: "4mb"` en las server actions para quedar por debajo. La
   importación de padrón es el flujo que roza ese techo.
@@ -47,7 +46,7 @@ su base:
 | `APP_ENV` | `staging` | sin definir |
 | Base Neon | proyecto/rama de staging | `fdnda-inscripciones-prod` |
 | Izipay | sandbox, o `PAYMENTS_MODE=mock` | producción |
-| Registro del banco de datos | no exigido | obligatorio |
+| Registro del banco de datos | no aplica a datos ficticios | pendiente de FDNDA; código opcional en la app |
 | Dominio | el `*.vercel.app` sirve | dominio propio |
 
 `APP_ENV` solo relaja controles con el valor exacto `staging`. Cualquier otro
@@ -80,8 +79,8 @@ Partir de [`env.example`](../env.example). Reglas de producción en
 | `DATABASE_URL` | Neon **pooled** (host con `-pooler`), rol `fdnda_app`, `sslmode=require` |
 | `DATABASE_POOL_MAX` | `2` |
 | `MAINTENANCE_SECRET` | aleatorio, mínimo 32 caracteres |
-| `CRON_SECRET` | **el mismo valor** que `MAINTENANCE_SECRET` |
-| `NEXT_PUBLIC_APP_URL` | dominio canónico HTTPS, sin ruta ni query |
+| `CRON_SECRET` | prescindible con Cloudflare; si se conserva, usar el mismo valor que `MAINTENANCE_SECRET` |
+| `NEXT_PUBLIC_APP_URL` | `https://inscripcionesfdnda.pe` (HTTPS, sin ruta ni query) |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Base64 de 32 bytes, estable entre despliegues |
 | `PAYMENTS_MODE` | `izipay` |
 | `IZIPAY_*` | credenciales y endpoint reales de producción |
@@ -118,33 +117,17 @@ Crear una rama o snapshot de Neon antes de cada migración de producción.
 
 ## Programador de mantenimiento
 
-**`vercel.json` no declara el cron.** Los cron jobs solo se pueden definir en ese
-archivo, que es común a los dos proyectos, y en el plan Hobby una frecuencia
-mayor que la diaria **hace fallar el despliegue**. Dejarlo fuera permite que
-staging despliegue en Hobby.
+El proyecto Vercel usa el plan Hobby. El cron por minuto vive en el Worker
+[`scheduler/`](../scheduler/README.md), que invoca el endpoint protegido por
+`MAINTENANCE_SECRET`. `vercel.json` no declara cron para evitar el límite de
+frecuencia del plan Hobby.
 
-Antes de abrir producción hay que añadirlo, con el equipo ya en **Pro**:
-
-```json
-  "crons": [
-    {
-      "path": "/api/internal/maintenance/expire-orders",
-      "schedule": "* * * * *"
-    }
-  ]
-```
-
-Vercel invoca ese path por **GET**; el endpoint exporta `GET = POST` para
-soportarlo. Si `CRON_SECRET` está definida, Vercel envía
-`Authorization: Bearer <CRON_SECRET>`, que es el formato que valida el endpoint
-en tiempo constante. Por eso `CRON_SECRET` y `MAINTENANCE_SECRET` deben
-coincidir: cualquier discrepancia produce 401 silenciosos y las órdenes dejan de
-expirar.
-
-Verificar tras el despliegue que el cron aparece en **Project → Cron Jobs** y que
-sus ejecuciones devuelven 200. Alertar si no hay ejecución en tres minutos, si
-responde algo distinto de 2xx o si `ordersRequiringPaymentReview` es mayor que
-cero.
+El Worker está desplegado contra la URL temporal `https://fdnda-inscripciones.vercel.app/`.
+El dominio canónico previsto es `https://inscripcionesfdnda.pe`; configurar
+`NEXT_PUBLIC_APP_URL` en Vercel. Después de cada despliegue comprobar sus
+Cron Events y Workers Logs. Alertar si no hay ejecución en tres minutos, si
+aparece `maintenance_failed` o si `ordersRequiringPaymentReview` es mayor que
+cero. Los pagos inciertos requieren conciliación manual.
 
 ### Mientras no haya cron
 
@@ -160,10 +143,10 @@ liberación puntual de cupos cuando nadie navega, la poda de
 
 ## Dominio e Izipay
 
-1. Añadir el dominio en **Project Settings → Domains** y completar el DNS.
+1. Añadir `inscripcionesfdnda.pe` en **Project Settings → Domains** y completar el DNS.
 2. Esperar el certificado y fijar la redirección a la URL canónica.
-3. Definir `NEXT_PUBLIC_APP_URL` con ese dominio y **redesplegar**.
-4. Registrar en Izipay `https://dominio/api/payments/izipay/webhook` y las URL de
+3. Definir `NEXT_PUBLIC_APP_URL=https://inscripcionesfdnda.pe` y **redesplegar**.
+4. Registrar en Izipay `https://inscripcionesfdnda.pe/api/payments/izipay/webhook` y las URL de
    validación y retorno que genere la integración.
 5. Ejecutar un pago real controlado antes de abrir a los clubes.
 

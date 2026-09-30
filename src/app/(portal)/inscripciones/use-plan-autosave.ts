@@ -11,6 +11,14 @@ import type { PlanStatus, SerializableValidation } from "./types"
 //
 // Las mutaciones se encolan y corren de a una: dos casillas marcadas seguidas no
 // pueden pisarse la revisión entre sí.
+//
+// No todo fallo bloquea. Un rechazo de negocio (deportista duplicado, prueba que
+// ya no existe, competencia que no se puede cambiar) sale de la transacción
+// antes de escribir y sin tocar la revisión: el cliente sigue sincronizado, así
+// que basta avisar y que quien encoló la mutación revierta su cambio optimista.
+// Solo se bloquea cuando la copia local ya no es confiable: otra pestaña cambió
+// la planilla, la planilla dejó de ser editable, la base rechazó por
+// concurrencia, o la red cortó sin saber si el cambio llegó.
 
 export type PlanActionResult =
   | {
@@ -52,12 +60,42 @@ export interface PlanAutosave {
   awaitSaved: () => Promise<void>
   /** Bloquea desde fuera (p. ej. cuando la validación detecta el conflicto). */
   block: (message: string) => void
-  /** Aplica el mismo bloqueo + aviso que una mutación fallida de la cola. */
+  /**
+   * Aplica a un fallo la misma política que la cola: bloqueo + aviso si la
+   * copia local dejó de ser confiable, o solo el aviso si no.
+   */
   fail: (result: Extract<PlanActionResult, { success: false }>) => void
 }
 
 const CONFLICT_MESSAGE =
-  "Esta planilla cambió en otra pestaña. Recárgala para continuar sin perder cambios."
+  "Tu último cambio no se guardó: esta planilla se modificó en otra pestaña o por otra persona. Recárgala y repite el cambio."
+const NOT_EDITABLE_MESSAGE =
+  "Tu último cambio no se guardó: esta planilla ya tiene una orden de pago. Recárgala para ver su estado."
+const CONCURRENT_MESSAGE =
+  "Tu último cambio no se guardó porque otro cambio se estaba guardando a la vez. Recarga la planilla y repítelo."
+const NETWORK_MESSAGE =
+  "No pudimos confirmar si tu último cambio se guardó: falló la conexión. Recarga la planilla para ver lo que quedó guardado."
+
+// Código solo de cliente: la llamada lanzó (red caída, respuesta ilegible) y no
+// hay forma de saber si el servidor aplicó el cambio.
+const NETWORK_ERROR = "NETWORK_ERROR"
+
+function blockingMessage(
+  result: Extract<PlanActionResult, { success: false }>
+): string | null {
+  switch (result.code) {
+    case "REVISION_CONFLICT":
+      return CONFLICT_MESSAGE
+    case "PLAN_NOT_EDITABLE":
+      return NOT_EDITABLE_MESSAGE
+    case "CONCURRENT_CHANGE":
+      return CONCURRENT_MESSAGE
+    case NETWORK_ERROR:
+      return NETWORK_MESSAGE
+    default:
+      return null
+  }
+}
 
 export function usePlanAutosave({
   initialRevision,
@@ -88,10 +126,13 @@ export function usePlanAutosave({
 
   const applyFailure = useCallback(
     (result: Extract<PlanActionResult, { success: false }>) => {
-      const message =
-        result.code === "REVISION_CONFLICT" ? CONFLICT_MESSAGE : result.error
-      block(message)
-      toast.error(message)
+      const blocking = blockingMessage(result)
+      if (blocking) {
+        block(blocking)
+        toast.error(blocking)
+        return
+      }
+      toast.error(result.error)
     },
     [block]
   )
@@ -128,13 +169,13 @@ export function usePlanAutosave({
           resolveResult(result)
         })
         .catch((error: unknown) => {
+          // El mensaje de la excepción puede venir en inglés o ser técnico
+          // («Failed to fetch»): nunca se muestra tal cual.
+          console.error("Autoguardado de la planilla:", error)
           const result: PlanActionResult = {
             success: false,
-            code: "UNEXPECTED_ERROR",
-            error:
-              error instanceof Error
-                ? error.message
-                : "No se pudo guardar el cambio.",
+            code: NETWORK_ERROR,
+            error: NETWORK_MESSAGE,
           }
           applyFailure(result)
           resolveResult(result)

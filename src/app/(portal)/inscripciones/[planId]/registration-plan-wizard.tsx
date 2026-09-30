@@ -2,21 +2,22 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  CalendarDays,
   Check,
   CheckCircle2,
   ClipboardCheck,
   Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
+import { Button, buttonClasses } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { disciplineLabel } from "@/lib/disciplines"
+import { formatMoney, plural } from "@/lib/utils"
 import {
   checkoutPlanAction,
   deletePlanEntryAction,
@@ -33,7 +34,8 @@ import { usePlanAutosave } from "../use-plan-autosave"
 import { AthleteBoard } from "./athlete-board"
 import { ChargeSelectionCard } from "./charge-selection-card"
 import { EventStep } from "./event-step"
-import { ReviewPanel } from "./review-panel"
+import { athleteName, isDivingPair } from "./plan-labels"
+import { OrderPanel, ReviewPanel } from "./review-panel"
 import type { FormationDraft } from "./team-formation-panel"
 import type {
   AthletePageView,
@@ -47,13 +49,29 @@ import type {
   SerializableValidation,
 } from "../types"
 
-// El flujo tiene dos pasos de trabajo —elegir competencia y armar la planilla—
-// más la revisión y el pago al final.
+// Con la competencia ya elegida (se elige en Inscripciones, antes de entrar) la
+// planilla tiene dos pasos visibles: armarla y revisarla para pagar. Una
+// planilla sin competencia solo muestra el selector de competencias.
 const STEPS = [
-  { number: 1 as const, label: "Competencia", icon: CalendarDays },
   { number: 2 as const, label: "Deportistas y pruebas", icon: ClipboardCheck },
   { number: 3 as const, label: "Revisión y pago", icon: CheckCircle2 },
 ]
+
+const savedTimeFormat = new Intl.DateTimeFormat("es-PE", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: "America/Lima",
+})
+
+function priceRange(prices: number[], unit: string) {
+  if (prices.length === 0) return ""
+  const min = Math.min(...prices)
+  const max = Math.max(...prices)
+  return min === max
+    ? `${formatMoney(min)} ${unit}`
+    : `De ${formatMoney(min)} a ${formatMoney(max)} ${unit}, según la prueba`
+}
 
 export function RegistrationPlanWizard({
   initialPlan,
@@ -73,7 +91,7 @@ export function RegistrationPlanWizard({
   lockedEntries: LockedEntryView[]
   lockedPairs: LockedPairView[]
   hasAffiliations: boolean
-  /** Ya calculada en el servidor cuando la planilla reanuda en revisión. */
+  /** Ya calculada en el servidor cuando un borrador reanuda en revisión. */
   initialValidation: SerializableValidation | null
   initialQuery: string
 }) {
@@ -97,15 +115,15 @@ export function RegistrationPlanWizard({
     initialValidation
   )
   const [checkingOut, setCheckingOut] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  const [removing, setRemoving] = useState<AthleteView | null>(null)
+  // Deportista al que hay que llevar la vista al volver desde la revisión.
+  const focusAthleteRef = useRef<string | null>(null)
   // null (nunca eligió) significa "paga los dos", así que arranca todo marcado.
   // OJO: `charges` es la fuente viva de la elección del club durante toda la
-  // sesión del wizard. `initialPlan.paysEntry`/`paysAthleteFee` solo siembran
-  // este estado en el primer render: `plan` (el estado de más arriba) nunca se
-  // vuelve a sincronizar con lo que el club elige, porque `onApplied` sólo
-  // mergea `id`/`revision`/`status` y `changeCharges` escribe en `charges`, no
-  // en `plan`. Cualquier componente que necesite saber qué está pagando el
-  // club AHORA (por ejemplo ReviewPanel) tiene que recibir `charges`, nunca
-  // `plan.paysEntry`/`plan.paysAthleteFee`.
+  // sesión. `initialPlan.paysEntry`/`paysAthleteFee` solo siembran este estado:
+  // `plan` nunca se vuelve a sincronizar con lo que el club elige, porque
+  // `onApplied` sólo mergea `id`/`revision`/`status`.
   const [charges, setCharges] = useState({
     paysEntry: initialPlan.paysEntry ?? true,
     paysAthleteFee: initialPlan.paysAthleteFee ?? true,
@@ -121,93 +139,114 @@ export function RegistrationPlanWizard({
     fail,
   } = usePlanAutosave({
     initialRevision: initialPlan.revision,
-    onApplied: (state) =>
+    onApplied: (state) => {
+      setLastSavedAt(new Date())
       setPlan((current) => ({
         ...current,
         id: state.planId,
         revision: state.revision,
         status: state.status ?? current.status,
-      })),
+      }))
+    },
   })
 
   const readOnly = plan.status !== "DRAFT"
-  const busy = savingCount > 0 || Boolean(blockedMessage)
+  const blocked = Boolean(blockedMessage)
+  const visibleStep: StepNumber = plan.event ? (step === 3 ? 3 : 2) : 1
 
-  // Pares (deportista, prueba) ya confirmados en otra orden: se pintan marcados
-  // y bloqueados, en vez de dejar que el club choque con DUPLICATE_ENTRY.
+  useEffect(() => {
+    const athleteId = focusAthleteRef.current
+    if (!athleteId || visibleStep !== 2) return
+    focusAthleteRef.current = null
+    const row = document.getElementById(`athlete-${athleteId}`)
+    row?.scrollIntoView({ block: "center" })
+    row?.querySelector<HTMLButtonElement>("button[aria-expanded]")?.focus()
+  }, [visibleStep, expandedAthleteId])
+
+  // Pares (deportista, prueba) ya inscritos en otra orden: se pintan marcados y
+  // bloqueados, con su estado, en vez de dejar que el club choque con
+  // DUPLICATE_ENTRY al guardar.
   const lockedByAthlete = useMemo(() => {
-    const map = new Map<string, Set<string>>()
+    const map = new Map<string, Map<string, string>>()
     for (const pair of lockedPairs) {
-      const set = map.get(pair.athleteId) ?? new Set<string>()
-      set.add(pair.modalityId)
-      map.set(pair.athleteId, set)
+      const byModality = map.get(pair.athleteId) ?? new Map<string, string>()
+      byModality.set(pair.modalityId, pair.status)
+      map.set(pair.athleteId, byModality)
     }
     return map
   }, [lockedPairs])
 
-  // Cuota fija que le toca a un deportista según las disciplinas que practica y
-  // el modo de cobro del evento. Solo cuenta si además el club la eligió pagar
-  // -y esa elección solo aplica donde la disciplina ofrece elegir (cobra los
-  // DOS conceptos a la vez).
-  //
-  // OJO, esto NO es un descuido: es la ÚNICA reformulación del AND que
-  // sobrevive fuera de `appliedCharges` (event-pricing.ts), que es la fuente
-  // de verdad. plan-validation.ts y ReviewPanel no recalculan nada -leen
-  // chargedEntry/chargedAthleteFee ya resueltos por el motor en
-  // `validation.summary.byDiscipline`- pero acá no se puede hacer lo mismo:
-  // este cálculo alimenta `AthleteBoard`, que solo se renderiza en el paso 2
-  // (armado de la planilla), y `goToStep` limpia `validation` a null cada vez
-  // que se entra a un paso que no es el 3; solo se recalcula al llegar a la
-  // revisión. Si este filtro pasara a depender de `validation.summary`, la
-  // cuota por deportista dejaría de mostrarse mientras se arma la planilla.
-  // Por eso se repite la fórmula acá con la config cruda de cada modalidad
-  // (`ModalityView.chargesEntry`/`chargesAthleteFee`) en vez de con el
-  // resultado ya aplicado.
-  const athleteFeeFor = useMemo(() => {
-    const perAthlete = modalities.filter((row) => {
-      const ofreceEleccionAqui = row.chargesEntry && row.chargesAthleteFee
-      return (
-        row.chargesAthleteFee && (!ofreceEleccionAqui || charges.paysAthleteFee)
-      )
-    })
-    const covered = new Set(
-      (validation?.issues ?? [])
-        .filter((issue) => issue.code === "ATHLETE_FEE_ALREADY_PAID")
-        .map((issue) => issue.athleteId)
-    )
-    const feeByDiscipline = new Map(
-      (validation?.summary.byDiscipline ?? [])
-        .filter((row) => row.chargesAthleteFee && row.athleteCount > 0)
-        .map((row) => [
-          row.discipline as string,
-          row.feesAmount / Math.max(1, row.athleteCount),
-        ])
-    )
-    return (athlete: AthleteView) => {
-      const modality = perAthlete.find((row) =>
-        athlete.disciplines.includes(row.discipline)
-      )
-      if (!modality) return null
-      return {
-        label: disciplineLabel(modality.discipline),
-        amount: feeByDiscipline.get(modality.discipline) ?? 0,
-        covered: covered.has(athlete.id),
-      }
-    }
-  }, [modalities, validation, charges])
-
-  // El evento ofrece elección solo si alguna de sus pruebas cobra los dos.
-  const ofreceEleccion = useMemo(
-    () => modalities.some((row) => row.chargesEntry && row.chargesAthleteFee),
+  // La competencia ofrece elegir qué paga el club solo en las disciplinas que
+  // cobran los dos conceptos a la vez.
+  const choiceModalities = useMemo(
+    () => modalities.filter((row) => row.chargesEntry && row.chargesAthleteFee),
     [modalities]
   )
 
+  // Cuota de competencia por deportista, por disciplina. Sale de la
+  // configuración de la competencia (ModalityView.athleteFee), no de la
+  // validación: la validación solo existe en la revisión, y mientras se arma la
+  // planilla el monto salía en S/ 0.00. Donde el club puede elegir, solo cuenta
+  // si la eligió pagar (misma regla que `appliedCharges` en event-pricing.ts).
+  const athleteFeesFor = useMemo(() => {
+    const feeByDiscipline = new Map<string, number>()
+    for (const row of modalities) {
+      if (!row.chargesAthleteFee || row.athleteFee === null) continue
+      const offersChoice = row.chargesEntry && row.chargesAthleteFee
+      if (offersChoice && !charges.paysAthleteFee) continue
+      feeByDiscipline.set(row.discipline, row.athleteFee)
+    }
+    return (athlete: AthleteView) =>
+      [...feeByDiscipline]
+        .filter(([discipline]) => athlete.disciplines.includes(discipline))
+        .map(([discipline, amount]) => ({ label: disciplineLabel(discipline), amount }))
+  }, [modalities, charges.paysAthleteFee])
+
+  const entryPriceNote = (modality: ModalityView) => {
+    if (!modality.chargesEntry) return "incluida en la cuota de competencia"
+    if (modality.chargesAthleteFee && !charges.paysEntry) {
+      return "sin cargo: tu club paga por deportista"
+    }
+    return modality.maxAthletes > 1
+      ? `${formatMoney(modality.price)} por ${isDivingPair(modality) ? "pareja" : "formación"}`
+      : formatMoney(modality.price)
+  }
+
+  const modalityById = useMemo(
+    () => new Map(modalities.map((row) => [row.id, row])),
+    [modalities]
+  )
+  const incompleteEntries = entries.filter((entry) => {
+    const modality = modalityById.get(entry.modalityId)
+    return (
+      modality !== undefined &&
+      modality.maxAthletes > 1 &&
+      entry.athleteIds.length < modality.minAthletes
+    )
+  })
+  const incompleteFormations = incompleteEntries.length
+  const incompleteDivingPairs =
+    incompleteEntries.length > 0 &&
+    incompleteEntries.every((entry) => {
+      const modality = modalityById.get(entry.modalityId)
+      return modality !== undefined && isDivingPair(modality)
+    })
+
   function changeCharges(next: { paysEntry: boolean; paysAthleteFee: boolean }) {
     if (readOnly || blockedMessage) return
+    const previous = charges
     setCharges(next)
     void enqueue((expectedRevision) =>
       setPlanChargesAction({ planId: plan.id, expectedRevision, ...next })
-    )
+    ).then((result) => {
+      if (result.success) return
+      setCharges((current) =>
+        current.paysEntry === next.paysEntry &&
+        current.paysAthleteFee === next.paysAthleteFee
+          ? previous
+          : current
+      )
+    })
   }
 
   async function runValidation() {
@@ -220,7 +259,7 @@ export function RegistrationPlanWizard({
       setValidation(result)
       if (result?.issues.some((issue) => issue.code === "REVISION_CONFLICT")) {
         block(
-          "La planilla cambió en otra pestaña. Recarga para revisar la versión vigente."
+          "Esta planilla se modificó en otra pestaña o por otra persona. Recárgala para ver la última versión."
         )
       }
     } catch {
@@ -243,9 +282,16 @@ export function RegistrationPlanWizard({
         })
       )
     }
-    // La validación se dispara desde acá y no desde un efecto: entrar a la
-    // revisión es un evento del usuario, no una sincronización de estado.
-    if (next === 3) void runValidation()
+    // Una planilla con orden no se revalida: la orden ya fijó sus importes.
+    if (next === 3 && !readOnly) void runValidation()
+  }
+
+  function fixInPlan(athleteId?: string) {
+    if (athleteId) {
+      setExpandedAthleteId(athleteId)
+      focusAthleteRef.current = athleteId
+    }
+    goToStep(2)
   }
 
   async function selectEvent(eventId: string) {
@@ -270,22 +316,44 @@ export function RegistrationPlanWizard({
         athleteId: athlete.id,
         selected: true,
       })
-    )
+    ).then((result) => {
+      if (!result.success) {
+        setRoster((current) => current.filter((row) => row.id !== athlete.id))
+      }
+    })
+  }
+
+  function requestRemoveAthlete(athlete: AthleteView) {
+    if (readOnly || blockedMessage) return
+    // Sin pruebas no hay nada que perder: se quita sin preguntar.
+    if (entries.some((entry) => entry.athleteIds.includes(athlete.id))) {
+      setRemoving(athlete)
+    } else {
+      removeAthlete(athlete)
+    }
   }
 
   function removeAthlete(athlete: AthleteView) {
     if (readOnly || blockedMessage) return
+    const rosterIndex = roster.findIndex((row) => row.id === athlete.id)
+    const touched = entries.filter((entry) => entry.athleteIds.includes(athlete.id))
+    const touchedIds = new Set(touched.map((entry) => entry.id))
     setRoster((current) => current.filter((row) => row.id !== athlete.id))
-    // El servidor borra las formaciones que quedan vacías por esta remoción;
-    // acá se refleja lo mismo para que la vista no muestre fantasmas.
+    // El servidor borra las inscripciones que quedan vacías POR esta remoción
+    // (las individuales del deportista); una formación armada vacía a
+    // propósito no se toca. Acá se refleja lo mismo.
     setEntries((current) =>
       current
-        .map((entry) => ({
-          ...entry,
-          athleteIds: entry.athleteIds.filter((id) => id !== athlete.id),
-          reserveIds: entry.reserveIds.filter((id) => id !== athlete.id),
-        }))
-        .filter((entry) => entry.athleteIds.length > 0)
+        .map((entry) =>
+          touchedIds.has(entry.id)
+            ? {
+                ...entry,
+                athleteIds: entry.athleteIds.filter((id) => id !== athlete.id),
+                reserveIds: entry.reserveIds.filter((id) => id !== athlete.id),
+              }
+            : entry
+        )
+        .filter((entry) => !touchedIds.has(entry.id) || entry.athleteIds.length > 0)
     )
     void enqueue((expectedRevision) =>
       setPlanAthleteAction({
@@ -294,7 +362,26 @@ export function RegistrationPlanWizard({
         athleteId: athlete.id,
         selected: false,
       })
-    )
+    ).then((result) => {
+      if (result.success) return
+      // Revertir: el servidor no lo quitó.
+      setRoster((current) => {
+        if (current.some((row) => row.id === athlete.id)) return current
+        const next = [...current]
+        next.splice(Math.max(0, Math.min(rosterIndex, next.length)), 0, athlete)
+        return next
+      })
+      setEntries((current) => {
+        const present = new Set(current.map((entry) => entry.id))
+        const restored = current.map((entry) => {
+          const before = touched.find((row) => row.id === entry.id)
+          return before
+            ? { ...entry, athleteIds: before.athleteIds, reserveIds: before.reserveIds }
+            : entry
+        })
+        return [...restored, ...touched.filter((row) => !present.has(row.id))]
+      })
+    })
   }
 
   async function toggleModality(
@@ -306,6 +393,11 @@ export function RegistrationPlanWizard({
     // Actualización optimista: la casilla responde de inmediato y la cola
     // reconcilia con lo que devuelva el servidor.
     const optimisticId = `optimistic-${athleteId}-${modalityId}`
+    const isTarget = (entry: EntryView) =>
+      entry.modalityId === modalityId &&
+      entry.athleteIds.length === 1 &&
+      entry.athleteIds[0] === athleteId
+    const removed = selected ? [] : entries.filter(isTarget)
     setEntries((current) =>
       selected
         ? [
@@ -318,14 +410,7 @@ export function RegistrationPlanWizard({
               reserveIds: [],
             },
           ]
-        : current.filter(
-            (entry) =>
-              !(
-                entry.modalityId === modalityId &&
-                entry.athleteIds.length === 1 &&
-                entry.athleteIds[0] === athleteId
-              )
-          )
+        : current.filter((entry) => !isTarget(entry))
     )
 
     const result = await enqueue((expectedRevision) =>
@@ -343,7 +428,10 @@ export function RegistrationPlanWizard({
       setEntries((current) =>
         selected
           ? current.filter((entry) => entry.id !== optimisticId)
-          : current
+          : [
+              ...current,
+              ...removed.filter((row) => !current.some((entry) => entry.id === row.id)),
+            ]
       )
       return
     }
@@ -354,7 +442,7 @@ export function RegistrationPlanWizard({
         )
       )
     }
-    // Marcar una prueba también suma al deportista a la nómina en el servidor.
+    // Marcar una prueba también suma al deportista a la planilla en el servidor.
     setRoster((current) =>
       current.some((row) => row.id === athleteId)
         ? current
@@ -377,7 +465,10 @@ export function RegistrationPlanWizard({
     )
   }
 
-  async function persistFormation(draft: FormationDraft) {
+  async function persistFormation(
+    draft: FormationDraft,
+    previous: FormationDraft | null
+  ) {
     const result = await enqueue((expectedRevision) =>
       savePlanEntryAction({
         planId: plan.id,
@@ -388,7 +479,11 @@ export function RegistrationPlanWizard({
         reserveIds: draft.reserveIds,
       })
     )
-    if (!result.success) return
+    if (!result.success) {
+      // Revertir el editor a lo último que sí quedó guardado.
+      setEditing((current) => (current === draft ? previous : current))
+      return
+    }
     const savedId = result.registrationId!
     upsertLocalEntry(draft, savedId)
     setEditing((current) =>
@@ -398,19 +493,16 @@ export function RegistrationPlanWizard({
     )
   }
 
+  // Una formación nueva no se guarda hasta que tiene su primer integrante.
   function startFormation() {
-    const draft: FormationDraft = {
-      modalityId: teamModalityId,
-      athleteIds: [],
-      reserveIds: [],
-    }
-    setEditing(draft)
-    void persistFormation(draft)
+    setEditing({ modalityId: teamModalityId, athleteIds: [], reserveIds: [] })
   }
 
   function changeFormation(draft: FormationDraft) {
+    const previous = editing
     setEditing(draft)
-    void persistFormation(draft)
+    if (!draft.entryId && draft.athleteIds.length === 0) return
+    void persistFormation(draft, previous)
   }
 
   async function deleteFormation(entryId: string) {
@@ -419,6 +511,17 @@ export function RegistrationPlanWizard({
     )
     if (result.success) {
       setEntries((current) => current.filter((row) => row.id !== entryId))
+      setEditing((current) => (current?.entryId === entryId ? null : current))
+    }
+  }
+
+  // Cerrar una formación que quedó sin integrantes la elimina: vacía no
+  // significa nada y bloquearía el pago.
+  function closeFormation() {
+    const current = editing
+    setEditing(null)
+    if (current?.entryId && current.athleteIds.length === 0 && !blockedMessage) {
+      void deleteFormation(current.entryId)
     }
   }
 
@@ -431,7 +534,7 @@ export function RegistrationPlanWizard({
         "noopener,noreferrer"
       )
     } catch {
-      toast.error("Resuelve el conflicto de guardado antes de imprimir.")
+      toast.error("Recarga la planilla antes de imprimir: tu último cambio no se guardó.")
     }
   }
 
@@ -453,6 +556,8 @@ export function RegistrationPlanWizard({
       } else {
         fail(result)
       }
+    } catch {
+      // awaitSaved lanzó porque la planilla quedó bloqueada: el aviso ya está.
     } finally {
       setCheckingOut(false)
     }
@@ -466,140 +571,168 @@ export function RegistrationPlanWizard({
     return `/inscripciones/${plan.id}${suffix ? `?${suffix}` : ""}`
   }
 
+  const athleteNameById = (athleteId: string) => {
+    const athlete = roster.find((row) => row.id === athleteId)
+    return athlete ? athleteName(athlete) : null
+  }
+
+  const athleteFeeByDiscipline = new Map<string, number>()
+  for (const row of choiceModalities) {
+    if (row.athleteFee !== null) athleteFeeByDiscipline.set(row.discipline, row.athleteFee)
+  }
+  const athleteFeeDetail =
+    athleteFeeByDiscipline.size === 1
+      ? `${formatMoney([...athleteFeeByDiscipline.values()][0])} por deportista, una vez por competencia`
+      : [...athleteFeeByDiscipline]
+          .map(([discipline, fee]) => `${disciplineLabel(discipline)}: ${formatMoney(fee)}`)
+          .join(" · ") || "Una vez por deportista en esta competencia"
+
   return (
     <div className="space-y-6">
-      <ol className="grid gap-2 sm:grid-cols-3" aria-label="Progreso de la planilla">
-        {STEPS.map(({ number, label, icon: Icon }) => (
-          <li key={number}>
-            <button
-              type="button"
-              onClick={() => goToStep(number)}
-              disabled={number > 1 && !plan.event}
-              aria-current={step === number ? "step" : undefined}
-              className={`flex min-h-12 w-full items-center gap-2 rounded-control px-3 text-left text-sm font-bold ring-1 ring-inset transition-colors disabled:opacity-45 ${
-                step === number
-                  ? "bg-fdnda-navy text-white ring-fdnda-navy"
-                  : number < step
-                    ? "bg-fdnda-sky/35 text-fdnda-navy ring-fdnda-sky"
-                    : "bg-white text-fdnda-muted ring-fdnda-border"
-              }`}
-            >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-current/10">
-                {number < step ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
-              </span>
-              <span>{label}</span>
-            </button>
-          </li>
-        ))}
-      </ol>
+      {plan.event ? (
+        <ol className="grid gap-2 sm:grid-cols-2" aria-label="Pasos de la planilla">
+          {STEPS.map(({ number, label, icon: Icon }, index) => {
+            const current = visibleStep === number
+            const done = number < visibleStep
+            return (
+              <li key={number}>
+                <button
+                  type="button"
+                  onClick={() => goToStep(number)}
+                  aria-current={current ? "step" : undefined}
+                  className={`flex min-h-12 w-full items-center gap-2.5 rounded-control px-3 py-1.5 text-left text-sm font-bold ring-1 ring-inset transition-colors ${
+                    current
+                      ? "bg-fdnda-navy text-white ring-fdnda-navy"
+                      : done
+                        ? "bg-fdnda-sky/35 text-fdnda-navy ring-fdnda-sky"
+                        : "bg-white text-fdnda-navy ring-fdnda-border"
+                  }`}
+                >
+                  <span
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-current/10"
+                    aria-hidden="true"
+                  >
+                    {done ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold opacity-80">
+                      Paso {index + 1} de {STEPS.length}
+                    </span>
+                    <span className="block">{label}</span>
+                  </span>
+                  {done ? <span className="sr-only">(completado)</span> : null}
+                </button>
+              </li>
+            )
+          })}
+        </ol>
+      ) : null}
 
-      <div
-        role="status"
-        aria-live="polite"
-        className={`flex min-h-11 items-center gap-2 rounded-control px-3 text-xs font-semibold ${
-          blockedMessage
-            ? "bg-fdnda-red-soft text-fdnda-red-deep"
-            : "bg-fdnda-surface text-fdnda-muted"
-        }`}
-      >
-        {blockedMessage ? (
-          <>
-            <AlertTriangle className="h-4 w-4 shrink-0" /> {blockedMessage}
-            <Button
-              size="sm"
-              variant="outline"
-              className="ml-auto"
-              onClick={() => window.location.reload()}
-            >
-              Recargar
-            </Button>
-          </>
-        ) : savingCount > 0 ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" /> Guardando{" "}
-            {savingCount > 1 ? `${savingCount} cambios` : "cambio"}…
-          </>
-        ) : (
-          <>
-            <CheckCircle2 className="h-4 w-4 text-fdnda-success" /> Todos los cambios
-            están guardados · revisión {plan.revision}
-          </>
-        )}
-      </div>
+      {!readOnly || blockedMessage ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`flex min-h-11 flex-wrap items-center gap-2 rounded-control px-3 py-1.5 text-xs font-semibold ${
+            blockedMessage
+              ? "bg-fdnda-red-soft text-fdnda-red-deep"
+              : "bg-fdnda-surface text-fdnda-muted"
+          }`}
+        >
+          {blockedMessage ? (
+            <>
+              <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 flex-1">{blockedMessage}</span>
+              <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
+                Recargar planilla
+              </Button>
+            </>
+          ) : savingCount > 0 ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              {savingCount > 1 ? `Guardando ${savingCount} cambios…` : "Guardando el cambio…"}
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="h-4 w-4 text-fdnda-success" aria-hidden="true" />
+              {lastSavedAt
+                ? `Cambios guardados a las ${savedTimeFormat.format(lastSavedAt)}`
+                : "Cambios guardados"}
+            </>
+          )}
+        </div>
+      ) : null}
 
-      {readOnly ? (
-        <Card className="border-fdnda-sky bg-fdnda-sky/20 p-4 text-sm text-fdnda-navy">
-          Esta planilla está bloqueada porque{" "}
-          {plan.status === "PAID"
-            ? "ya fue pagada"
-            : plan.status === "ABANDONED"
-              ? "fue reemplazada por otra planilla"
-              : "tiene una orden activa"}
-          .
-          {plan.activeOrder ? (
-            <Link className="ml-2 font-bold underline" href={`/pago/${plan.activeOrder.id}`}>
-              Ver orden
-            </Link>
-          ) : null}
+      {plan.status === "DRAFT" && plan.event && plan.closedReason ? (
+        <Card className="flex items-start gap-2 border-fdnda-warning-ring bg-fdnda-warning-soft p-4 text-sm font-semibold text-fdnda-ink">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-fdnda-warning" aria-hidden="true" />
+          <p>
+            {plan.closedReason === "DEADLINE"
+              ? `El cierre de inscripciones fue el ${plan.event.registrationDeadlineLabel}. Esta planilla ya no se puede pagar.`
+              : "Las inscripciones de esta competencia están cerradas. Esta planilla ya no se puede pagar."}
+          </p>
         </Card>
       ) : null}
 
-      {step === 1 ? (
-        <>
-          <EventStep
-            events={events}
-            plan={plan}
-            disabled={busy || readOnly}
-            hasAffiliations={hasAffiliations}
-            onSelect={(eventId) => void selectEvent(eventId)}
-          />
-          {plan.event ? (
-            <div className="flex justify-end">
-              <Button onClick={() => goToStep(2)}>
-                Continuar <ArrowRight className="h-4 w-4" />
-              </Button>
-            </div>
-          ) : null}
-        </>
+      {readOnly && visibleStep !== 3 ? <ReadOnlyNotice plan={plan} /> : null}
+
+      {visibleStep === 1 ? (
+        <EventStep
+          events={events}
+          disabled={blocked || savingCount > 0 || readOnly}
+          hasAffiliations={hasAffiliations}
+          onSelect={(eventId) => void selectEvent(eventId)}
+        />
       ) : null}
 
-      {step === 2 ? (
+      {visibleStep === 2 ? (
         <>
-          {ofreceEleccion ? (
-            <ChargeSelectionCard
-              paysEntry={charges.paysEntry}
-              paysAthleteFee={charges.paysAthleteFee}
-              entryLabel="Inscripción por equipo"
-              athleteFeeLabel="Cuota por deportista"
-              disabled={busy || readOnly}
-              onChange={changeCharges}
-            />
-          ) : null}
           <AthleteBoard
             athletePage={athletePage}
             roster={roster}
             entries={entries}
             modalities={modalities}
             lockedPairs={lockedByAthlete}
-            athleteFeeFor={athleteFeeFor}
+            athleteFeesFor={athleteFeesFor}
+            entryPriceNote={entryPriceNote}
             expandedAthleteId={expandedAthleteId}
             teamModalityId={teamModalityId}
             editing={editing}
             readOnly={readOnly}
-            busy={busy}
+            blocked={blocked}
+            formationSaving={savingCount > 0 || blocked}
             query={query}
+            searchedQuery={initialQuery.trim()}
             isNavigating={isNavigating}
             pageHref={pageHref}
+            chargeSelection={
+              choiceModalities.length > 0 ? (
+                <ChargeSelectionCard
+                  paysEntry={charges.paysEntry}
+                  paysAthleteFee={charges.paysAthleteFee}
+                  entryDetail={priceRange(
+                    choiceModalities.map((row) => row.price),
+                    "por formación"
+                  )}
+                  athleteFeeDetail={athleteFeeDetail}
+                  disabled={blocked || readOnly}
+                  onChange={changeCharges}
+                />
+              ) : null
+            }
             onQueryChange={setQuery}
             onSearch={() => {
-              void awaitSaved().then(() => {
-                const params = new URLSearchParams()
-                if (query.trim()) params.set("q", query.trim())
-                startTransition(() => router.push(`/inscripciones/${plan.id}?${params}`))
-              })
+              void awaitSaved()
+                .then(() => {
+                  const params = new URLSearchParams()
+                  if (query.trim()) params.set("q", query.trim())
+                  startTransition(() => router.push(`/inscripciones/${plan.id}?${params}`))
+                })
+                .catch(() => {
+                  // Bloqueada: el aviso de arriba pide recargar.
+                })
             }}
             onAddAthlete={addAthlete}
-            onRemoveAthlete={removeAthlete}
+            onRemoveAthlete={requestRemoveAthlete}
             onToggleExpand={(athleteId) =>
               setExpandedAthleteId((current) =>
                 current === athleteId ? null : athleteId
@@ -615,39 +748,123 @@ export function RegistrationPlanWizard({
             onStartFormation={startFormation}
             onEditFormation={setEditing}
             onChangeFormation={changeFormation}
-            onDeleteFormation={(entryId) => void deleteFormation(entryId)}
-            onCloseFormation={() => setEditing(null)}
+            onDeleteFormation={deleteFormation}
+            onCloseFormation={closeFormation}
           />
-          <div className="flex flex-wrap justify-between gap-2">
-            <Button variant="outline" onClick={() => goToStep(1)} disabled={readOnly}>
-              <ArrowLeft className="h-4 w-4" /> Competencia
-            </Button>
+          <div className="flex flex-col gap-3 rounded-surface border border-fdnda-border bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm">
+              <p className="font-semibold text-fdnda-ink">
+                {plural(roster.length, "deportista", "deportistas")} ·{" "}
+                {plural(entries.length, "prueba inscrita", "pruebas inscritas")}
+                {incompleteFormations > 0
+                  ? ` · ${plural(incompleteFormations, incompleteDivingPairs ? "pareja incompleta" : "formación incompleta", incompleteDivingPairs ? "parejas incompletas" : "formaciones incompletas")}`
+                  : ""}
+              </p>
+              {!readOnly ? (
+                <p className="text-xs text-fdnda-muted">
+                  El total y lo que falte para pagar se revisan en el paso 2.
+                </p>
+              ) : null}
+            </div>
             <Button onClick={() => goToStep(3)}>
-              Revisar y pagar <ArrowRight className="h-4 w-4" />
+              {readOnly ? "Ver estado de la orden" : "Revisar y pagar"}{" "}
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
         </>
       ) : null}
 
-      {step === 3 ? (
+      {visibleStep === 3 ? (
         <>
-          <ReviewPanel
-            validation={validation}
-            plan={plan}
-            lockedEntries={lockedEntries}
-            checkingOut={checkingOut}
-            blocked={Boolean(blockedMessage)}
-            saving={savingCount > 0}
-            onPrint={() => void printPersistedRevision()}
-            onCheckout={() => void checkout()}
-          />
+          {readOnly ? (
+            <OrderPanel
+              plan={plan}
+              lockedEntries={lockedEntries}
+              onPrint={() => void printPersistedRevision()}
+            />
+          ) : (
+            <ReviewPanel
+              validation={validation}
+              lockedEntries={lockedEntries}
+              checkingOut={checkingOut}
+              blocked={blocked}
+              saving={savingCount > 0}
+              athleteNameById={athleteNameById}
+              onPrint={() => void printPersistedRevision()}
+              onCheckout={() => void checkout()}
+              onFix={fixInPlan}
+              onRemoveAthlete={(athleteId) => {
+                const athlete = roster.find((row) => row.id === athleteId)
+                if (athlete) requestRemoveAthlete(athlete)
+              }}
+              onReload={() => window.location.reload()}
+            />
+          )}
           <div className="flex justify-start">
-            <Button variant="outline" onClick={() => goToStep(2)} disabled={readOnly}>
-              <ArrowLeft className="h-4 w-4" /> Corregir la planilla
+            <Button variant="outline" onClick={() => goToStep(2)}>
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Volver a deportistas y
+              pruebas
             </Button>
           </div>
         </>
       ) : null}
+
+      <ConfirmDialog
+        open={removing !== null}
+        onClose={() => setRemoving(null)}
+        title={removing ? `¿Quitar a ${athleteName(removing)} de la planilla?` : ""}
+        consequence="Se desmarcan todas sus pruebas y se retira de las inscripciones compartidas con otros deportistas. Sigue en el padrón de tu club."
+        confirmLabel="Quitar de la planilla"
+        destructive
+        onConfirm={() => {
+          if (removing) removeAthlete(removing)
+          setRemoving(null)
+          // Si se quitó desde la revisión, la validación ya no refleja la
+          // planilla: se recalcula cuando la remoción termine de guardarse.
+          if (visibleStep === 3) {
+            setValidation(null)
+            void runValidation()
+          }
+        }}
+      />
     </div>
+  )
+}
+
+// Por qué una planilla ya no se edita y qué hacer a continuación.
+function ReadOnlyNotice({ plan }: { plan: PlanView }) {
+  const order = plan.activeOrder
+  const small = buttonClasses({ size: "sm" })
+  const outline = buttonClasses({ size: "sm", variant: "outline" })
+  return (
+    <Card className="flex flex-col gap-3 border-fdnda-sky bg-fdnda-sky/20 p-4 text-sm text-fdnda-navy sm:flex-row sm:items-center sm:justify-between">
+      <p className="max-w-2xl">
+        {plan.status === "PAID"
+          ? "Esta planilla ya está pagada y no se modifica. Para inscribir a más deportistas en esta competencia, inicia una nueva planilla."
+          : plan.status === "AWAITING_PAYMENT"
+            ? "Esta planilla tiene una orden pendiente de pago y ya no se puede modificar. Si la orden vence sin pagarse, la planilla vuelve a borrador."
+            : "Esta planilla fue reemplazada por otra de la misma competencia y ya no se usa."}
+      </p>
+      <div className="flex shrink-0 flex-wrap gap-2">
+        {order ? (
+          <Link href={`/pago/${order.id}`} className={small}>
+            {order.status === "PAID" ? "Ver constancia" : "Pagar orden"}
+          </Link>
+        ) : null}
+        {plan.status === "PAID" && plan.event && !plan.closedReason ? (
+          <Link
+            href={`/inscripciones/nueva?evento=${encodeURIComponent(plan.event.slug)}`}
+            className={outline}
+          >
+            Inscribir más deportistas
+          </Link>
+        ) : null}
+        {plan.status === "ABANDONED" || !order ? (
+          <Link href="/inscripciones" className={outline}>
+            Volver a Inscripciones
+          </Link>
+        ) : null}
+      </div>
+    </Card>
   )
 }

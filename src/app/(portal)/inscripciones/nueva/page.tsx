@@ -7,8 +7,16 @@ import {
   selectRegistrationPlanEvent,
 } from "@/lib/registration-plans"
 import { explicitDisciplineAccess } from "@/lib/club-access"
+import type { OpenPlanError } from "../open-plan-errors"
 
 export const dynamic = "force-dynamic"
+
+// Si algo impide abrir la planilla de la competencia pedida, el club vuelve a
+// Inscripciones con el motivo en `?error=`, en vez de caer en silencio en una
+// planilla sin competencia.
+function backWithError(reason: OpenPlanError): never {
+  redirect(`/inscripciones?error=${reason}`)
+}
 
 export default async function NewRegistrationPlanPage({
   searchParams,
@@ -27,27 +35,36 @@ export default async function NewRegistrationPlanPage({
     scopeByCreator: access !== undefined,
     disciplineScope: access?.[0],
   })
-  if (!plan.success) redirect(`/inscripciones?error=${encodeURIComponent(plan.error)}`)
+  if (!plan.success) {
+    backWithError(plan.code === "FORBIDDEN" ? "permiso" : "inesperado")
+  }
 
   if (evento && !plan.eventId && plan.status === "DRAFT") {
     const event = await prisma.event.findUnique({
       where: { slug: evento },
       select: { id: true, disciplines: true },
     })
+    if (!event) backWithError("competencia")
     // selectRegistrationPlanEvent revalida la afiliación por su cuenta; acá se
     // comprueba antes solo para no gastar la transacción en un enlace ajeno.
-    if (
-      event &&
-      (await clubMayEnterEvent(user.clubId, event.disciplines, access))
-    ) {
-      const selected = await selectRegistrationPlanEvent({
-        planId: plan.planId,
-        clubId: user.clubId,
-        eventId: event.id,
-        expectedRevision: plan.revision,
-      })
-      if (selected.success) redirect(`/inscripciones/${selected.planId}`)
+    if (!(await clubMayEnterEvent(user.clubId, event.disciplines, access))) {
+      backWithError("afiliacion")
     }
+    const selected = await selectRegistrationPlanEvent({
+      planId: plan.planId,
+      clubId: user.clubId,
+      eventId: event.id,
+      expectedRevision: plan.revision,
+    })
+    if (selected.success) redirect(`/inscripciones/${selected.planId}`)
+    if (selected.existingPlanId) redirect(`/inscripciones/${selected.existingPlanId}`)
+    backWithError(
+      selected.code === "INVALID_EVENT"
+        ? "no-disponible"
+        : selected.code === "ACTIVE_PLAN_EXISTS"
+          ? "planilla-activa"
+          : "inesperado"
+    )
   }
 
   redirect(`/inscripciones/${plan.planId}`)

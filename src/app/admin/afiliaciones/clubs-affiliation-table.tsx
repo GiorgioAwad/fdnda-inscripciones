@@ -1,12 +1,14 @@
 "use client"
 
-import { useTransition } from "react"
+import { useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { BadgeCheck, Users } from "lucide-react"
+import { DisciplineIcon } from "@/components/discipline-icon"
 import { Button } from "@/components/ui/button"
 import { AFFILIATION_STATE_BADGE, Badge } from "@/components/ui/badge"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   Table,
   TableCard,
@@ -21,8 +23,17 @@ import {
   TR,
 } from "@/components/ui/table"
 import { DISCIPLINES, type DisciplineValue } from "@/lib/disciplines"
-import { formatDateOnly, formatMoney } from "@/lib/utils"
-import { createPendingClubAffiliation, markAffiliationPaid } from "./actions"
+import { formatDateOnly, formatMoney, plural } from "@/lib/utils"
+import { registerExternalClubPayment } from "./actions"
+
+// Lo que haría falta para registrar un pago recibido fuera de la pasarela.
+// null = no se puede (ya está pagada, venció o la temporada no tiene cuota).
+export interface ExternalPayment {
+  fee: number
+  validToISO: string
+  // Orden por pagar del club que ya incluye esta afiliación.
+  orderCode: string | null
+}
 
 export interface ClubDisciplineView {
   discipline: DisciplineValue
@@ -34,51 +45,126 @@ export interface ClubDisciplineView {
   athletesActive: number
   athletesPending: number
   athletesExpiredOrMissing: number
+  payment: ExternalPayment | null
 }
 
 export interface ClubAffiliationRow {
   clubId: string
   clubName: string
   clubCode: string
+  isActive: boolean
   athletesTotal: number
   disciplines: ClubDisciplineView[]
 }
 
+interface PaymentTarget {
+  clubId: string
+  clubName: string
+  discipline: DisciplineValue
+  payment: ExternalPayment
+}
+
+function settledState(state: string) {
+  return state === "ACTIVA" || state === "POR_VENCER"
+}
+
+// Qué mostrar en lugar del botón cuando no hay pago que registrar.
+function noPaymentNote(entry: ClubDisciplineView): string | null {
+  if (settledState(entry.clubState)) return null
+  if (entry.clubState === "VENCIDA") return "Vigencia terminada"
+  return "Sin cuota fijada en la temporada"
+}
+
+function ClubName({ row }: { row: ClubAffiliationRow }) {
+  return (
+    <>
+      <p className="font-bold text-fdnda-ink">{row.clubName}</p>
+      <p className="flex flex-wrap items-center gap-1.5 text-xs text-fdnda-muted">
+        <span className="num">{row.clubCode}</span>
+        {row.isActive ? null : <Badge variant="danger">Desactivado</Badge>}
+      </p>
+    </>
+  )
+}
+
+function PadronLink({ row }: { row: ClubAffiliationRow }) {
+  return (
+    <Link
+      href={`/admin/padron?club=${row.clubId}`}
+      aria-label={`Padrón de ${row.clubName}`}
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2.5 text-sm font-semibold text-fdnda-navy hover:bg-fdnda-sky/25"
+    >
+      <Users className="h-4 w-4" aria-hidden="true" />
+      Padrón
+    </Link>
+  )
+}
+
 // Con cuota por disciplina, la unidad de gestión ya no es el club sino el par
 // (club, disciplina): un club puede estar al día en polo y deber clavados.
-export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) {
+export function ClubsAffiliationTable({
+  rows,
+  seasonName,
+}: {
+  rows: ClubAffiliationRow[]
+  seasonName: string
+}) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const [target, setTarget] = useState<PaymentTarget | null>(null)
 
-  const handleMarkPaid = (row: ClubAffiliationRow, entry: ClubDisciplineView) => {
-    const label = DISCIPLINES[entry.discipline].label
-
+  const handleRegister = () => {
+    if (!target) return
+    const label = DISCIPLINES[target.discipline].label
     startTransition(async () => {
-      // Sin registro de afiliación todavía: se genera y se marca en dos pasos.
-      if (!entry.affiliationId) {
-        const created = await createPendingClubAffiliation(row.clubId, entry.discipline)
-        if (!created.success) {
-          toast.error(created.error)
-          return
-        }
-        toast.success(
-          `Cuota de ${label} generada para ${row.clubName}. Vuelve a marcarla como pagada.`
-        )
-        router.refresh()
-        return
-      }
-
-      const result = await markAffiliationPaid({
-        kind: "CLUB",
-        affiliationId: entry.affiliationId,
+      const result = await registerExternalClubPayment({
+        clubId: target.clubId,
+        discipline: target.discipline,
       })
       if (result.success) {
-        toast.success(`${label} de ${row.clubName} registrada como pagada`)
+        toast.success(
+          `Pago de ${label} de ${target.clubName} registrado: afiliación vigente hasta el ${formatDateOnly(
+            result.validToISO ?? target.payment.validToISO
+          )}.`
+        )
+        setTarget(null)
         router.refresh()
       } else {
         toast.error(result.error)
       }
     })
+  }
+
+  const paymentButton = (
+    row: ClubAffiliationRow,
+    entry: ClubDisciplineView,
+    className?: string
+  ) => {
+    if (entry.payment) {
+      const payment = entry.payment
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          className={className}
+          disabled={isPending}
+          aria-label={`Registrar pago externo de ${DISCIPLINES[entry.discipline].label} de ${row.clubName}`}
+          onClick={() =>
+            setTarget({
+              clubId: row.clubId,
+              clubName: row.clubName,
+              discipline: entry.discipline,
+              payment,
+            })
+          }
+        >
+          <BadgeCheck className="h-4 w-4" aria-hidden="true" />
+          <span className="whitespace-nowrap">Registrar pago externo</span>
+        </Button>
+      )
+    }
+    const note = noPaymentNote(entry)
+    return note ? <span className="text-xs text-fdnda-muted">{note}</span> : null
   }
 
   return (
@@ -94,15 +180,8 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
             lanes={row.disciplines.map((entry) => entry.discipline)}
             title={row.clubName}
             subtitle={<span className="num">{row.clubCode}</span>}
-            actions={
-              <Link
-                href={`/admin/padron?club=${row.clubId}`}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2.5 text-sm font-semibold text-fdnda-navy hover:bg-fdnda-sky/25"
-              >
-                <Users className="h-4 w-4" aria-hidden="true" />
-                Padrón
-              </Link>
-            }
+            badges={row.isActive ? null : <Badge variant="danger">Desactivado</Badge>}
+            actions={<PadronLink row={row} />}
           >
             {row.disciplines.length === 0 ? (
               <TableField
@@ -115,10 +194,7 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                 const badge =
                   AFFILIATION_STATE_BADGE[entry.clubState] ??
                   AFFILIATION_STATE_BADGE.SIN_AFILIAR
-                const settled =
-                  entry.clubState === "ACTIVA" || entry.clubState === "POR_VENCER"
                 const style = DISCIPLINES[entry.discipline]
-                const Icon = style.icon
 
                 return (
                   <div
@@ -130,7 +206,11 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                         <span
                           className={`flex h-6 w-6 items-center justify-center rounded-chip text-white ${style.chip}`}
                         >
-                          <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                          <DisciplineIcon
+                            discipline={entry.discipline}
+                            tone="light"
+                            className="h-3.5 w-3.5"
+                          />
                         </span>
                         {style.short}
                       </span>
@@ -138,7 +218,7 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                     </div>
                     <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
                       <TableField
-                        label="Vigencia"
+                        label="Vigencia hasta"
                         value={
                           entry.validToISO ? (
                             <span className="num">
@@ -150,7 +230,7 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                         }
                       />
                       <TableField
-                        label="Cuota"
+                        label="Cuota del club"
                         value={
                           entry.fee === null ? (
                             "—"
@@ -160,15 +240,15 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                         }
                       />
                       <TableField
-                        label="Deportistas"
+                        label="Deportistas vigentes"
                         value={
                           <span className="num">
-                            {entry.athletesActive}/{entry.athletesTotal}
+                            {entry.athletesActive} de {entry.athletesTotal}
                           </span>
                         }
                       />
                       <TableField
-                        label="Por regularizar"
+                        label="Pendientes de pago"
                         value={
                           <span
                             className={`num ${entry.athletesPending > 0 ? "font-bold text-fdnda-warning" : ""}`}
@@ -178,18 +258,9 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                         }
                       />
                     </div>
-                    {settled ? null : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="mt-3 w-full"
-                        disabled={isPending}
-                        onClick={() => handleMarkPaid(row, entry)}
-                      >
-                        <BadgeCheck className="h-4 w-4" aria-hidden="true" />
-                        {entry.affiliationId ? "Marcar pagada" : "Generar cuota"}
-                      </Button>
-                    )}
+                    <div className="mt-3">
+                      {paymentButton(row, entry, "w-full")}
+                    </div>
                   </div>
                 )
               })
@@ -198,19 +269,20 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
         ))}
       </TableCards>
 
-      <TableContainer className="hidden md:block">
-        <Table className="min-w-[64rem]">
+      <TableContainer
+        className="hidden md:block"
+        aria-label="Afiliaciones por club y disciplina"
+      >
+        {/* Cinco columnas y no diez: vigencia y cuota viven con el estado del
+            club, y los tres conteos de deportistas en una sola celda. A 1280 px
+            la versión de diez columnas escondía las acciones. */}
+        <Table className="min-w-[48rem]">
         <THead>
           <TR>
             <TH>Club</TH>
             <TH>Disciplina</TH>
             <TH>Afiliación del club</TH>
-            <TH>Vigencia</TH>
-            <TH className="text-right">Cuota</TH>
-            <TH className="text-right">Deportistas</TH>
-            <TH className="text-right">Activas</TH>
-            <TH className="text-right">Pendientes</TH>
-            <TH className="text-right">Sin vigencia</TH>
+            <TH>Deportistas vigentes</TH>
             <TH className={`text-right ${stickyCell.head}`}>Acciones</TH>
           </TR>
         </THead>
@@ -219,21 +291,14 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
             row.disciplines.length === 0 ? (
               <TR key={row.clubId}>
                 <TD>
-                  <p className="font-bold text-fdnda-ink">{row.clubName}</p>
-                  <p className="num text-xs text-fdnda-muted">{row.clubCode}</p>
+                  <ClubName row={row} />
                 </TD>
-                <TD colSpan={8} className="text-xs text-fdnda-muted">
+                <TD colSpan={3} className="text-xs text-fdnda-muted">
                   Sin disciplinas habilitadas en la temporada vigente.
                 </TD>
                 <TD className={stickyCell.cell}>
                   <div className="flex justify-end">
-                    <Link
-                      href={`/admin/padron?club=${row.clubId}`}
-                      className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2.5 text-sm font-semibold text-fdnda-navy hover:bg-fdnda-sky/25"
-                    >
-                      <Users className="h-4 w-4" aria-hidden="true" />
-                      Padrón
-                    </Link>
+                    <PadronLink row={row} />
                   </div>
                 </TD>
               </TR>
@@ -242,10 +307,7 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                 const badge =
                   AFFILIATION_STATE_BADGE[entry.clubState] ??
                   AFFILIATION_STATE_BADGE.SIN_AFILIAR
-                const settled =
-                  entry.clubState === "ACTIVA" || entry.clubState === "POR_VENCER"
                 const style = DISCIPLINES[entry.discipline]
-                const Icon = style.icon
                 const first = index === 0
 
                 return (
@@ -255,83 +317,68 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
                     // agrupa visualmente sin necesidad de rowspan.
                     className={first ? "border-t-2 border-fdnda-border" : undefined}
                   >
-                    <TD>
-                      {first ? (
-                        <>
-                          <p className="font-bold text-fdnda-ink">{row.clubName}</p>
-                          <p className="num text-xs text-fdnda-muted">
-                            {row.clubCode}
-                          </p>
-                        </>
-                      ) : null}
-                    </TD>
+                    <TD>{first ? <ClubName row={row} /> : null}</TD>
                     <TD>
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-fdnda-ink">
                         <span
                           className={`flex h-6 w-6 items-center justify-center rounded-control text-white ${style.chip}`}
                         >
-                          <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                          <DisciplineIcon
+                            discipline={entry.discipline}
+                            tone="light"
+                            className="h-3.5 w-3.5"
+                          />
                         </span>
                         {style.short}
                       </span>
                     </TD>
                     <TD>
                       <Badge variant={badge.variant}>{badge.label}</Badge>
+                      {/* Cuota y vigencia existen solo cuando hay afiliación; sin
+                          ella la insignia «Sin afiliar» ya lo dice todo. */}
+                      {entry.fee !== null || entry.validToISO ? (
+                        <p className="mt-1 whitespace-nowrap text-xs text-fdnda-muted">
+                          {[
+                            entry.fee === null ? null : `Cuota ${formatMoney(entry.fee)}`,
+                            entry.validToISO
+                              ? `hasta ${formatDateOnly(entry.validToISO)}`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      ) : null}
                     </TD>
-                    <TD className="text-xs">
-                      {entry.validToISO ? formatDateOnly(entry.validToISO) : "—"}
-                    </TD>
-                    <TD className="text-right font-semibold">
-                      {entry.fee === null ? "—" : formatMoney(entry.fee)}
-                    </TD>
-                    <TD className="num text-right">{entry.athletesTotal}</TD>
-                    <TD className="num text-right font-bold text-fdnda-navy">
-                      {entry.athletesActive}
-                    </TD>
-                    <TD className="num text-right">
+                    <TD>
+                      <p className="whitespace-nowrap">
+                        <span className="num font-bold text-fdnda-navy">
+                          {entry.athletesActive}
+                        </span>{" "}
+                        <span className="text-xs text-fdnda-muted">
+                          de <span className="num">{entry.athletesTotal}</span>
+                        </span>
+                      </p>
                       {entry.athletesPending > 0 ? (
-                        <span className="font-bold text-fdnda-warning">
-                          {entry.athletesPending}
-                        </span>
-                      ) : (
-                        "0"
-                      )}
-                    </TD>
-                    <TD className="num text-right">
+                        <p className="text-xs font-semibold text-fdnda-warning">
+                          {plural(entry.athletesPending, "pendiente de pago", "pendientes de pago")}
+                        </p>
+                      ) : null}
                       {entry.athletesExpiredOrMissing > 0 ? (
-                        <span className="font-bold text-fdnda-red">
-                          {entry.athletesExpiredOrMissing}
-                        </span>
-                      ) : (
-                        "0"
-                      )}
+                        <p className="text-xs font-semibold text-fdnda-danger">
+                          {plural(
+                            entry.athletesExpiredOrMissing,
+                            "vencido o sin afiliar",
+                            "vencidos o sin afiliar"
+                          )}
+                        </p>
+                      ) : null}
                     </TD>
                     <TD className={stickyCell.cell}>
-                      {/* Apiladas, no en línea: «Padrón» es del club y
-                          «Marcar pagada» de la disciplina, así que no son
-                          hermanas. En línea, esta columna se comía 227px y
-                          empujaba la tabla fuera del contenedor. */}
+                      {/* Apiladas, no en línea: «Padrón» es del club y el pago
+                          es de la disciplina, así que no son hermanas. */}
                       <div className="flex flex-col items-end gap-1">
-                        {first ? (
-                          <Link
-                            href={`/admin/padron?club=${row.clubId}`}
-                            className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2.5 text-sm font-semibold text-fdnda-navy hover:bg-fdnda-sky/25"
-                          >
-                            <Users className="h-4 w-4" aria-hidden="true" />
-                            Padrón
-                          </Link>
-                        ) : null}
-                        {settled ? null : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isPending}
-                            onClick={() => handleMarkPaid(row, entry)}
-                          >
-                            <BadgeCheck className="h-4 w-4" aria-hidden="true" />
-                            {entry.affiliationId ? "Marcar pagada" : "Generar cuota"}
-                          </Button>
-                        )}
+                        {first ? <PadronLink row={row} /> : null}
+                        {paymentButton(row, entry)}
                       </div>
                     </TD>
                   </TR>
@@ -342,6 +389,43 @@ export function ClubsAffiliationTable({ rows }: { rows: ClubAffiliationRow[] }) 
         </TBody>
       </Table>
       </TableContainer>
+
+      <ConfirmDialog
+        open={target !== null}
+        onClose={() => setTarget(null)}
+        title={
+          target
+            ? `¿Registrar el pago de ${DISCIPLINES[target.discipline].label} de ${target.clubName}?`
+            : ""
+        }
+        consequence={
+          target ? (
+            <>
+              <p>
+                Cuota del club:{" "}
+                <span className="num font-semibold">{formatMoney(target.payment.fee)}</span>{" "}
+                · {seasonName}.
+              </p>
+              <p className="mt-2">
+                Úsalo solo para depósitos recibidos fuera de Izipay. La afiliación de{" "}
+                {target.clubName} en {DISCIPLINES[target.discipline].label} quedará
+                vigente hasta el {formatDateOnly(target.payment.validToISO)} y no se puede
+                deshacer desde el panel. Queda registrado quién lo hizo.
+              </p>
+              {target.payment.orderCode ? (
+                <p className="mt-2 rounded-control border border-fdnda-warning-ring bg-fdnda-warning-soft px-3 py-2 font-semibold text-fdnda-warning">
+                  Esta afiliación está en la orden {target.payment.orderCode}, que el club
+                  todavía no paga. Si registras el pago aquí y el club paga después esa
+                  orden, pagará dos veces.
+                </p>
+              ) : null}
+            </>
+          ) : null
+        }
+        confirmLabel="Registrar pago"
+        pending={isPending}
+        onConfirm={handleRegister}
+      />
     </>
   )
 }

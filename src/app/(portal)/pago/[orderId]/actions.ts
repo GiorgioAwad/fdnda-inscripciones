@@ -19,13 +19,16 @@ async function getOwnOrder(orderId: string) {
 
 export async function mockPayAction(orderId: string): Promise<ActionResult> {
   if (getPaymentsMode() !== "mock") {
-    return { success: false, error: "Pagos simulados deshabilitados." }
+    return { success: false, error: "El pago simulado está desactivado en este entorno." }
   }
 
   try {
     const order = await getOwnOrder(orderId)
     if (order.status !== "PENDING") {
-      return { success: false, error: "La orden ya no está pendiente." }
+      return {
+        success: false,
+        error: "Esta orden ya no está pendiente de pago. Recarga la página para ver su estado.",
+      }
     }
 
     const result = await fulfillPaidOrder({
@@ -41,19 +44,25 @@ export async function mockPayAction(orderId: string): Promise<ActionResult> {
     }
     return result
   } catch {
-    return { success: false, error: "No autorizado." }
+    return {
+      success: false,
+      error: "No pudimos abrir esta orden con tu sesión. Vuelve a iniciar sesión.",
+    }
   }
 }
 
 export async function mockFailAction(orderId: string): Promise<ActionResult> {
   if (getPaymentsMode() !== "mock") {
-    return { success: false, error: "Pagos simulados deshabilitados." }
+    return { success: false, error: "El pago simulado está desactivado en este entorno." }
   }
 
   try {
     const order = await getOwnOrder(orderId)
     if (order.status !== "PENDING") {
-      return { success: false, error: "La orden ya no está pendiente." }
+      return {
+        success: false,
+        error: "Esta orden ya no está pendiente de pago. Recarga la página para ver su estado.",
+      }
     }
 
     const result = await failOrder({
@@ -63,10 +72,13 @@ export async function mockFailAction(orderId: string): Promise<ActionResult> {
 
     if (result.success) {
       revalidatePath(`/pago/${orderId}`)
-      revalidatePath("/carrito")
+      revalidatePath("/afiliacion/carrito")
     }
     return result
   } catch {
-    return { success: false, error: "No autorizado." }
+    return {
+      success: false,
+      error: "No pudimos abrir esta orden con tu sesión. Vuelve a iniciar sesión.",
+    }
   }
 }

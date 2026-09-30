@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { LockKeyhole } from "lucide-react"
 import { getCurrentUser } from "@/lib/auth"
+import { SignOutButton } from "@/components/sign-out-button"
 import { PasswordChangeForm } from "./password-change-form"
 
 export const metadata: Metadata = { title: "Cambiar contraseña" }
@@ -16,17 +17,18 @@ export default async function PasswordChangePage() {
         <span className="mb-5 flex h-12 w-12 items-center justify-center rounded-control bg-fdnda-sky-soft text-fdnda-navy">
           <LockKeyhole className="h-6 w-6" aria-hidden="true" />
         </span>
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-fdnda-turquoise-deep">
-          Protege tu cuenta
-        </p>
-        <h1 className="font-heading mt-2 text-2xl font-bold text-fdnda-navy">
+        <h1 className="font-heading text-2xl font-bold text-fdnda-navy">
           Cambia tu contraseña
         </h1>
         <p className="mb-7 mt-2 text-sm leading-relaxed text-fdnda-muted">
-          La credencial entregada por la federación es temporal. Debes reemplazarla
-          antes de continuar.
+          {user.mustChangePassword
+            ? "Tu contraseña actual es temporal. Cámbiala para entrar al portal."
+            : "Elige una contraseña nueva para tu usuario de acceso."}
         </p>
         <PasswordChangeForm />
+        <div className="mt-5 flex justify-center border-t border-fdnda-border pt-4">
+          <SignOutButton />
+        </div>
       </section>
     </main>
   )

@@ -53,8 +53,16 @@ export function Dialog({ open, onClose, title, description, children, className 
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
 
+    // Un diálogo con formulario abre con el cursor en su primer campo: antes
+    // se enfocaba el contenedor y había que tabular hasta empezar a escribir.
+    // Sin campos (confirmaciones), se enfoca el diálogo para que el lector de
+    // pantalla lea el título y la consecuencia antes que los botones.
     const focusDialog = window.requestAnimationFrame(() => {
-      dialogRef.current?.focus({ preventScroll: true })
+      const dialog = dialogRef.current
+      const firstField = dialog?.querySelector<HTMLElement>(
+        "input:not([disabled]):not([type='hidden']):not([type='checkbox']):not([type='radio']), select:not([disabled]), textarea:not([disabled])"
+      )
+      ;(firstField ?? dialog)?.focus({ preventScroll: true })
     })
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -156,7 +164,7 @@ export function Dialog({ open, onClose, title, description, children, className 
             type="button"
             onClick={() => onCloseRef.current()}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fdnda-navy transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-turquoise focus-visible:ring-offset-2 motion-reduce:transition-none"
-            aria-label="Cerrar"
+            aria-label={`Cerrar «${title}»`}
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>

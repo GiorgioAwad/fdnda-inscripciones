@@ -6,29 +6,22 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hashPassword, signOut } from "@/lib/auth"
 import { consumeRateLimit, getRequestIpHash, writeAuditLog } from "@/lib/security"
 
-export type PasswordChangeState = { error?: string }
+// `errors` lista TODAS las reglas incumplidas de una vez: antes se mostraba
+// solo la primera y había que reintentar una por una.
+export type PasswordChangeState = { error?: string; errors?: string[] }
 
-const passwordSchema = z
-  .object({
-    currentPassword: z.string().min(1),
-    newPassword: z
-      .string()
-      .min(12, "Usa al menos 12 caracteres.")
-      .max(128)
-      .regex(/[a-z]/, "Incluye una minúscula.")
-      .regex(/[A-Z]/, "Incluye una mayúscula.")
-      .regex(/[0-9]/, "Incluye un número.")
-      .regex(/[^A-Za-z0-9]/, "Incluye un símbolo."),
-    confirmPassword: z.string(),
-  })
-  .refine((value) => value.newPassword === value.confirmPassword, {
-    path: ["confirmPassword"],
-    message: "Las contraseñas nuevas no coinciden.",
-  })
-  .refine((value) => value.newPassword !== value.currentPassword, {
-    path: ["newPassword"],
-    message: "La nueva contraseña debe ser diferente.",
-  })
+const passwordSchema = z.object({
+  currentPassword: z.string().min(1, "Escribe tu contraseña actual."),
+  newPassword: z
+    .string()
+    .min(12, "Usa al menos 12 caracteres.")
+    .max(128, "Usa como máximo 128 caracteres.")
+    .regex(/[a-z]/, "Incluye una minúscula.")
+    .regex(/[A-Z]/, "Incluye una mayúscula.")
+    .regex(/[0-9]/, "Incluye un número.")
+    .regex(/[^A-Za-z0-9]/, "Incluye un símbolo."),
+  confirmPassword: z.string(),
+})
 
 export async function changePasswordAction(
   _previous: PasswordChangeState,
@@ -45,15 +38,25 @@ export async function changePasswordAction(
     blockSeconds: 15 * 60,
   })
   if (!limit.allowed) {
-    return { error: "Demasiados intentos. Espera 15 minutos." }
+    return { error: "Demasiados intentos seguidos. Espera 15 minutos y vuelve a intentarlo." }
   }
 
-  const parsed = passwordSchema.safeParse({
-    currentPassword: formData.get("currentPassword"),
-    newPassword: formData.get("newPassword"),
-    confirmPassword: formData.get("confirmPassword"),
-  })
-  if (!parsed.success) return { error: parsed.error.issues[0].message }
+  const raw = {
+    currentPassword: String(formData.get("currentPassword") ?? ""),
+    newPassword: String(formData.get("newPassword") ?? ""),
+    confirmPassword: String(formData.get("confirmPassword") ?? ""),
+  }
+  const parsed = passwordSchema.safeParse(raw)
+  const errors = parsed.success
+    ? []
+    : [...new Set(parsed.error.issues.map((issue) => issue.message))]
+  if (raw.newPassword !== raw.confirmPassword) {
+    errors.push("Las dos contraseñas nuevas no coinciden.")
+  }
+  if (raw.newPassword && raw.newPassword === raw.currentPassword) {
+    errors.push("La nueva contraseña debe ser distinta de la actual.")
+  }
+  if (!parsed.success || errors.length > 0) return { errors }
 
   const account = await prisma.user.findUnique({
     where: { id: user.id },
