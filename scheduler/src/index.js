@@ -80,7 +80,7 @@ export async function runMaintenance(env, fetcher = fetch, logger = console) {
   }
 }
 
-export default {
+const worker = {
   async scheduled(_controller, env) {
     try {
       await runMaintenance(env)
@@ -91,3 +91,5 @@ export default {
     }
   },
 }
+
+export default worker
