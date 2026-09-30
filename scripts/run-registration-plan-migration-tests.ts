@@ -54,6 +54,7 @@ function run(
       ...process.env,
       ...extraEnvironment,
       DATABASE_URL: databaseUrl,
+      DIRECT_DATABASE_URL: databaseUrl,
       NODE_ENV: "test",
     },
     stdio: "inherit",

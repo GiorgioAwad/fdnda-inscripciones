@@ -33,6 +33,7 @@ const administrationPool = new Pool({
 const childEnvironment: NodeJS.ProcessEnv = {
   ...process.env,
   DATABASE_URL: testUrl.toString(),
+  DIRECT_DATABASE_URL: testUrl.toString(),
   NODE_ENV: "test",
 }
 

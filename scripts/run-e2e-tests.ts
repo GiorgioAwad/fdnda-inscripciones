@@ -32,6 +32,7 @@ const e2eUrl = `http://localhost:${e2ePort}`
 const childEnvironment: NodeJS.ProcessEnv = {
   ...process.env,
   DATABASE_URL: testUrl.toString(),
+  DIRECT_DATABASE_URL: testUrl.toString(),
   NODE_ENV: "test",
   PAYMENTS_MODE: "mock",
   AUTH_SECRET: "e2e-only-secret-that-is-long-enough-for-next-auth",
