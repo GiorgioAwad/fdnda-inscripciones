@@ -141,10 +141,20 @@ test("flujo completo, recarga, pago y planilla suplementaria", async ({
   await chooseCompetition(page)
   await enterAthlete(page, "Trampolin E2E", "88000001")
 
+  // El delegado no paga: se guarda aparte de la planilla, al instante.
+  const officials = page.getByRole("region", { name: "Delegado y entrenadores" })
+  await officials.getByRole("button", { name: "Agregar delegado" }).click()
+  await officials.getByLabel("Apellidos").fill("Delegada")
+  await officials.getByLabel("Nombres").fill("Rosa")
+  await officials.getByLabel(/N.º de documento/).fill("70000001")
+  await officials.getByRole("button", { name: "Guardar" }).click()
+  await expect(officials.getByText("Delegada, Rosa")).toBeVisible()
+
   // El borrador sobrevive a una recarga con la prueba ya marcada.
   await page.reload()
   await selectModality(page, "Trampolin E2E")
   await expect(page.getByRole("checkbox", { name: /88000001/ })).toBeChecked()
+  await expect(page.getByText("Delegada, Rosa")).toBeVisible()
 
   await goToReview(page)
   await expect(page.getByText("Planilla lista para pagar")).toBeVisible()

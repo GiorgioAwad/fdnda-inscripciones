@@ -175,6 +175,7 @@ model Club {
 
   athleteAffiliations AthleteAffiliation[]
   eventAthleteFees    EventAthleteFee[]
+  eventOfficials      EventOfficial[]
 
   @@map("clubs")
 }
@@ -368,6 +369,7 @@ model Event {
   orders            Order[]
   disciplineConfigs EventDisciplineConfig[]
   athleteFees       EventAthleteFee[]
+  officials         EventOfficial[]
 
   @@index([seasonId])
   @@map("events")
@@ -399,12 +401,52 @@ model EventDisciplineConfig {
   athleteFee  Decimal?    @db.Decimal(10, 2)
   ageRuleMode AgeRuleMode @default(RANGE)
 
+  // Cuántos delegados y entrenadores puede nombrar cada club en esta
+  // disciplina (0 = no se piden). No pagan: solo se registran para acreditarlos.
+  // Se pueden cambiar aunque haya inscripciones vendidas, porque no tocan cobros.
+  maxDelegates     Int     @default(1)
+  maxCoaches       Int     @default(3)
+  // Si es obligatorio, una planilla con pruebas de la disciplina no se paga
+  // hasta que el club nombre a su delegado.
+  requiresDelegate Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([eventId, discipline])
   @@index([eventId])
   @@map("event_discipline_configs")
+}
+
+enum EventOfficialRole {
+  DELEGATE
+  COACH
+}
+
+// Delegado o entrenador que un club nombra para una disciplina de un evento.
+// Va por club + evento + disciplina y no por planilla: el club los corrige
+// hasta el cierre de inscripciones aunque sus planillas ya estén pagadas, y
+// una planilla suplementaria no los duplica. No generan cobro.
+model EventOfficial {
+  id         String            @id @default(cuid())
+  eventId    String
+  event      Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  clubId     String
+  club       Club              @relation(fields: [clubId], references: [id])
+  discipline Discipline
+  role       EventOfficialRole
+  firstNames String
+  lastNames  String
+  docType    DocType
+  docNumber  String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Una persona ocupa un solo rol por disciplina en el mismo club y evento.
+  @@unique([eventId, clubId, discipline, docType, docNumber])
+  @@index([clubId, eventId])
+  @@map("event_officials")
 }
 
 // Cuota fija de un deportista en una disciplina de un evento (pricingMode

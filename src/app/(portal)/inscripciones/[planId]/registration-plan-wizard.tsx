@@ -34,6 +34,7 @@ import { usePlanAutosave } from "../use-plan-autosave"
 import { ChargeSelectionCard } from "./charge-selection-card"
 import { EventStep } from "./event-step"
 import { ModalityBoard } from "./modality-board"
+import { OfficialsCard } from "./officials-card"
 import { athleteName, isDivingPair } from "./plan-labels"
 import { OrderPanel, ReviewPanel } from "./review-panel"
 import type { FormationDraft } from "./team-formation-panel"
@@ -44,6 +45,8 @@ import type {
   LockedEntryView,
   LockedPairView,
   ModalityView,
+  OfficialDisciplineView,
+  OfficialView,
   PlanView,
   SerializableValidation,
 } from "../types"
@@ -81,6 +84,8 @@ export function RegistrationPlanWizard({
   lockedPairs,
   hasAffiliations,
   initialValidation,
+  officialDisciplines,
+  initialOfficials,
 }: {
   initialPlan: PlanView
   /** Padrón del club en las disciplinas de la competencia. */
@@ -92,6 +97,8 @@ export function RegistrationPlanWizard({
   hasAffiliations: boolean
   /** Ya calculada en el servidor cuando un borrador reanuda en revisión. */
   initialValidation: SerializableValidation | null
+  officialDisciplines: OfficialDisciplineView[]
+  initialOfficials: OfficialView[]
 }) {
   const router = useRouter()
   const [plan, setPlan] = useState(initialPlan)
@@ -101,6 +108,7 @@ export function RegistrationPlanWizard({
   const [roster, setRoster] = useState(initialPlan.roster)
   const [entries, setEntries] = useState(initialPlan.entries)
   const [activeModalityId, setActiveModalityId] = useState(modalities[0]?.id ?? "")
+  const [officials, setOfficials] = useState(initialOfficials)
   const [editing, setEditing] = useState<FormationDraft | null>(null)
   const [validation, setValidation] = useState<SerializableValidation | null>(
     initialValidation
@@ -108,8 +116,9 @@ export function RegistrationPlanWizard({
   const [checkingOut, setCheckingOut] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const [removing, setRemoving] = useState<AthleteView | null>(null)
-  // Deportista al que hay que llevar la vista al volver desde la revisión.
-  const focusAthleteRef = useRef<string | null>(null)
+  // Elemento (deportista o sección) al que hay que llevar la vista al volver
+  // desde la revisión.
+  const focusTargetRef = useRef<string | null>(null)
   // null (nunca eligió) significa "paga los dos", así que arranca todo marcado.
   // OJO: `charges` es la fuente viva de la elección del club durante toda la
   // sesión. `initialPlan.paysEntry`/`paysAthleteFee` solo siembran este estado:
@@ -146,10 +155,10 @@ export function RegistrationPlanWizard({
   const visibleStep: StepNumber = plan.event ? (step === 3 ? 3 : 2) : 1
 
   useEffect(() => {
-    const athleteId = focusAthleteRef.current
-    if (!athleteId || visibleStep !== 2) return
-    focusAthleteRef.current = null
-    const row = document.getElementById(`athlete-${athleteId}`)
+    const targetId = focusTargetRef.current
+    if (!targetId || visibleStep !== 2) return
+    focusTargetRef.current = null
+    const row = document.getElementById(targetId)
     row?.scrollIntoView({ block: "center" })
     row?.focus()
   }, [visibleStep])
@@ -285,8 +294,9 @@ export function RegistrationPlanWizard({
     if (next === 3 && !readOnly) void runValidation()
   }
 
-  function fixInPlan(athleteId?: string) {
-    if (athleteId) focusAthleteRef.current = athleteId
+  function fixInPlan(athleteId?: string, section?: "officials") {
+    if (section === "officials") focusTargetRef.current = "event-officials"
+    else if (athleteId) focusTargetRef.current = `athlete-${athleteId}`
     goToStep(2)
   }
 
@@ -705,6 +715,18 @@ export function RegistrationPlanWizard({
             onChangeFormation={changeFormation}
             onDeleteFormation={deleteFormation}
             onCloseFormation={closeFormation}
+          />
+          <OfficialsCard
+            planId={plan.id}
+            disciplines={officialDisciplines}
+            officials={officials}
+            editable={plan.closedReason === null && plan.status !== "ABANDONED"}
+            closedNote={
+              plan.closedReason
+                ? "Las inscripciones ya cerraron: ya no se pueden cambiar."
+                : null
+            }
+            onChange={setOfficials}
           />
           <div className="flex flex-col gap-3 rounded-surface border border-fdnda-border bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm">

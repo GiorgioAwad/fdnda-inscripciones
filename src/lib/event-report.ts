@@ -1,6 +1,12 @@
 import { prisma } from "./prisma"
 import { disciplineLabel } from "./disciplines"
 import {
+  DOC_TYPE_LABELS,
+  listEventOfficials,
+  officialName,
+  OFFICIAL_ROLE_LABELS,
+} from "./event-officials"
+import {
   disciplineConfigFor,
   type EventDisciplineConfigLike,
 } from "./event-pricing"
@@ -67,6 +73,15 @@ export interface EventReport {
     category: string
     isReserve: boolean
     status: string
+  }>
+  /** Delegados y entrenadores nombrados por los clubes. No pagan. */
+  officialRows: Array<{
+    clubName: string
+    discipline: string
+    role: string
+    name: string
+    docType: string
+    docNumber: string
   }>
   orderRows: Array<{
     code: string
@@ -531,13 +546,14 @@ export async function getEventReport(eventId: string): Promise<EventReport | nul
   })
   if (!event) return null
 
-  const [{ registrations, athleteFees, orders, frozenEvent }, liveModalities] =
+  const [{ registrations, athleteFees, orders, frozenEvent }, liveModalities, officials] =
     await Promise.all([
       collectEventRegistrations(eventId),
       prisma.eventModality.findMany({
         where: { eventId },
         orderBy: [{ discipline: "asc" }, { sortOrder: "asc" }],
       }),
+      listEventOfficials({ eventId }),
     ])
 
   const modalityBuckets = new Map<
@@ -746,6 +762,23 @@ export async function getEventReport(eventId: string): Promise<EventReport | nul
     clubRows,
     nominalRows,
     athleteFeeRows,
+    officialRows: officials
+      .map((row) => ({
+        clubName: row.club.name,
+        discipline: row.discipline,
+        role: OFFICIAL_ROLE_LABELS[row.role],
+        name: officialName(row),
+        docType: DOC_TYPE_LABELS[row.docType],
+        docNumber: row.docNumber,
+      }))
+      .sort(
+        (a, b) =>
+          a.clubName.localeCompare(b.clubName) ||
+          a.discipline.localeCompare(b.discipline) ||
+          // Delegado antes que entrenador, como en la planilla.
+          (a.role === b.role ? 0 : a.role === OFFICIAL_ROLE_LABELS.DELEGATE ? -1 : 1) ||
+          a.name.localeCompare(b.name)
+      ),
     orderRows,
   }
 }

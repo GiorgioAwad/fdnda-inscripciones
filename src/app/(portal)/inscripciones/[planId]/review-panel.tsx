@@ -45,7 +45,7 @@ export function ReviewPanel({
   onPrint: () => void
   onCheckout: () => void
   /** Vuelve a «Pruebas y deportistas», con la vista en ese deportista si se da. */
-  onFix: (athleteId?: string) => void
+  onFix: (athleteId?: string, section?: "officials") => void
   onRemoveAthlete: (athleteId: string) => void
   onReload: () => void
 }) {
@@ -225,7 +225,7 @@ function IssueAction({
 }: {
   issue: PlanValidationIssue
   athleteNameById: (athleteId: string) => string | null
-  onFix: (athleteId?: string) => void
+  onFix: (athleteId?: string, section?: "officials") => void
   onRemoveAthlete: (athleteId: string) => void
   onReload: () => void
 }) {
@@ -259,6 +259,13 @@ function IssueAction({
     case "EDIT_ENTRY":
     case "REMOVE_ENTRY":
     case "SELECT_ANOTHER_MODALITY":
+      if (issue.code === "DELEGATE_REQUIRED") {
+        return (
+          <Button size="sm" variant="outline" onClick={() => onFix(undefined, "officials")}>
+            Nombrar delegado
+          </Button>
+        )
+      }
       return (
         <Button
           size="sm"

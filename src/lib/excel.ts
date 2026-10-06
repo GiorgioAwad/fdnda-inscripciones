@@ -396,6 +396,7 @@ export interface EventReportData {
   clubRows: Array<Record<string, unknown>>
   nominalRows: Array<Record<string, unknown>>
   athleteFeeRows: Array<Record<string, unknown>>
+  officialRows: Array<Record<string, unknown>>
   orderRows: Array<Record<string, unknown>>
 }
 
@@ -423,6 +424,8 @@ export function buildEventReportWorkbook(data: EventReportData): Buffer {
   // Cuota fija por deportista: en clavados el cobro no está en las pruebas, así
   // que sin esta hoja el Excel no explicaría de dónde sale la recaudación.
   addSheet("Cuotas por deportista", data.athleteFeeRows, [30, 12, 8, 6, 26, 18, 12, 12])
+  // Para la acreditación: quién viene con cada club además de sus deportistas.
+  addSheet("Delegados y entrenadores", data.officialRows, [32, 18, 14, 32, 12, 14])
   addSheet("Órdenes", data.orderRows, [14, 32, 20, 12, 12, 12, 20])
 
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer

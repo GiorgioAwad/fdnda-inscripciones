@@ -49,6 +49,10 @@ export interface EventFormData {
   isLevelChampionship: boolean
   athleteFee: string
   ageRuleMode: AgeRuleModeValue
+  /** Delegados y entrenadores que puede nombrar cada club (no pagan). */
+  maxDelegates: number
+  maxCoaches: number
+  requiresDelegate: boolean
   /**
    * true si alguna prueba tiene inscripciones en una orden (por pagar o
    * pagada): disciplina, temporada, formato y cobro se congelan. Es la misma
@@ -132,6 +136,7 @@ function EventForm({
     event?.ageRuleMode ?? "RANGE"
   )
   const [selectedModalities, setSelectedModalities] = useState<string[]>([])
+  const [maxDelegates, setMaxDelegates] = useState(String(event?.maxDelegates ?? 1))
   const categories = useCategoryRows(1)
 
   function loadLevelPreset(year: number | null) {
@@ -648,10 +653,67 @@ function EventForm({
         </fieldset>
       ) : null}
 
-      {/* 4 · Pruebas iniciales: solo al crear, para que la competencia nazca lista. */}
+      {/* 4 · Delegados y entrenadores. No tocan cobros, así que se pueden
+          cambiar aunque la competencia ya tenga inscripciones vendidas. */}
+      {discipline && preset ? (
+        <fieldset className={SECTION}>
+          <legend className={LEGEND}>4. Delegados y entrenadores</legend>
+          <p className={HELP}>
+            Cuántos puede nombrar cada club en su planilla. No pagan inscripción;
+            se registran para su acreditación. Con 0 no se piden.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="ev-max-delegates">Delegados por club</Label>
+              <Input
+                id="ev-max-delegates"
+                name="maxDelegates"
+                type="number"
+                min={0}
+                max={5}
+                step={1}
+                required
+                value={maxDelegates}
+                onChange={(e) => setMaxDelegates(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="ev-max-coaches">Entrenadores por club</Label>
+              <Input
+                id="ev-max-coaches"
+                name="maxCoaches"
+                type="number"
+                min={0}
+                max={10}
+                step={1}
+                required
+                defaultValue={event?.maxCoaches ?? 3}
+              />
+            </div>
+          </div>
+          <label className="flex items-start gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              name="requiresDelegate"
+              defaultChecked={event?.requiresDelegate ?? false}
+              disabled={maxDelegates === "0"}
+              className={CHECK}
+            />
+            <span>
+              <span className="font-medium text-fdnda-ink">El delegado es obligatorio</span>
+              <span className="block text-xs leading-5 text-fdnda-muted">
+                Una planilla con pruebas de esta disciplina no se puede pagar hasta
+                que el club nombre a su delegado. No afecta lo que ya se pagó.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+      ) : null}
+
+      {/* 5 · Pruebas iniciales: solo al crear, para que la competencia nazca lista. */}
       {creating && discipline && preset ? (
         <fieldset className={SECTION}>
-          <legend className={LEGEND}>4. Pruebas iniciales (opcional)</legend>
+          <legend className={LEGEND}>5. Pruebas iniciales (opcional)</legend>
           <p className={HELP}>
             Se crea una prueba por cada combinación de prueba, categoría y sexo.
             Después puedes agregar, editar o desactivar pruebas.

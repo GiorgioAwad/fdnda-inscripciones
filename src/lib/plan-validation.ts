@@ -3,6 +3,7 @@ import { prisma } from "./prisma"
 import { athleteDisciplines } from "./affiliations"
 import { disciplineLabel, type DisciplineValue } from "./disciplines"
 import { validateEntryComposition } from "./eligibility"
+import { officialLimitsFor } from "./event-officials"
 import {
   computePlanPricing,
   disciplineConfigFor,
@@ -45,6 +46,7 @@ export type PlanValidationIssueCode =
   | "CHARGE_SELECTION_REQUIRED"
   | "AGE_RULE_INVALID"
   | "ATHLETE_FEE_ALREADY_PAID"
+  | "DELEGATE_REQUIRED"
 
 export type PlanCorrectiveAction =
   | "RELOAD"
@@ -840,6 +842,39 @@ export async function validateRegistrationPlanInTransaction(
         "EDIT_ENTRY"
       )
     )
+  }
+
+  // Delegado obligatorio: lo exige la FDNDA por disciplina. Se consulta solo si
+  // alguna disciplina con pruebas en la planilla lo pide.
+  if (plan.event) {
+    const plannedDisciplines = [
+      ...new Set(plan.registrations.map((row) => row.modality.discipline)),
+    ]
+    const needDelegate = plannedDisciplines.filter(
+      (discipline) => officialLimitsFor(disciplineConfigs, discipline).requiresDelegate
+    )
+    if (needDelegate.length > 0) {
+      const named = await tx.eventOfficial.findMany({
+        where: {
+          eventId: plan.event.id,
+          clubId: plan.clubId,
+          role: "DELEGATE",
+          discipline: { in: needDelegate },
+        },
+        select: { discipline: true },
+      })
+      const covered = new Set(named.map((row) => row.discipline))
+      for (const discipline of needDelegate) {
+        if (covered.has(discipline)) continue
+        issues.push(
+          issue(
+            "DELEGATE_REQUIRED",
+            `Nombra al delegado de ${disciplineLabel(discipline)} de tu club en «Delegado y entrenadores».`,
+            "EDIT_ENTRY"
+          )
+        )
+      }
+    }
   }
 
   // Una disciplina que cobra por deportista sin cuota positiva no puede vender.

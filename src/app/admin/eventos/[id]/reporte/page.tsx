@@ -367,6 +367,48 @@ export default async function ReporteEventoPage({
       ) : null}
 
       <section>
+        <h2 className={SECTION_TITLE}>Delegados y entrenadores</h2>
+        <p className={SECTION_HELP}>
+          Nombrados por cada club para su acreditación. No pagan inscripción y los
+          clubes pueden cambiarlos hasta el cierre.
+        </p>
+        <TableContainer aria-label="Delegados y entrenadores">
+          <Table>
+            <THead>
+              <TR>
+                <TH>Club</TH>
+                <TH>Disciplina</TH>
+                <TH>Rol</TH>
+                <TH>Nombre</TH>
+                <TH>Documento</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {report.officialRows.length === 0 ? (
+                <TR>
+                  <TD colSpan={5} className="py-8 text-center text-fdnda-muted">
+                    Ningún club nombró todavía a su delegado o entrenadores.
+                  </TD>
+                </TR>
+              ) : (
+                report.officialRows.map((row) => (
+                  <TR key={`${row.clubName}-${row.discipline}-${row.docType}-${row.docNumber}`}>
+                    <TD className="font-medium text-fdnda-ink">{row.clubName}</TD>
+                    <TD className="text-xs">{disciplineLabel(row.discipline)}</TD>
+                    <TD>{row.role}</TD>
+                    <TD>{row.name}</TD>
+                    <TD className="num">
+                      {row.docType} {row.docNumber}
+                    </TD>
+                  </TR>
+                ))
+              )}
+            </TBody>
+          </Table>
+        </TableContainer>
+      </section>
+
+      <section>
         <h2 className={SECTION_TITLE}>Órdenes de esta competencia</h2>
         <p className={SECTION_HELP}>
           El monto es solo la parte de cada orden que corresponde a esta competencia.

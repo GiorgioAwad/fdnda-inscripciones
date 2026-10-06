@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { clubEventWhere, getClubEventScope } from "@/lib/club-events"
 import { disciplineConfigFor } from "@/lib/event-pricing"
+import { listEventOfficials, officialLimitsFor } from "@/lib/event-officials"
 import { validateRegistrationPlan } from "@/lib/plan-validation"
 import { assertPlanAccess, explicitDisciplineAccess } from "@/lib/club-access"
 import { formatDateTimeLima } from "@/lib/utils"
@@ -21,6 +22,8 @@ import type {
   LockedEntryView,
   LockedPairView,
   ModalityView,
+  OfficialDisciplineView,
+  OfficialView,
   PlanView,
 } from "../types"
 
@@ -152,6 +155,35 @@ export default async function RegistrationPlanPage({
         ],
       })
     : null
+
+  // Delegado y entrenadores: por disciplina de la competencia que esta planilla
+  // (y este usuario) puede inscribir.
+  const planDisciplines = (plan.event?.disciplines ?? []).filter((discipline) =>
+    plan.disciplineScope
+      ? discipline === plan.disciplineScope
+      : access
+        ? access.includes(discipline)
+        : true
+  )
+  const officials = plan.eventId
+    ? await listEventOfficials({
+        eventId: plan.eventId,
+        clubId: user.clubId,
+        disciplines: planDisciplines,
+      })
+    : []
+  const officialDisciplines: OfficialDisciplineView[] = planDisciplines.map(
+    (discipline) => ({ discipline, ...officialLimitsFor(disciplineConfigs, discipline) })
+  )
+  const officialViews: OfficialView[] = officials.map((row) => ({
+    id: row.id,
+    discipline: row.discipline,
+    role: row.role,
+    firstNames: row.firstNames,
+    lastNames: row.lastNames,
+    docType: row.docType,
+    docNumber: row.docNumber,
+  }))
 
   const lockedEntries = plan.eventId
     ? await prisma.registration.findMany({
@@ -299,6 +331,8 @@ export default async function RegistrationPlanPage({
         lockedPairs={lockedPairs}
         hasAffiliations={scope.disciplines.length > 0}
         initialValidation={initialValidation}
+        officialDisciplines={officialDisciplines}
+        initialOfficials={officialViews}
       />
     </div>
   )

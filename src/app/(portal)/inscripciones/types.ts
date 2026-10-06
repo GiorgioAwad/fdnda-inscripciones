@@ -115,4 +115,23 @@ export interface PlanView {
   paysAthleteFee: boolean | null
 }
 
+/** Delegado o entrenador nombrado por el club en una disciplina del evento. */
+export interface OfficialView {
+  id: string
+  discipline: string
+  role: "DELEGATE" | "COACH"
+  firstNames: string
+  lastNames: string
+  docType: "DNI" | "CE" | "PASAPORTE" | "OTROS"
+  docNumber: string
+}
+
+/** Cuántos delegados y entrenadores admite cada disciplina de la planilla. */
+export interface OfficialDisciplineView {
+  discipline: string
+  maxDelegates: number
+  maxCoaches: number
+  requiresDelegate: boolean
+}
+
 export type SerializableValidation = PlanValidationResult

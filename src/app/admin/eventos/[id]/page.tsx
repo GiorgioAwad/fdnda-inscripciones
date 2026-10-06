@@ -9,6 +9,7 @@ import { formatDateOnly, formatDateTimeLima, formatMoney, plural } from "@/lib/u
 import { Badge } from "@/components/ui/badge"
 import { buttonClasses } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { officialLimitsFor, officialLimitsSummary } from "@/lib/event-officials"
 import { PageHeader } from "@/components/page-header"
 import { EditEventButton, type SeasonOption } from "../event-form-dialog"
 import { eventStatusBadge, isDeadlinePassed } from "../event-status"
@@ -101,6 +102,7 @@ export default async function EventoDetailPage({
   // nuevos. Sin fila vale el default histórico (cobra por formación + RANGE).
   const primaryDiscipline = event.disciplines[0] ?? ""
   const primaryConfig = disciplineConfigFor(event.disciplineConfigs, primaryDiscipline)
+  const primaryOfficials = officialLimitsFor(event.disciplineConfigs, primaryDiscipline)
   const disciplinesText = event.disciplines.map(disciplineLabel).join(" y ")
 
   const readiness = eventReadiness({
@@ -158,6 +160,7 @@ export default async function EventoDetailPage({
           ? "Categorías Sub-N u Open"
           : "Rango de años de nacimiento",
     },
+    { label: "Delegados y entrenadores", value: officialLimitsSummary(primaryOfficials) },
     ...(event.isLeague
       ? [{ label: "Formato", value: "Liga: precio por partido × partidos por plantel" }]
       : []),
@@ -216,6 +219,9 @@ export default async function EventoDetailPage({
                 isLevelChampionship: event.isLevelChampionship,
                 athleteFee: primaryConfig.athleteFee ?? "",
                 ageRuleMode: primaryConfig.ageRuleMode,
+                maxDelegates: primaryOfficials.maxDelegates,
+                maxCoaches: primaryOfficials.maxCoaches,
+                requiresDelegate: primaryOfficials.requiresDelegate,
                 hasLockedEntries,
               }}
               seasons={seasons}
