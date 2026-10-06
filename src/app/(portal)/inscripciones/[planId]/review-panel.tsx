@@ -44,7 +44,7 @@ export function ReviewPanel({
   athleteNameById: (athleteId: string) => string | null
   onPrint: () => void
   onCheckout: () => void
-  /** Vuelve a «Deportistas y pruebas», con ese deportista desplegado si se da. */
+  /** Vuelve a «Pruebas y deportistas», con la vista en ese deportista si se da. */
   onFix: (athleteId?: string) => void
   onRemoveAthlete: (athleteId: string) => void
   onReload: () => void

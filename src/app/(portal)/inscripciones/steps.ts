@@ -1,4 +1,4 @@
-// Pasos del flujo de inscripción: 1 competencia → 2 deportistas y pruebas →
+// Pasos del flujo de inscripción: 1 competencia → 2 pruebas y deportistas →
 // 3 revisión y pago.
 //
 // La columna RegistrationPlan.currentStep sigue guardando 1..4 del flujo

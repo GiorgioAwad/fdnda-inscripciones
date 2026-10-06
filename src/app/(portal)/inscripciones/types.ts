@@ -115,12 +115,4 @@ export interface PlanView {
   paysAthleteFee: boolean | null
 }
 
-export interface AthletePageView {
-  rows: AthleteView[]
-  page: number
-  pageSize: number
-  total: number
-  pageCount: number
-}
-
 export type SerializableValidation = PlanValidationResult
