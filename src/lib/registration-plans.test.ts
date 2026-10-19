@@ -16,6 +16,7 @@ const database = vi.hoisted(() => ({
     registrationPlanAthlete: {
       count: vi.fn(),
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
       createMany: vi.fn(),
       delete: vi.fn(),
@@ -181,6 +182,10 @@ describe("guardar formaciones y reservas", () => {
       currentStep: 2,
     })
     database.tx.eventModality.findFirst.mockResolvedValue({ id: "modality-1" })
+    database.tx.registrationPlanAthlete.findMany.mockResolvedValue([
+      { athleteId: "athlete-1" },
+      { athleteId: "athlete-2" },
+    ])
     database.tx.registrationPlanAthlete.count.mockResolvedValue(2)
     database.tx.registration.count.mockResolvedValue(0)
     database.tx.registrationAthlete.findFirst.mockResolvedValue(null)
@@ -233,6 +238,48 @@ describe("guardar formaciones y reservas", () => {
         },
       ],
     })
+  })
+
+  it("suma a la nómina a los integrantes elegidos del padrón que aún no estaban", async () => {
+    editablePlan()
+    database.tx.registrationPlanAthlete.findMany.mockResolvedValue([
+      { athleteId: "athlete-1" },
+    ])
+
+    const result = await saveRegistrationPlanEntry({
+      planId: "plan-1",
+      clubId: "club-1",
+      expectedRevision: 4,
+      entry: {
+        modalityId: "modality-1",
+        athleteIds: ["athlete-1", "athlete-2"],
+      },
+    })
+
+    expect(result).toMatchObject({ success: true })
+    expect(database.tx.registrationPlanAthlete.createMany).toHaveBeenCalledWith({
+      data: [{ planId: "plan-1", athleteId: "athlete-2" }],
+      skipDuplicates: true,
+    })
+  })
+
+  it("no toca la nómina si la formación choca con otra de la misma prueba", async () => {
+    editablePlan()
+    database.tx.athlete.count.mockResolvedValue(1)
+    database.tx.registrationPlanAthlete.findMany.mockResolvedValue([])
+    database.tx.registrationAthlete.findFirst.mockResolvedValue({
+      athlete: { firstNames: "Ana", lastNames: "Duplicada" },
+    })
+
+    const result = await saveRegistrationPlanEntry({
+      planId: "plan-1",
+      clubId: "club-1",
+      expectedRevision: 4,
+      entry: { modalityId: "modality-1", athleteIds: ["athlete-1"] },
+    })
+
+    expect(result).toMatchObject({ success: false, code: "DUPLICATE_ENTRY" })
+    expect(database.tx.registrationPlanAthlete.createMany).not.toHaveBeenCalled()
   })
 
   it("bloquea un deportista duplicado en otra formación de la misma prueba", async () => {

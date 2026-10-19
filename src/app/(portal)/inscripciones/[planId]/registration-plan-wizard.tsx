@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
   ArrowLeft,
@@ -31,20 +31,22 @@ import {
 } from "../actions"
 import { persistedStepFor, resumeStep, type StepNumber } from "../steps"
 import { usePlanAutosave } from "../use-plan-autosave"
-import { AthleteBoard } from "./athlete-board"
 import { ChargeSelectionCard } from "./charge-selection-card"
 import { EventStep } from "./event-step"
+import { ModalityBoard } from "./modality-board"
+import { OfficialsCard } from "./officials-card"
 import { athleteName, isDivingPair } from "./plan-labels"
 import { OrderPanel, ReviewPanel } from "./review-panel"
 import type { FormationDraft } from "./team-formation-panel"
 import type {
-  AthletePageView,
   AthleteView,
   EntryView,
   EventView,
   LockedEntryView,
   LockedPairView,
   ModalityView,
+  OfficialDisciplineView,
+  OfficialView,
   PlanView,
   SerializableValidation,
 } from "../types"
@@ -53,7 +55,7 @@ import type {
 // planilla tiene dos pasos visibles: armarla y revisarla para pagar. Una
 // planilla sin competencia solo muestra el selector de competencias.
 const STEPS = [
-  { number: 2 as const, label: "Deportistas y pruebas", icon: ClipboardCheck },
+  { number: 2 as const, label: "Pruebas y deportistas", icon: ClipboardCheck },
   { number: 3 as const, label: "Revisión y pago", icon: CheckCircle2 },
 ]
 
@@ -75,17 +77,19 @@ function priceRange(prices: number[], unit: string) {
 
 export function RegistrationPlanWizard({
   initialPlan,
-  athletePage,
+  athletes,
   events,
   modalities,
   lockedEntries,
   lockedPairs,
   hasAffiliations,
   initialValidation,
-  initialQuery,
+  officialDisciplines,
+  initialOfficials,
 }: {
   initialPlan: PlanView
-  athletePage: AthletePageView
+  /** Padrón del club en las disciplinas de la competencia. */
+  athletes: AthleteView[]
   events: EventView[]
   modalities: ModalityView[]
   lockedEntries: LockedEntryView[]
@@ -93,23 +97,18 @@ export function RegistrationPlanWizard({
   hasAffiliations: boolean
   /** Ya calculada en el servidor cuando un borrador reanuda en revisión. */
   initialValidation: SerializableValidation | null
-  initialQuery: string
+  officialDisciplines: OfficialDisciplineView[]
+  initialOfficials: OfficialView[]
 }) {
   const router = useRouter()
-  const [isNavigating, startTransition] = useTransition()
   const [plan, setPlan] = useState(initialPlan)
   const [step, setStep] = useState<StepNumber>(
     resumeStep(initialPlan.currentStep, Boolean(initialPlan.event))
   )
-  const [query, setQuery] = useState(initialQuery)
   const [roster, setRoster] = useState(initialPlan.roster)
   const [entries, setEntries] = useState(initialPlan.entries)
-  const [expandedAthleteId, setExpandedAthleteId] = useState<string | null>(
-    initialPlan.roster[0]?.id ?? null
-  )
-  const [teamModalityId, setTeamModalityId] = useState(
-    modalities.find((row) => row.maxAthletes > 1)?.id ?? ""
-  )
+  const [activeModalityId, setActiveModalityId] = useState(modalities[0]?.id ?? "")
+  const [officials, setOfficials] = useState(initialOfficials)
   const [editing, setEditing] = useState<FormationDraft | null>(null)
   const [validation, setValidation] = useState<SerializableValidation | null>(
     initialValidation
@@ -117,8 +116,9 @@ export function RegistrationPlanWizard({
   const [checkingOut, setCheckingOut] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const [removing, setRemoving] = useState<AthleteView | null>(null)
-  // Deportista al que hay que llevar la vista al volver desde la revisión.
-  const focusAthleteRef = useRef<string | null>(null)
+  // Elemento (deportista o sección) al que hay que llevar la vista al volver
+  // desde la revisión.
+  const focusTargetRef = useRef<string | null>(null)
   // null (nunca eligió) significa "paga los dos", así que arranca todo marcado.
   // OJO: `charges` es la fuente viva de la elección del club durante toda la
   // sesión. `initialPlan.paysEntry`/`paysAthleteFee` solo siembran este estado:
@@ -155,13 +155,21 @@ export function RegistrationPlanWizard({
   const visibleStep: StepNumber = plan.event ? (step === 3 ? 3 : 2) : 1
 
   useEffect(() => {
-    const athleteId = focusAthleteRef.current
-    if (!athleteId || visibleStep !== 2) return
-    focusAthleteRef.current = null
-    const row = document.getElementById(`athlete-${athleteId}`)
+    const targetId = focusTargetRef.current
+    if (!targetId || visibleStep !== 2) return
+    focusTargetRef.current = null
+    const row = document.getElementById(targetId)
     row?.scrollIntoView({ block: "center" })
-    row?.querySelector<HTMLButtonElement>("button[aria-expanded]")?.focus()
-  }, [visibleStep, expandedAthleteId])
+    row?.focus()
+  }, [visibleStep])
+
+  // Candidatos de cada prueba: el padrón, más quien ya esté en la planilla
+  // aunque no aparezca en él (dejó de practicar la disciplina, por ejemplo),
+  // para poder ver y desmarcar sus pruebas.
+  const athletePool = useMemo(() => {
+    const ids = new Set(athletes.map((row) => row.id))
+    return [...athletes, ...roster.filter((row) => !ids.has(row.id))]
+  }, [athletes, roster])
 
   // Pares (deportista, prueba) ya inscritos en otra orden: se pintan marcados y
   // bloqueados, con su estado, en vez de dejar que el club choque con
@@ -188,7 +196,7 @@ export function RegistrationPlanWizard({
   // validación: la validación solo existe en la revisión, y mientras se arma la
   // planilla el monto salía en S/ 0.00. Donde el club puede elegir, solo cuenta
   // si la eligió pagar (misma regla que `appliedCharges` en event-pricing.ts).
-  const athleteFeesFor = useMemo(() => {
+  const athleteFees = useMemo(() => {
     const feeByDiscipline = new Map<string, number>()
     for (const row of modalities) {
       if (!row.chargesAthleteFee || row.athleteFee === null) continue
@@ -196,10 +204,10 @@ export function RegistrationPlanWizard({
       if (offersChoice && !charges.paysAthleteFee) continue
       feeByDiscipline.set(row.discipline, row.athleteFee)
     }
-    return (athlete: AthleteView) =>
-      [...feeByDiscipline]
-        .filter(([discipline]) => athlete.disciplines.includes(discipline))
-        .map(([discipline, amount]) => ({ label: disciplineLabel(discipline), amount }))
+    return [...feeByDiscipline].map(([discipline, amount]) => ({
+      label: disciplineLabel(discipline),
+      amount,
+    }))
   }, [modalities, charges.paysAthleteFee])
 
   const entryPriceNote = (modality: ModalityView) => {
@@ -286,11 +294,9 @@ export function RegistrationPlanWizard({
     if (next === 3 && !readOnly) void runValidation()
   }
 
-  function fixInPlan(athleteId?: string) {
-    if (athleteId) {
-      setExpandedAthleteId(athleteId)
-      focusAthleteRef.current = athleteId
-    }
+  function fixInPlan(athleteId?: string, section?: "officials") {
+    if (section === "officials") focusTargetRef.current = "event-officials"
+    else if (athleteId) focusTargetRef.current = `athlete-${athleteId}`
     goToStep(2)
   }
 
@@ -303,24 +309,6 @@ export function RegistrationPlanWizard({
     } else if (result.existingPlanId) {
       window.location.assign(`/inscripciones/${result.existingPlanId}`)
     }
-  }
-
-  function addAthlete(athlete: AthleteView) {
-    if (readOnly || blockedMessage) return
-    setRoster((current) => [...current, athlete])
-    setExpandedAthleteId(athlete.id)
-    void enqueue((expectedRevision) =>
-      setPlanAthleteAction({
-        planId: plan.id,
-        expectedRevision,
-        athleteId: athlete.id,
-        selected: true,
-      })
-    ).then((result) => {
-      if (!result.success) {
-        setRoster((current) => current.filter((row) => row.id !== athlete.id))
-      }
-    })
   }
 
   function requestRemoveAthlete(athlete: AthleteView) {
@@ -443,11 +431,17 @@ export function RegistrationPlanWizard({
       )
     }
     // Marcar una prueba también suma al deportista a la planilla en el servidor.
-    setRoster((current) =>
-      current.some((row) => row.id === athleteId)
-        ? current
-        : [...current, ...athletePage.rows.filter((row) => row.id === athleteId)]
-    )
+    addToRoster([athleteId])
+  }
+
+  function addToRoster(athleteIds: string[]) {
+    setRoster((current) => {
+      const present = new Set(current.map((row) => row.id))
+      const added = athletePool.filter(
+        (row) => athleteIds.includes(row.id) && !present.has(row.id)
+      )
+      return added.length > 0 ? [...current, ...added] : current
+    })
   }
 
   function upsertLocalEntry(draft: FormationDraft, registrationId: string) {
@@ -486,6 +480,8 @@ export function RegistrationPlanWizard({
     }
     const savedId = result.registrationId!
     upsertLocalEntry(draft, savedId)
+    // El servidor suma a la planilla a los integrantes que aún no estaban.
+    addToRoster(draft.athleteIds)
     setEditing((current) =>
       current && current.modalityId === draft.modalityId
         ? { ...current, entryId: savedId }
@@ -495,7 +491,7 @@ export function RegistrationPlanWizard({
 
   // Una formación nueva no se guarda hasta que tiene su primer integrante.
   function startFormation() {
-    setEditing({ modalityId: teamModalityId, athleteIds: [], reserveIds: [] })
+    setEditing({ modalityId: activeModalityId, athleteIds: [], reserveIds: [] })
   }
 
   function changeFormation(draft: FormationDraft) {
@@ -561,14 +557,6 @@ export function RegistrationPlanWizard({
     } finally {
       setCheckingOut(false)
     }
-  }
-
-  const pageHref = (page: number) => {
-    const params = new URLSearchParams()
-    if (initialQuery) params.set("q", initialQuery)
-    if (page > 1) params.set("page", String(page))
-    const suffix = params.toString()
-    return `/inscripciones/${plan.id}${suffix ? `?${suffix}` : ""}`
   }
 
   const athleteNameById = (athleteId: string) => {
@@ -686,24 +674,19 @@ export function RegistrationPlanWizard({
 
       {visibleStep === 2 ? (
         <>
-          <AthleteBoard
-            athletePage={athletePage}
+          <ModalityBoard
+            athletes={athletePool}
             roster={roster}
             entries={entries}
             modalities={modalities}
             lockedPairs={lockedByAthlete}
-            athleteFeesFor={athleteFeesFor}
+            athleteFees={athleteFees}
             entryPriceNote={entryPriceNote}
-            expandedAthleteId={expandedAthleteId}
-            teamModalityId={teamModalityId}
+            activeModalityId={activeModalityId}
             editing={editing}
             readOnly={readOnly}
             blocked={blocked}
             formationSaving={savingCount > 0 || blocked}
-            query={query}
-            searchedQuery={initialQuery.trim()}
-            isNavigating={isNavigating}
-            pageHref={pageHref}
             chargeSelection={
               choiceModalities.length > 0 ? (
                 <ChargeSelectionCard
@@ -719,37 +702,31 @@ export function RegistrationPlanWizard({
                 />
               ) : null
             }
-            onQueryChange={setQuery}
-            onSearch={() => {
-              void awaitSaved()
-                .then(() => {
-                  const params = new URLSearchParams()
-                  if (query.trim()) params.set("q", query.trim())
-                  startTransition(() => router.push(`/inscripciones/${plan.id}?${params}`))
-                })
-                .catch(() => {
-                  // Bloqueada: el aviso de arriba pide recargar.
-                })
+            onSelectModality={(modalityId) => {
+              setActiveModalityId(modalityId)
+              setEditing(null)
             }}
-            onAddAthlete={addAthlete}
-            onRemoveAthlete={requestRemoveAthlete}
-            onToggleExpand={(athleteId) =>
-              setExpandedAthleteId((current) =>
-                current === athleteId ? null : athleteId
-              )
-            }
             onToggleModality={(athleteId, modalityId, selected) =>
               void toggleModality(athleteId, modalityId, selected)
             }
-            onSelectTeamModality={(modalityId) => {
-              setTeamModalityId(modalityId)
-              setEditing(null)
-            }}
+            onRemoveAthlete={requestRemoveAthlete}
             onStartFormation={startFormation}
             onEditFormation={setEditing}
             onChangeFormation={changeFormation}
             onDeleteFormation={deleteFormation}
             onCloseFormation={closeFormation}
+          />
+          <OfficialsCard
+            planId={plan.id}
+            disciplines={officialDisciplines}
+            officials={officials}
+            editable={plan.closedReason === null && plan.status !== "ABANDONED"}
+            closedNote={
+              plan.closedReason
+                ? "Las inscripciones ya cerraron: ya no se pueden cambiar."
+                : null
+            }
+            onChange={setOfficials}
           />
           <div className="flex flex-col gap-3 rounded-surface border border-fdnda-border bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm">
@@ -802,8 +779,8 @@ export function RegistrationPlanWizard({
           )}
           <div className="flex justify-start">
             <Button variant="outline" onClick={() => goToStep(2)}>
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Volver a deportistas y
-              pruebas
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Volver a pruebas y
+              deportistas
             </Button>
           </div>
         </>

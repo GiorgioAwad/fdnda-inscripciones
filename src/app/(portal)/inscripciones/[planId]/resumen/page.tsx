@@ -12,7 +12,13 @@ import { prisma } from "@/lib/prisma"
 import { getRegistrationPlan } from "@/lib/registration-plans"
 import { registrationOrderItemView } from "@/lib/registration-snapshots"
 import { validateRegistrationPlan } from "@/lib/plan-validation"
-import { assertPlanAccess } from "@/lib/club-access"
+import { assertPlanAccess, explicitDisciplineAccess } from "@/lib/club-access"
+import {
+  DOC_TYPE_LABELS,
+  listEventOfficials,
+  officialName,
+  OFFICIAL_ROLE_LABELS,
+} from "@/lib/event-officials"
 import { formatDateOnly, formatMoney } from "@/lib/utils"
 import { PrintButton } from "@/components/print-button"
 
@@ -78,6 +84,22 @@ export default async function PrintablePlanSummary({
           },
         },
         orderBy: { order: { createdAt: "asc" } },
+      })
+    : []
+  // Delegado y entrenadores del club en las disciplinas de esta planilla. Van
+  // por club y competencia, así que reflejan lo vigente aunque haya orden.
+  const access = explicitDisciplineAccess(user)
+  const officials = plan.event
+    ? await listEventOfficials({
+        eventId: plan.event.id,
+        clubId: user.clubId,
+        disciplines: plan.event.disciplines.filter((discipline) =>
+          plan.disciplineScope
+            ? discipline === plan.disciplineScope
+            : access
+              ? access.includes(discipline)
+              : true
+        ),
       })
     : []
   const currentRegistrationIds = new Set(plan.registrations.map((entry) => entry.id))
@@ -205,6 +227,29 @@ export default async function PrintablePlanSummary({
               ))}
             </div>
           </section>
+
+          {officials.length > 0 ? (
+            <section className="break-inside-avoid">
+              <h2 className="mb-1 font-heading text-lg font-bold text-fdnda-navy">Delegado y entrenadores</h2>
+              <p className="mb-3 text-sm text-fdnda-muted">No pagan inscripción. Se registran para su acreditación.</p>
+              <ul className="divide-y divide-fdnda-border rounded-control border border-fdnda-border">
+                {officials.map((official) => (
+                  <li key={official.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 text-sm">
+                    <span className="w-28 shrink-0 font-semibold text-fdnda-navy">
+                      {OFFICIAL_ROLE_LABELS[official.role]}
+                    </span>
+                    <span className="min-w-0 flex-1 text-fdnda-ink">{officialName(official)}</span>
+                    <span className="num text-fdnda-muted">
+                      {DOC_TYPE_LABELS[official.docType]} {official.docNumber}
+                    </span>
+                    {new Set(officials.map((row) => row.discipline)).size > 1 ? (
+                      <span className="text-xs text-fdnda-muted">{disciplineLabel(official.discipline)}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           {previousFrozen.length > 0 ? (
             <section>

@@ -73,6 +73,14 @@ export async function GET(
       CUOTA: row.fee,
       ESTADO: row.status,
     })),
+    officialRows: report.officialRows.map((row) => ({
+      CLUB: row.clubName,
+      DISCIPLINA: row.discipline,
+      ROL: row.role,
+      NOMBRE: row.name,
+      TIPO_DOC: row.docType,
+      DOCUMENTO: row.docNumber,
+    })),
     orderRows: report.orderRows.map((order) => ({
       CODIGO: order.code,
       INCLUYE_OTRAS_COMPETENCIAS: order.isLegacy ? "SÍ" : "",

@@ -24,6 +24,7 @@ import {
   disciplineConfigFor,
   isAgeRuleConfigurationValid,
 } from "@/lib/event-pricing"
+import { MAX_COACHES_LIMIT, MAX_DELEGATES_LIMIT } from "@/lib/event-officials"
 import { eventReadiness, readinessModalityFrom } from "@/lib/event-readiness"
 import { leagueEntryPrice, parseLeagueTeamCounts } from "@/lib/league"
 import { buildModalityRows } from "@/lib/modality-rows"
@@ -84,6 +85,17 @@ const eventSchema = z.object({
   isLevelChampionship: z.boolean(),
   athleteFee: z.string().optional(),
   ageRuleMode: z.enum(["RANGE", "MAX_AGE_ONLY"]),
+  maxDelegates: z.coerce
+    .number({ error: "Indica cuántos delegados puede nombrar cada club." })
+    .int("Los delegados por club deben ser un número entero.")
+    .min(0, "Los delegados por club no pueden ser negativos.")
+    .max(MAX_DELEGATES_LIMIT, `Cada club puede nombrar como máximo ${MAX_DELEGATES_LIMIT} delegados.`),
+  maxCoaches: z.coerce
+    .number({ error: "Indica cuántos entrenadores puede nombrar cada club." })
+    .int("Los entrenadores por club deben ser un número entero.")
+    .min(0, "Los entrenadores por club no pueden ser negativos.")
+    .max(MAX_COACHES_LIMIT, `Cada club puede nombrar como máximo ${MAX_COACHES_LIMIT} entrenadores.`),
+  requiresDelegate: z.boolean(),
   venue: z.string().trim().max(120, "La sede admite hasta 120 caracteres.").optional(),
   city: z.string().trim().max(60, "La ciudad admite hasta 60 caracteres.").optional(),
   startDate: z.string(),
@@ -117,6 +129,11 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     isLevelChampionship: formData.get("isLevelChampionship") === "on",
     athleteFee: String(formData.get("athleteFee") ?? ""),
     ageRuleMode: String(formData.get("ageRuleMode") ?? "RANGE"),
+    // Un formulario viejo (otra pestaña abierta antes del cambio) no los manda:
+    // se conservan los defaults en vez de fallar.
+    maxDelegates: String(formData.get("maxDelegates") ?? "1") || "1",
+    maxCoaches: String(formData.get("maxCoaches") ?? "3") || "3",
+    requiresDelegate: formData.get("requiresDelegate") === "on",
     venue: String(formData.get("venue") ?? ""),
     city: String(formData.get("city") ?? ""),
     startDate: String(formData.get("startDate") ?? ""),
@@ -321,6 +338,14 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       : "PER_ENTRY") as PricingMode,
   }
 
+  // Delegados y entrenadores no tocan cobros: van aparte de `config` para que
+  // la guarda de abajo no los congele cuando la disciplina ya vendió.
+  const officials = {
+    maxDelegates: parsed.data.maxDelegates,
+    maxCoaches: parsed.data.maxCoaches,
+    requiresDelegate: parsed.data.maxDelegates > 0 && parsed.data.requiresDelegate,
+  }
+
   // Cambiar cómo cobra o cómo mide las edades una disciplina que ya vendió
   // inscripciones alteraría lo que un club creyó comprar.
   if (lockedDisciplines.has(discipline)) {
@@ -352,8 +377,8 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         await tx.event.update({ where: { id: eventId }, data })
         await tx.eventDisciplineConfig.upsert({
           where: { eventId_discipline: { eventId, discipline } },
-          create: { eventId, discipline, ...config },
-          update: config,
+          create: { eventId, discipline, ...config, ...officials },
+          update: { ...config, ...officials },
         })
       })
       revalidatePath(`/admin/eventos/${eventId}`)
@@ -522,7 +547,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         ...data,
         disciplines: [discipline],
         slug,
-        disciplineConfigs: { create: [{ discipline, ...config }] },
+        disciplineConfigs: { create: [{ discipline, ...config, ...officials }] },
         ...(modalityRows.length > 0
           ? { modalities: { createMany: { data: modalityRows } } }
           : {}),

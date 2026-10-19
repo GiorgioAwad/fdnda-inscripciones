@@ -154,8 +154,8 @@ export const GUIDE_STEPS: Record<GuideRole, GuideStep[]> = {
       title: "Inscribe en competencias",
       body: (
         <>
-          Cada competencia tiene su planilla: agregas deportistas, marcas sus
-          pruebas y los cambios se guardan solos. Antes de pagar revisamos
+          Cada competencia tiene su planilla: eliges una prueba, marcas a tus
+          deportistas que cumplen sus condiciones y los cambios se guardan solos. Antes de pagar revisamos
           afiliaciones, edades y cupos. Lo pagado ya no se modifica.
         </>
       ),
@@ -164,7 +164,7 @@ export const GUIDE_STEPS: Record<GuideRole, GuideStep[]> = {
         <MiniCard icon={ClipboardList} title="Planilla" note="Una por competencia">
           <ol className="mt-3 grid grid-cols-2 gap-1.5 text-[0.6875rem] font-semibold">
             <li className="rounded-chip bg-fdnda-navy px-2 py-1.5 text-white">
-              1 · Deportistas y pruebas
+              1 · Pruebas y deportistas
             </li>
             <li className="rounded-chip bg-fdnda-surface px-2 py-1.5 text-fdnda-navy ring-1 ring-inset ring-fdnda-border">
               2 · Revisión y pago

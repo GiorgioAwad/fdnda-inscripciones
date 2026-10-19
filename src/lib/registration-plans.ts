@@ -841,20 +841,12 @@ export async function saveRegistrationPlanEntry(input: {
         }
       }
 
-      if (athleteIds.length > 0) {
-        const rosterCount = await tx.registrationPlanAthlete.count({
-          where: { planId: plan.id, athleteId: { in: athleteIds } },
-        })
-        if (
-          rosterCount !== athleteIds.length ||
-          !(await validateOwnedAthletes(tx, plan.clubId, athleteIds))
-        ) {
-          return {
-            success: false,
-            code: "INVALID_ATHLETES",
-            error:
-              "Uno o más deportistas no están disponibles en la nómina de esta planilla.",
-          }
+      if (!(await validateOwnedAthletes(tx, plan.clubId, athleteIds))) {
+        return {
+          success: false,
+          code: "INVALID_ATHLETES",
+          error:
+            "Uno o más deportistas ya no están en el padrón de tu club. Recarga la planilla.",
         }
       }
 
@@ -911,6 +903,32 @@ export async function saveRegistrationPlanEntry(input: {
             code: "DUPLICATE_ENTRY",
             error: `${duplicate.athlete.lastNames}, ${duplicate.athlete.firstNames} ya está en otra formación de esta prueba.`,
           }
+        }
+
+        // La nómina se completa sola, igual que al marcar una prueba
+        // individual: el club arma la formación eligiendo del padrón, sin
+        // agregar antes a cada integrante.
+        const inRoster = await tx.registrationPlanAthlete.findMany({
+          where: { planId: plan.id, athleteId: { in: athleteIds } },
+          select: { athleteId: true },
+        })
+        const present = new Set(inRoster.map((row) => row.athleteId))
+        const missing = athleteIds.filter((athleteId) => !present.has(athleteId))
+        if (missing.length > 0) {
+          const rosterCount = await tx.registrationPlanAthlete.count({
+            where: { planId: plan.id },
+          })
+          if (rosterCount + missing.length > MAX_ROSTER_ATHLETES) {
+            return {
+              success: false,
+              code: "INVALID_ATHLETES",
+              error: `Una planilla admite como máximo ${MAX_ROSTER_ATHLETES} deportistas.`,
+            }
+          }
+          await tx.registrationPlanAthlete.createMany({
+            data: missing.map((athleteId) => ({ planId: plan.id, athleteId })),
+            skipDuplicates: true,
+          })
         }
       }
 
@@ -1421,6 +1439,28 @@ export async function athleteDisciplinesCoveringEvent(input: {
     covered.set(row.athleteId, [...(covered.get(row.athleteId) ?? []), row.discipline])
   }
   return covered
+}
+
+/**
+ * Padrón del club que puede competir en una planilla: deportistas activos que
+ * practican al menos una de las disciplinas con pruebas en la competencia. La
+ * planilla se arma eligiendo una prueba y marcando a sus elegibles, así que se
+ * carga entero en lugar de buscar deportista por deportista.
+ */
+export async function listClubAthletesForDisciplines(input: {
+  clubId: string
+  disciplines: readonly Discipline[]
+}) {
+  if (input.disciplines.length === 0) return []
+  return prisma.athlete.findMany({
+    where: {
+      clubId: input.clubId,
+      isActive: true,
+      disciplines: { hasSome: [...input.disciplines] },
+    },
+    orderBy: [{ lastNames: "asc" }, { firstNames: "asc" }, { id: "asc" }],
+    take: MAX_ROSTER_ATHLETES,
+  })
 }
 
 export async function searchClubAthletesForPlan(input: {

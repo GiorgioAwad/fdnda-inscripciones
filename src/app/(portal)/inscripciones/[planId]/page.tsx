@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { clubEventWhere, getClubEventScope } from "@/lib/club-events"
 import { disciplineConfigFor } from "@/lib/event-pricing"
+import { listEventOfficials, officialLimitsFor } from "@/lib/event-officials"
 import { validateRegistrationPlan } from "@/lib/plan-validation"
 import { assertPlanAccess, explicitDisciplineAccess } from "@/lib/club-access"
 import { formatDateTimeLima } from "@/lib/utils"
@@ -12,16 +13,17 @@ import { resumeStep } from "../steps"
 import {
   athleteDisciplinesCoveringEvent,
   getRegistrationPlan,
-  searchClubAthletesForPlan,
+  listClubAthletesForDisciplines,
 } from "@/lib/registration-plans"
 import { RegistrationPlanWizard } from "./registration-plan-wizard"
 import type {
-  AthletePageView,
   AthleteView,
   EventView,
   LockedEntryView,
   LockedPairView,
   ModalityView,
+  OfficialDisciplineView,
+  OfficialView,
   PlanView,
 } from "../types"
 
@@ -82,33 +84,22 @@ function eventView(event: {
 
 export default async function RegistrationPlanPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ planId: string }>
-  searchParams: Promise<{ q?: string; page?: string }>
 }) {
   const user = await getCurrentUser()
   if (!user) redirect("/login")
   if (!user.clubId) redirect("/admin")
-  const [{ planId }, filters] = await Promise.all([params, searchParams])
+  const { planId } = await params
   try {
     await assertPlanAccess({ ...user, clubId: user.clubId }, planId)
   } catch {
     notFound()
   }
   const access = explicitDisciplineAccess(user)
-  const pageNumber = Math.max(1, Number.parseInt(filters.page ?? "1", 10) || 1)
 
-  const [plan, athletePage, scope] = await Promise.all([
+  const [plan, scope] = await Promise.all([
     getRegistrationPlan({ planId, clubId: user.clubId }),
-    searchClubAthletesForPlan({
-      clubId: user.clubId,
-      planId,
-      query: filters.q,
-      page: pageNumber,
-      pageSize: 30,
-      disciplineAccess: access,
-    }),
     getClubEventScope(user.clubId, access),
   ])
   if (!plan) notFound()
@@ -133,7 +124,7 @@ export default async function RegistrationPlanPage({
           orderBy: [{ startDate: "asc" }, { name: "asc" }],
         })
 
-  const [modalities, disciplineConfigs, covered] = plan.eventId
+  const [modalities, disciplineConfigs] = plan.eventId
     ? await Promise.all([
         prisma.eventModality.findMany({
           where: { eventId: plan.eventId, isActive: true, ...planDisciplineWhere },
@@ -142,18 +133,57 @@ export default async function RegistrationPlanPage({
         prisma.eventDisciplineConfig.findMany({
           where: { eventId: plan.eventId, ...planDisciplineWhere },
         }),
-        // Afiliación de cada deportista visible (buscador y planilla), con el
-        // mismo criterio que la revisión: así el club la ve antes de marcar.
-        athleteDisciplinesCoveringEvent({
-          clubId: user.clubId,
-          eventId: plan.eventId,
-          athleteIds: [
-            ...athletePage.rows.map((row) => row.id),
-            ...plan.athletes.map((row) => row.athleteId),
-          ],
-        }),
       ])
-    : [[], [], null]
+    : [[], []]
+
+  // La planilla se arma por prueba: para cada una se listan los elegibles del
+  // padrón, así que se carga el padrón de las disciplinas que tienen pruebas
+  // (ya recortadas al alcance del usuario por planDisciplineWhere).
+  const padron = await listClubAthletesForDisciplines({
+    clubId: user.clubId,
+    disciplines: [...new Set(modalities.map((row) => row.discipline))],
+  })
+  // Afiliación de cada deportista visible (padrón y planilla), con el mismo
+  // criterio que la revisión: así el club la ve antes de marcar.
+  const covered = plan.eventId
+    ? await athleteDisciplinesCoveringEvent({
+        clubId: user.clubId,
+        eventId: plan.eventId,
+        athleteIds: [
+          ...padron.map((row) => row.id),
+          ...plan.athletes.map((row) => row.athleteId),
+        ],
+      })
+    : null
+
+  // Delegado y entrenadores: por disciplina de la competencia que esta planilla
+  // (y este usuario) puede inscribir.
+  const planDisciplines = (plan.event?.disciplines ?? []).filter((discipline) =>
+    plan.disciplineScope
+      ? discipline === plan.disciplineScope
+      : access
+        ? access.includes(discipline)
+        : true
+  )
+  const officials = plan.eventId
+    ? await listEventOfficials({
+        eventId: plan.eventId,
+        clubId: user.clubId,
+        disciplines: planDisciplines,
+      })
+    : []
+  const officialDisciplines: OfficialDisciplineView[] = planDisciplines.map(
+    (discipline) => ({ discipline, ...officialLimitsFor(disciplineConfigs, discipline) })
+  )
+  const officialViews: OfficialView[] = officials.map((row) => ({
+    id: row.id,
+    discipline: row.discipline,
+    role: row.role,
+    firstNames: row.firstNames,
+    lastNames: row.lastNames,
+    docType: row.docType,
+    docNumber: row.docNumber,
+  }))
 
   const lockedEntries = plan.eventId
     ? await prisma.registration.findMany({
@@ -210,13 +240,6 @@ export default async function RegistrationPlanPage({
     closedReason,
   }
 
-  const athletePageView: AthletePageView = {
-    rows: athletePage.rows.map((row) => athleteView(row, covered)),
-    page: athletePage.page,
-    pageSize: athletePage.pageSize,
-    total: athletePage.total,
-    pageCount: athletePage.pageCount,
-  }
   const modalityViews: ModalityView[] = modalities.map((modality) => {
     const config = disciplineConfigFor(disciplineConfigs, modality.discipline)
     return {
@@ -301,14 +324,15 @@ export default async function RegistrationPlanPage({
       />
       <RegistrationPlanWizard
         initialPlan={view}
-        athletePage={athletePageView}
+        athletes={padron.map((row) => athleteView(row, covered))}
         events={events.map(eventView)}
         modalities={modalityViews}
         lockedEntries={lockedEntryViews}
         lockedPairs={lockedPairs}
         hasAffiliations={scope.disciplines.length > 0}
         initialValidation={initialValidation}
-        initialQuery={filters.q ?? ""}
+        officialDisciplines={officialDisciplines}
+        initialOfficials={officialViews}
       />
     </div>
   )

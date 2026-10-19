@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 
-// Flujo de dos pasos: una pantalla donde se agregan deportistas y se marcan sus
-// pruebas, y la revisión con el pago. La competencia se elige antes, desde su
+// Flujo de dos pasos: una pantalla donde se elige cada prueba y se marcan los
+// deportistas elegibles del padrón, y la revisión con el pago. La competencia se elige antes, desde su
 // tarjeta, o en un paso previo si la planilla aún no la tiene.
 
 // Solo aparece con hora cuando al menos un cambio llegó al servidor.
@@ -42,19 +42,20 @@ async function chooseCompetition(page: Page, eventName = "Competencia E2E") {
   await expect(page.getByRole("heading", { name: /Arma tu planilla/ })).toBeVisible()
 }
 
-async function addAthlete(page: Page, document: string) {
-  await page.getByPlaceholder("Nombre o documento").fill(document)
-  await page.getByRole("button", { name: "Buscar" }).click()
+async function selectModality(page: Page, modalityName: string) {
   await page
-    .getByRole("listitem")
-    .filter({ hasText: document })
-    .getByRole("button", { name: /Agregar/ })
+    .getByRole("navigation", { name: "Pruebas de la competencia" })
+    .getByRole("button", { name: new RegExp(modalityName) })
     .click()
-  await expectSaved(page)
+  await expect(
+    page.getByRole("heading", { name: new RegExp(modalityName), level: 3 })
+  ).toBeVisible()
 }
 
-async function checkModality(page: Page, modalityName: string) {
-  await page.getByRole("checkbox", { name: new RegExp(modalityName) }).check()
+// Marca al deportista (por documento) en la prueba: así entra a la planilla.
+async function enterAthlete(page: Page, modalityName: string, document: string) {
+  await selectModality(page, modalityName)
+  await page.getByRole("checkbox", { name: new RegExp(document) }).check()
   await expectSaved(page)
 }
 
@@ -113,8 +114,7 @@ test("admite y marca el ascenso explícito en natación artística", async ({
   await login(page, "e2e-upgrade", "E2eUpgrade123!")
   await page.goto("/inscripciones/nueva")
   await chooseCompetition(page, "Artística E2E Ascenso")
-  await addAthlete(page, "88000005")
-  await checkModality(page, "Solo E2E ascenso")
+  await enterAthlete(page, "Solo E2E ascenso", "88000005")
   await goToReview(page)
 
   await expect(page.getByText(/Planilla lista para pagar/)).toBeVisible()
@@ -139,14 +139,22 @@ test("flujo completo, recarga, pago y planilla suplementaria", async ({
   await login(page, "e2e-club", "E2eClub123!")
   await page.goto("/inscripciones/nueva")
   await chooseCompetition(page)
-  await addAthlete(page, "88000001")
-  await checkModality(page, "Trampolin E2E")
+  await enterAthlete(page, "Trampolin E2E", "88000001")
+
+  // El delegado no paga: se guarda aparte de la planilla, al instante.
+  const officials = page.getByRole("region", { name: "Delegado y entrenadores" })
+  await officials.getByRole("button", { name: "Agregar delegado" }).click()
+  await officials.getByLabel("Apellidos").fill("Delegada")
+  await officials.getByLabel("Nombres").fill("Rosa")
+  await officials.getByLabel(/N.º de documento/).fill("70000001")
+  await officials.getByRole("button", { name: "Guardar" }).click()
+  await expect(officials.getByText("Delegada, Rosa")).toBeVisible()
 
   // El borrador sobrevive a una recarga con la prueba ya marcada.
   await page.reload()
-  await expect(
-    page.getByRole("checkbox", { name: /Trampolin E2E/ })
-  ).toBeChecked()
+  await selectModality(page, "Trampolin E2E")
+  await expect(page.getByRole("checkbox", { name: /88000001/ })).toBeChecked()
+  await expect(page.getByText("Delegada, Rosa")).toBeVisible()
 
   await goToReview(page)
   await expect(page.getByText("Planilla lista para pagar")).toBeVisible()
@@ -160,8 +168,11 @@ test("flujo completo, recarga, pago y planilla suplementaria", async ({
   // Planilla suplementaria: la inscripción ya pagada aparece bloqueada.
   await page.goto("/inscripciones/nueva")
   await chooseCompetition(page)
-  await addAthlete(page, "88000002")
-  await checkModality(page, "Trampolin E2E")
+  await enterAthlete(page, "Trampolin E2E", "88000002")
+  // La inscripción ya pagada se ve marcada y bloqueada en la misma prueba.
+  const paid = page.getByRole("checkbox", { name: /88000001/ })
+  await expect(paid).toBeChecked()
+  await expect(paid).toBeDisabled()
   await goToReview(page)
   await expect(page.getByText("Planilla lista para pagar")).toBeVisible()
   await expect(page.getByText(/Inscripciones previas de esta competencia/)).toBeVisible()
@@ -175,8 +186,7 @@ test("bloquea el pago cuando falta afiliacion del deportista", async ({
   await login(page, "e2e-missing", "E2eMissing123!")
   await page.goto("/inscripciones/nueva")
   await chooseCompetition(page)
-  await addAthlete(page, "88000003")
-  await checkModality(page, "Trampolin E2E")
+  await enterAthlete(page, "Trampolin E2E", "88000003")
   await goToReview(page)
   await expect(page.getByText(/no tiene una afiliaci.n de Clavados/)).toBeVisible()
   await expect(page.getByRole("button", { name: "Crear orden y pagar" })).toBeDisabled()
@@ -190,16 +200,22 @@ test("conserva una pareja de clavados incompleta y bloquea el checkout", async (
   await login(page, "e2e-draft", "E2eDraft123!")
   await page.goto("/inscripciones/nueva")
   await chooseCompetition(page)
-  await addAthlete(page, "88000006")
+  await selectModality(page, "Sincronizados E2E")
 
   // «Armar pareja» no guarda una pareja vacía: se guarda con el
-  // primer integrante, y queda incompleta porque la prueba pide dos.
+  // primer integrante, y queda incompleta porque la prueba pide dos. Elegirla
+  // del padrón la suma a la planilla sin agregarla antes.
   await page.getByRole("button", { name: "Armar pareja" }).click()
   await page.getByRole("checkbox", { name: /Valeria/ }).check()
   await expectSaved(page)
   await page.getByRole("button", { name: /Cerrar edici.n/ }).click()
 
+  await expect(
+    page.getByRole("button", { name: /Quitar a .*Valeria.* de la planilla/ })
+  ).toBeVisible()
+
   await page.reload()
+  await selectModality(page, "Sincronizados E2E")
   await expect(page.getByText("Falta 1 integrante", { exact: true })).toBeVisible()
   await goToReview(page)
   await expect(page.getByText(/Esta prueba requiere 2 integrantes/)).toBeVisible()
@@ -211,8 +227,7 @@ test("un fallo de red no sobrescribe el borrador", async ({ page, isMobile }) =>
   await login(page, "e2e-network", "E2eNetwork123!")
   await page.goto("/inscripciones/nueva")
   await chooseCompetition(page)
-  await page.getByPlaceholder("Nombre o documento").fill("88000004")
-  await page.getByRole("button", { name: "Buscar" }).click()
+  await selectModality(page, "Trampolin E2E")
 
   await page.route(
     "**/*",
@@ -226,23 +241,14 @@ test("un fallo de red no sobrescribe el borrador", async ({ page, isMobile }) =>
     },
     { times: 1 }
   )
-  await page
-    .getByRole("listitem")
-    .filter({ hasText: "88000004" })
-    .getByRole("button", { name: /Agregar/ })
-    .click()
+  await page.getByRole("checkbox", { name: /88000004/ }).check()
   await expect(page.getByRole("button", { name: "Recargar planilla" })).toBeVisible()
   await page.unroute("**/*")
   await page.reload()
-  await page.getByPlaceholder("Nombre o documento").fill("88000004")
-  await page.getByRole("button", { name: "Buscar" }).click()
+  await selectModality(page, "Trampolin E2E")
   // El deportista sigue fuera de la planilla: el fallo no dejó basura.
-  await expect(
-    page
-      .getByRole("listitem")
-      .filter({ hasText: "88000004" })
-      .getByRole("button", { name: /Agregar/ })
-  ).toBeVisible()
+  await expect(page.getByRole("checkbox", { name: /88000004/ })).not.toBeChecked()
+  await expect(page.getByText(/Elige una prueba arriba y marca a tus deportistas/)).toBeVisible()
 })
 
 test("navegacion movil y foco de teclado", async ({ page, isMobile }) => {
