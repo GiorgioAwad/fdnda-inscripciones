@@ -75,7 +75,7 @@ test("obliga a reemplazar una credencial temporal antes de entrar", async ({
   await page.getByRole("button", { name: "Ingresar" }).click()
   await expect(page).toHaveURL(/\/cambiar-clave/)
 
-  await page.getByLabel(/temporal o actual/).fill("Temporary123!")
+  await page.getByLabel("Contraseña temporal o actual", { exact: true }).fill("Temporary123!")
   await page.getByLabel(/^Nueva contrase/).fill("Permanent456!")
   await page.getByLabel(/Repite la nueva/).fill("Permanent456!")
   await page.getByRole("button", { name: /Cambiar contrase/ }).click()
