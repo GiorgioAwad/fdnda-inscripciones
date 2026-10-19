@@ -1,7 +1,7 @@
 "use client"
 
-import { startTransition, useActionState } from "react"
-import { CircleAlert, Loader2, LockKeyhole } from "lucide-react"
+import { startTransition, useActionState, useState } from "react"
+import { CircleAlert, Eye, EyeOff, Loader2, LockKeyhole } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input, Label } from "@/components/ui/input"
 import {
@@ -64,6 +64,7 @@ export function PasswordChangeForm() {
       <PasswordField
         id="confirmPassword"
         label="Repite la nueva contraseña"
+        visibilityLabel="confirmación de contraseña"
         autoComplete="new-password"
         disabled={pending}
       />
@@ -97,29 +98,50 @@ export function PasswordChangeForm() {
 function PasswordField({
   id,
   label,
+  visibilityLabel = label.toLowerCase(),
   autoComplete,
   disabled,
   describedBy,
 }: {
   id: string
   label: string
+  visibilityLabel?: string
   autoComplete: string
   disabled: boolean
   describedBy?: string
 }) {
+  const [showPassword, setShowPassword] = useState(false)
+
   return (
     <div>
       <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        name={id}
-        type="password"
-        autoComplete={autoComplete}
-        required
-        disabled={disabled}
-        aria-describedby={describedBy}
-        className="h-12"
-      />
+      <div className="relative">
+        <Input
+          id={id}
+          name={id}
+          type={showPassword ? "text" : "password"}
+          autoComplete={autoComplete}
+          required
+          disabled={disabled}
+          aria-describedby={describedBy}
+          className="h-12 pr-12"
+        />
+        <button
+          type="button"
+          onClick={() => setShowPassword((visible) => !visible)}
+          disabled={disabled}
+          className="absolute inset-y-0 right-0 inline-flex w-12 items-center justify-center rounded-r-control text-fdnda-muted transition-colors hover:text-fdnda-navy focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-fdnda-turquoise disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label={`${showPassword ? "Ocultar" : "Mostrar"} ${visibilityLabel}`}
+          aria-controls={id}
+          aria-pressed={showPassword}
+        >
+          {showPassword ? (
+            <EyeOff className="h-5 w-5" aria-hidden="true" />
+          ) : (
+            <Eye className="h-5 w-5" aria-hidden="true" />
+          )}
+        </button>
+      </div>
     </div>
   )
 }
